@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 const fs = require("fs");
+const http = require("http");
 const os = require("os");
 const path = require("path");
-const { execFileSync, spawn } = require("child_process");
+const { execFile, execFileSync, spawn } = require("child_process");
 const {
   computeFollowingRunAt,
   formatScheduleList,
@@ -98,6 +99,26 @@ const TEST_APP_SERVER_LOG_PATH = normalizeText(process.env.SABLE_E2E_APP_SERVER_
 const TEST_TURN_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_TURN_SCENARIO_PATH);
 const TEST_TURN_CURSOR_PATH = normalizeText(process.env.SABLE_E2E_TURN_CURSOR_PATH);
 const TEST_SIGNAL_LOG_PATH = normalizeText(process.env.SABLE_E2E_SIGNAL_LOG_PATH);
+const OBSIDIAN_VAULT_ROOT = path.resolve(
+  normalizeText(process.env.SABLE_OBSIDIAN_VAULT_ROOT) || "/home/arya/memory"
+);
+const OBSIDIAN_VAULT_NAME =
+  normalizeText(process.env.SABLE_OBSIDIAN_VAULT_NAME) ||
+  path.basename(OBSIDIAN_VAULT_ROOT);
+const OBSIDIAN_LINK_SERVER_HOST =
+  normalizeText(process.env.SABLE_OBSIDIAN_LINK_HOST) || "127.0.0.1";
+const OBSIDIAN_LINK_SERVER_PORT = normalizeIntegerEnv(
+  process.env.SABLE_OBSIDIAN_LINK_PORT,
+  4111
+);
+const OBSIDIAN_LINKS_ENABLED = normalizeBooleanEnv(
+  process.env.SABLE_OBSIDIAN_LINKS_ENABLED,
+  true
+);
+const OBSIDIAN_BASE_URL_OVERRIDE = normalizeText(process.env.SABLE_OBSIDIAN_BASE_URL);
+const OBSIDIAN_BASE_URL = normalizeText(
+  OBSIDIAN_BASE_URL_OVERRIDE || discoverTailscaleMagicDnsBaseUrl()
+);
 
 const phoneNumber = process.env.PHONE_NUMBER?.trim();
 const allowedNumbers = parseAllowedNumbers(process.env.ALLOWED_NUMBERS);
@@ -119,8 +140,11 @@ let schedulerJobs = loadSchedulerJobs(SCHEDULER_JOBS_PATH);
 let restartRequested = false;
 let shutdownRequested = false;
 let activeJobControl = null;
+let obsidianLinkServer = null;
+let obsidianLinkServerAddress = null;
 
 startSignalRpc();
+startObsidianLinkServer();
 if (TEST_RECEIVE_SCENARIO_PATH) {
   void startTestReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
 }
@@ -272,6 +296,279 @@ function normalizeBooleanEnv(value, defaultValue) {
 function normalizeIntegerEnv(value, defaultValue) {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
+function discoverTailscaleMagicDnsBaseUrl() {
+  try {
+    const stdout = execFileSync("tailscale", ["status", "--json"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const parsed = JSON.parse(stdout);
+    const rawDnsName = normalizeText(parsed?.Self?.DNSName);
+    if (!rawDnsName) {
+      return "";
+    }
+    const dnsName = rawDnsName.replace(/\.+$/, "");
+    return dnsName ? `https://${dnsName}` : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function startObsidianLinkServer() {
+  if (!OBSIDIAN_LINKS_ENABLED) {
+    console.log(`[${timestamp()}] Obsidian link server disabled by config`);
+    return;
+  }
+
+  try {
+    obsidianLinkServer = http.createServer(handleObsidianLinkRequest);
+    obsidianLinkServer.on("error", (error) => {
+      console.error(
+        `[${timestamp()}] Obsidian link server failed on ${OBSIDIAN_LINK_SERVER_HOST}:${OBSIDIAN_LINK_SERVER_PORT}: ${error.message}`
+      );
+    });
+    obsidianLinkServer.listen(OBSIDIAN_LINK_SERVER_PORT, OBSIDIAN_LINK_SERVER_HOST, () => {
+      obsidianLinkServerAddress = obsidianLinkServer.address();
+      const boundPort =
+        typeof obsidianLinkServerAddress === "object" && obsidianLinkServerAddress
+          ? obsidianLinkServerAddress.port
+          : OBSIDIAN_LINK_SERVER_PORT;
+      console.log(
+        `[${timestamp()}] Obsidian link server listening on ${OBSIDIAN_LINK_SERVER_HOST}:${boundPort}`
+      );
+    });
+  } catch (error) {
+    console.error(`[${timestamp()}] Failed starting Obsidian link server: ${error.message}`);
+  }
+}
+
+function handleObsidianLinkRequest(req, res) {
+  const method = normalizeText(req?.method || "GET").toUpperCase();
+  if (!["GET", "HEAD"].includes(method)) {
+    respondHtml(
+      res,
+      405,
+      buildObsidianRedirectPage({
+        title: "Method not allowed",
+        heading: "Method not allowed",
+        body: "<p>This endpoint only supports GET.</p>",
+      }),
+      method
+    );
+    return;
+  }
+
+  const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
+  if (requestUrl.pathname === "/healthz") {
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    if (method !== "HEAD") {
+      res.end("ok");
+    } else {
+      res.end();
+    }
+    return;
+  }
+
+  if (requestUrl.pathname !== "/obsidian/open") {
+    respondHtml(
+      res,
+      404,
+      buildObsidianRedirectPage({
+        title: "Not found",
+        heading: "Not found",
+        body: "<p>This Sable link endpoint only serves Obsidian note redirects.</p>",
+      }),
+      method
+    );
+    return;
+  }
+
+  const requestedPath = normalizeText(requestUrl.searchParams.get("path"));
+  const line = normalizeText(requestUrl.searchParams.get("line"));
+  const normalizedNote = normalizeObsidianNotePath(requestedPath);
+  if (!normalizedNote) {
+    respondHtml(
+      res,
+      400,
+      buildObsidianRedirectPage({
+        title: "Invalid note path",
+        heading: "Invalid note path",
+        body: "<p>The requested markdown note is missing, outside the vault, or not supported.</p>",
+      }),
+      method
+    );
+    return;
+  }
+
+  const obsidianUri = buildObsidianUriForRelativePath(normalizedNote.relativePath);
+  const lineHint = line ? `<p>Original line hint: ${escapeHtml(line)}</p>` : "";
+  respondHtml(
+    res,
+    200,
+    buildObsidianRedirectPage({
+      title: `Open ${path.basename(normalizedNote.absolutePath)} in Obsidian`,
+      heading: `Open ${path.basename(normalizedNote.absolutePath)} in Obsidian`,
+      body: [
+        `<p>If Obsidian does not launch automatically, tap the button below.</p>`,
+        `<p><a href="${escapeHtml(obsidianUri)}">Open in Obsidian</a></p>`,
+        `<p>Vault: ${escapeHtml(OBSIDIAN_VAULT_NAME)}</p>`,
+        `<p>Note: ${escapeHtml(normalizedNote.relativePath)}</p>`,
+        lineHint,
+      ].join(""),
+      obsidianUri,
+    }),
+    method
+  );
+}
+
+function respondHtml(res, statusCode, html, method = "GET") {
+  res.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  if (method === "HEAD") {
+    res.end();
+    return;
+  }
+  res.end(html);
+}
+
+function buildObsidianRedirectPage({ title, heading, body, obsidianUri = "" }) {
+  const escapedTitle = escapeHtml(title || "Open in Obsidian");
+  const escapedHeading = escapeHtml(heading || "Open in Obsidian");
+  const escapedUri = escapeHtml(obsidianUri);
+  const redirectScript = escapedUri
+    ? `<script>window.addEventListener("load", () => { window.location.replace(${JSON.stringify(
+        obsidianUri
+      )}); });</script>`
+    : "";
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${escapedTitle}</title>`,
+    escapedUri ? `<meta http-equiv="refresh" content="0;url=${escapedUri}">` : "",
+    "</head>",
+    "<body>",
+    `<h1>${escapedHeading}</h1>`,
+    body || "",
+    redirectScript,
+    "</body>",
+    "</html>",
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildObsidianUriForRelativePath(relativePath) {
+  const params = new URLSearchParams({
+    vault: OBSIDIAN_VAULT_NAME,
+    file: relativePath,
+  });
+  return `obsidian://open?${params.toString()}`;
+}
+
+function normalizeObsidianNotePath(filePath) {
+  const normalized = normalizeText(filePath);
+  if (!normalized) {
+    return null;
+  }
+
+  const absolutePath = path.resolve(normalized);
+  const relativePath = path.relative(OBSIDIAN_VAULT_ROOT, absolutePath);
+  const normalizedRelativePath = relativePath.split(path.sep).join("/");
+  const extension = path.extname(absolutePath).toLowerCase();
+
+  if (
+    (extension !== ".md" && extension !== ".markdown") ||
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath)
+  ) {
+    return null;
+  }
+
+  return {
+    absolutePath,
+    relativePath: normalizedRelativePath,
+  };
+}
+
+function buildSignalObsidianLink(filePath, line = "") {
+  if (!OBSIDIAN_LINKS_ENABLED || !OBSIDIAN_BASE_URL) {
+    return "";
+  }
+
+  const normalized = normalizeObsidianNotePath(filePath);
+  if (!normalized) {
+    return "";
+  }
+
+  const params = new URLSearchParams({ path: normalized.absolutePath });
+  const lineText = normalizeText(line);
+  if (lineText) {
+    params.set("line", lineText);
+  }
+  return `${OBSIDIAN_BASE_URL.replace(/\/+$/, "")}/obsidian/open?${params.toString()}`;
+}
+
+function rewriteMarkdownDocumentReferencesForSignal(text) {
+  const input = String(text || "");
+  if (!input || !OBSIDIAN_LINKS_ENABLED || !OBSIDIAN_BASE_URL) {
+    return input;
+  }
+
+  return input.replace(/\[([^\]]+)\]\((<[^>]+>|[^)]+)\)/g, (match, label, rawTarget) => {
+    const target = String(rawTarget || "").replace(/^<|>$/g, "");
+    const parsed = parseMarkdownFileTarget(target);
+    if (!parsed) {
+      return match;
+    }
+
+    const link = buildSignalObsidianLink(parsed.filePath, parsed.line);
+    if (!link) {
+      return match;
+    }
+
+    const cleanedLabel = normalizeText(label) || path.basename(parsed.filePath);
+    return `${cleanedLabel}: ${link}`;
+  });
+}
+
+function parseMarkdownFileTarget(target) {
+  const normalizedTarget = normalizeText(target);
+  if (!normalizedTarget || !normalizedTarget.startsWith("/")) {
+    return null;
+  }
+
+  const lineMatch = normalizedTarget.match(/^(.*\.(?:md|markdown)):(\d+)$/i);
+  if (lineMatch) {
+    return {
+      filePath: lineMatch[1],
+      line: lineMatch[2],
+    };
+  }
+
+  if (/\.(md|markdown)$/i.test(normalizedTarget)) {
+    return {
+      filePath: normalizedTarget,
+      line: "",
+    };
+  }
+
+  return null;
 }
 
 class CancellationError extends Error {
@@ -3867,6 +4164,12 @@ async function getBridgeStatusReport() {
   const backgroundSessionLine = state.backgroundSessionId
     ? `background session: ${truncateText(state.backgroundSessionId, 20)}`
     : "background session: none";
+  const obsidianServerLine = obsidianLinkServerAddress
+    ? `obsidian links: listening on ${OBSIDIAN_LINK_SERVER_HOST}:${obsidianLinkServerAddress.port}`
+    : `obsidian links: ${OBSIDIAN_LINKS_ENABLED ? "starting or unavailable" : "disabled"}`;
+  const obsidianBaseUrlLine = OBSIDIAN_BASE_URL
+    ? `obsidian base url: ${OBSIDIAN_BASE_URL}`
+    : "obsidian base url: none";
 
   return [
     `bridge: ${formatUnitSummary(bridgeService)}`,
@@ -3876,6 +4179,8 @@ async function getBridgeStatusReport() {
     `scheduler: ${schedulerJobs.filter((job) => job?.active !== false).length} active workflow${schedulerJobs.filter((job) => job?.active !== false).length === 1 ? "" : "s"}`,
     interactiveSessionLine,
     backgroundSessionLine,
+    obsidianServerLine,
+    obsidianBaseUrlLine,
     `auth: ${summarizePendingPluginAuth(state.pendingPluginAuth)}`,
   ].join("\n");
 }
@@ -3996,7 +4301,8 @@ function splitIntoChunks(text, limit = MAX_SIGNAL_MESSAGE_LENGTH) {
 }
 
 async function sendReply(recipient, text) {
-  const chunks = splitIntoChunks(text);
+  const formattedText = rewriteMarkdownDocumentReferencesForSignal(text);
+  const chunks = splitIntoChunks(formattedText);
 
   for (let index = 0; index < chunks.length; index += 1) {
     const chunk = chunks[index];
@@ -4144,6 +4450,13 @@ function shutdown() {
   }
 
   console.log(`[${timestamp()}] Shutting down bridge`);
+  if (obsidianLinkServer) {
+    try {
+      obsidianLinkServer.close();
+    } catch (error) {
+      console.error(`[${timestamp()}] Failed closing Obsidian link server: ${error.message}`);
+    }
+  }
   rejectAllPendingSignalRequests(new Error("Bridge shutting down"));
   if (signalProcess && !signalProcess.killed) {
     signalProcess.kill("SIGTERM");

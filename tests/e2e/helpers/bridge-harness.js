@@ -106,6 +106,7 @@ async function startBridgeScenario({
       SABLE_SCHEDULER_JOBS_PATH: schedulerJobsPath,
       SABLE_SCHEDULER_POLL_INTERVAL_MS: "100",
       APP_SERVER_IDLE_TIMEOUT_MS: "2000",
+      SABLE_OBSIDIAN_LINK_PORT: "0",
       ...resolvedExtraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
