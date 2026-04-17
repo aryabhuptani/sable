@@ -1251,7 +1251,7 @@ async function processJob(job) {
 
       let transcription = preparedVoiceNote?.transcription || null;
       if (!transcription) {
-        await sendJobReply(job, "Transcribing voice note...");
+        await sendJobProgressReply(job, "Transcribing voice note...");
         transcription = await transcribeVoiceNote(audioPaths[0], jobControl);
       }
 
@@ -1261,17 +1261,17 @@ async function processJob(job) {
       }
 
       if (VOICE_NOTES_ECHO_TRANSCRIPT) {
-        await sendJobReply(job, formatVoiceTranscriptMessage(transcription));
+        await sendJobProgressReply(job, formatVoiceTranscriptMessage(transcription));
       }
 
       prompt = transcription.transcript;
     }
 
     if (filePaths.length > 0) {
-      await sendJobReply(job, "Reading attached files...");
+      await sendJobProgressReply(job, "Reading attached files...");
       const fileContext = await buildFileAttachmentPromptContext(job.context, filePaths);
       if (!fileContext.ok) {
-        await sendJobReply(
+        await sendJobProgressReply(
           job,
           `${fileContext.message} I still exposed the local attachment path for this turn in case a tool can use the file directly.`
         );
@@ -1310,7 +1310,7 @@ async function processJob(job) {
     }
 
     if (result.startedFreshBecauseResumeFailed) {
-      await sendJobReply(
+      await sendJobProgressReply(
         job,
         "Previous Sable session was unavailable, so I started a fresh session before answering."
       );
@@ -1380,6 +1380,13 @@ async function sendJobReply(job, message) {
     return;
   }
   await sendReply(job.sender, message);
+}
+
+async function sendJobProgressReply(job, message) {
+  if (isBackgroundJob(job)) {
+    return;
+  }
+  await sendJobReply(job, message);
 }
 
 async function runCodex(
