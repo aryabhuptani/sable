@@ -1,0 +1,105 @@
+#!/usr/bin/env node
+"use strict";
+
+const {
+  createScheduledWorkflowJob,
+  dayNameToIndex,
+  formatScheduleConfirmation,
+  formatScheduleList,
+  loadSchedulerJobs,
+  saveSchedulerJobs,
+} = require("./scheduler");
+
+const DEFAULT_SCHEDULER_JOBS_PATH =
+  process.env.SABLE_SCHEDULER_JOBS_PATH ||
+  "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json";
+const DEFAULT_SENDER =
+  String(process.env.ALLOWED_NUMBERS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)[0] || "";
+
+function main() {
+  const [, , command, ...rest] = process.argv;
+  const args = parseArgs(rest);
+  const filePath = args.file || DEFAULT_SCHEDULER_JOBS_PATH;
+  const jobs = loadSchedulerJobs(filePath);
+
+  if (command === "add") {
+    const recurrenceType = normalizeText(args.recurrence).toLowerCase();
+    const sender = normalizeText(args.sender) || DEFAULT_SENDER;
+    const dayOfWeek =
+      recurrenceType === "weekly" ? dayNameToIndex(args.day || "") : -1;
+    const intervalMinutes =
+      recurrenceType === "interval" ? Number.parseInt(args.minutes || "", 10) : 0;
+    const replyMode = normalizeText(args.silent).toLowerCase() === "true" ? "silent" : "default";
+
+    const job = createScheduledWorkflowJob({
+      sender,
+      recurrenceType,
+      dayOfWeek,
+      intervalMinutes,
+      timeText: args.time,
+      workflowPrompt: args.prompt,
+      replyMode,
+    });
+
+    jobs.push(job);
+    saveSchedulerJobs(filePath, jobs);
+    console.log(formatScheduleConfirmation(job));
+    return;
+  }
+
+  if (command === "list") {
+    console.log(formatScheduleList(jobs));
+    return;
+  }
+
+  if (command === "remove") {
+    const id = normalizeText(args.id);
+    const nextJobs = jobs.filter((job) => job.id !== id);
+    if (nextJobs.length === jobs.length) {
+      console.error(`No scheduled workflow matched ${id || "that id"}.`);
+      process.exit(1);
+    }
+    saveSchedulerJobs(filePath, nextJobs);
+    console.log(`Removed scheduled workflow ${id}.`);
+    return;
+  }
+
+  printUsage();
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const parsed = {};
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (!token.startsWith("--")) {
+      continue;
+    }
+    parsed[token.slice(2)] = argv[index + 1] || "";
+    index += 1;
+  }
+
+  return parsed;
+}
+
+function printUsage() {
+  console.error(
+    [
+      "Usage:",
+      "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--file path]",
+      "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--file path]",
+      "  scheduler_cli.js list [--file path]",
+      "  scheduler_cli.js remove --id sched-abc [--file path]",
+    ].join("\n")
+  );
+}
+
+function normalizeText(text) {
+  return typeof text === "string" && text.trim() ? text.trim() : "";
+}
+
+main();

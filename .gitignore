@@ -1,0 +1,16 @@
+# Local memory/task bridges
+knowledge
+TASKS.md
+
+# Dependencies and local build artifacts
+node_modules/
+dist/
+.venv*/
+__pycache__/
+*.pyc
+
+# Local bridge/runtime state
+apps/signal-bridge/.env
+apps/signal-bridge/bridge.log
+apps/signal-bridge/.bridge-state.json
+apps/signal-bridge/.restart-requested
