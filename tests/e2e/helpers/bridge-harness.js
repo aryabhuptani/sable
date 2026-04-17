@@ -78,6 +78,8 @@ async function startBridgeScenario({
   }
   await makeExecutableShim(FAKE_SIGNAL_PATH, path.join(binDir, "signal-cli"));
   await makeExecutableShim(FAKE_CODEX_PATH, path.join(binDir, "codex"));
+  const resolvedExtraEnv =
+    typeof extraEnv === "function" ? extraEnv({ tempRoot, binDir, schedulerJobsPath }) : extraEnv;
 
   let bridgeOutput = "";
   let childExit = null;
@@ -104,7 +106,7 @@ async function startBridgeScenario({
       SABLE_SCHEDULER_JOBS_PATH: schedulerJobsPath,
       SABLE_SCHEDULER_POLL_INTERVAL_MS: "100",
       APP_SERVER_IDLE_TIMEOUT_MS: "2000",
-      ...extraEnv,
+      ...resolvedExtraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

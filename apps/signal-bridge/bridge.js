@@ -27,6 +27,9 @@ const RESTART_NOTICE_PATH =
 const SCHEDULER_JOBS_PATH =
   normalizeText(process.env.SABLE_SCHEDULER_JOBS_PATH) ||
   "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json";
+const RESEARCH_ROOT =
+  normalizeText(process.env.SABLE_RESEARCH_ROOT) ||
+  "/home/arya/memory/knowledge/research";
 const MAX_SIGNAL_MESSAGE_LENGTH = 1500;
 const CHUNK_DELAY_MS = 500;
 const LIVE_UPDATE_BATCH_WINDOW_MS = 750;
@@ -107,8 +110,10 @@ let signalStdoutBuffer = "";
 let nextSignalRequestId = 1;
 const pendingSignalRequests = new Map();
 
-const queue = [];
-let isProcessing = false;
+const interactiveQueue = [];
+const backgroundQueue = [];
+let isProcessingInteractive = false;
+let isProcessingBackground = false;
 let state = loadState();
 let schedulerJobs = loadSchedulerJobs(SCHEDULER_JOBS_PATH);
 let restartRequested = false;
@@ -377,10 +382,18 @@ function loadState() {
   try {
     const raw = fs.readFileSync(STATE_PATH, "utf8");
     const parsed = JSON.parse(raw);
+    const legacyLastSessionId =
+      typeof parsed.lastSessionId === "string" && parsed.lastSessionId.trim()
+        ? parsed.lastSessionId.trim()
+        : null;
     return {
-      lastSessionId:
-        typeof parsed.lastSessionId === "string" && parsed.lastSessionId.trim()
-          ? parsed.lastSessionId.trim()
+      interactiveSessionId:
+        typeof parsed.interactiveSessionId === "string" && parsed.interactiveSessionId.trim()
+          ? parsed.interactiveSessionId.trim()
+          : legacyLastSessionId,
+      backgroundSessionId:
+        typeof parsed.backgroundSessionId === "string" && parsed.backgroundSessionId.trim()
+          ? parsed.backgroundSessionId.trim()
           : null,
       pendingPluginAuth: normalizePendingPluginAuth(parsed.pendingPluginAuth),
       inFlightTurn: normalizeInFlightTurn(parsed.inFlightTurn),
@@ -391,7 +404,8 @@ function loadState() {
     }
 
     return {
-      lastSessionId: null,
+      interactiveSessionId: null,
+      backgroundSessionId: null,
       pendingPluginAuth: null,
       inFlightTurn: null,
     };
@@ -405,7 +419,17 @@ function saveState() {
 function clearState() {
   state = {
     ...state,
-    lastSessionId: null,
+    interactiveSessionId: null,
+    backgroundSessionId: null,
+  };
+  saveState();
+}
+
+function clearSessionState(kind) {
+  const key = kind === "background" ? "backgroundSessionId" : "interactiveSessionId";
+  state = {
+    ...state,
+    [key]: null,
   };
   saveState();
 }
@@ -656,13 +680,13 @@ async function handleReceiveEvent(message) {
     queuedVoicePreparation: null,
   };
 
-  if (audioAttachments.length > 0 && VOICE_NOTES_ENABLED && isProcessing) {
+  if (audioAttachments.length > 0 && VOICE_NOTES_ENABLED && isProcessingInteractive) {
     job.queuedVoicePreparation = startQueuedVoicePreparation(job);
   }
 
-  queue.push(job);
+  interactiveQueue.push(job);
 
-  if (isProcessing) {
+  if (isProcessingInteractive) {
     try {
       const queueMessage =
         audioAttachments.length > 0 && VOICE_NOTES_ENABLED
@@ -675,7 +699,7 @@ async function handleReceiveEvent(message) {
     return;
   }
 
-  void processQueue();
+  void processInteractiveQueue();
 }
 
 function extractSenderCandidates(envelope) {
@@ -820,7 +844,7 @@ function parseCommand(text, hasImages = false, hasAudio = false, hasFiles = fals
 }
 
 async function handleCancelCommand(sender) {
-  if (!isProcessing || !activeJobControl) {
+  if (!isProcessingInteractive || !activeJobControl) {
     await sendReply(sender, "No active task to cancel.");
     return;
   }
@@ -831,7 +855,7 @@ async function handleCancelCommand(sender) {
     return;
   }
 
-  const pendingCount = queue.length;
+  const pendingCount = interactiveQueue.length;
   const suffix =
     pendingCount > 0
       ? ` ${pendingCount} queued message${pendingCount === 1 ? "" : "s"} will stay queued.`
@@ -839,15 +863,15 @@ async function handleCancelCommand(sender) {
   await sendReply(sender, `Cancelling current task.${suffix}`);
 }
 
-async function processQueue() {
-  if (isProcessing) {
+async function processInteractiveQueue() {
+  if (isProcessingInteractive) {
     return;
   }
 
-  isProcessing = true;
+  isProcessingInteractive = true;
 
-  while (queue.length > 0) {
-    const job = queue.shift();
+  while (interactiveQueue.length > 0) {
+    const job = interactiveQueue.shift();
 
     try {
       await processJob(job);
@@ -864,7 +888,36 @@ async function processQueue() {
     }
   }
 
-  isProcessing = false;
+  isProcessingInteractive = false;
+  await restartIfRequested();
+}
+
+async function processBackgroundQueue() {
+  if (isProcessingBackground) {
+    return;
+  }
+
+  isProcessingBackground = true;
+
+  while (backgroundQueue.length > 0) {
+    const job = backgroundQueue.shift();
+
+    try {
+      await processJob(job);
+    } catch (error) {
+      if (isCancellationError(error)) {
+        console.log(`[${timestamp()}] Cancelled background task for ${job.sender}: ${error.message}`);
+        continue;
+      }
+
+      console.error(
+        `[${timestamp()}] Failed processing background message from ${job.sender}: ${error.stack || error.message}`
+      );
+      await sendJobReply(job, "Background workflow failed before Sable could complete.");
+    }
+  }
+
+  isProcessingBackground = false;
   await restartIfRequested();
 }
 
@@ -942,7 +995,7 @@ function queueScheduledWorkflowRun(scheduledJob) {
     scheduledJob.workflowPrompt
   );
 
-  queue.push({
+  backgroundQueue.push({
     sender: scheduledJob.sender,
     command: { type: "prompt", prompt: executionPrompt },
     context: buildAttachmentContext(
@@ -955,11 +1008,120 @@ function queueScheduledWorkflowRun(scheduledJob) {
     queuedVoicePreparation: null,
     allowSilentNoReply: true,
     replyMode: scheduledJob.replyMode === "silent" ? "silent" : "default",
+    origin: "scheduled",
   });
 
-  if (!isProcessing) {
-    void processQueue();
+  if (!isProcessingBackground) {
+    void processBackgroundQueue();
   }
+}
+
+function isBackgroundJob(job) {
+  return job?.origin === "scheduled";
+}
+
+function getSessionStateKeyForJob(job) {
+  return isBackgroundJob(job) ? "backgroundSessionId" : "interactiveSessionId";
+}
+
+function isAutoresearchTickJob(job) {
+  const prompt = normalizeText(job?.command?.prompt);
+  return prompt.includes("Run the bounded autoresearch tick for Sable.");
+}
+
+function snapshotAutoresearchRuns() {
+  const snapshots = new Map();
+
+  if (!fs.existsSync(RESEARCH_ROOT)) {
+    return snapshots;
+  }
+
+  for (const topicEntry of fs.readdirSync(RESEARCH_ROOT, { withFileTypes: true })) {
+    if (!topicEntry.isDirectory()) {
+      continue;
+    }
+
+    const activeDir = path.join(
+      RESEARCH_ROOT,
+      topicEntry.name,
+      "autoresearch",
+      "active"
+    );
+
+    if (!fs.existsSync(activeDir)) {
+      continue;
+    }
+
+    for (const runEntry of fs.readdirSync(activeDir, { withFileTypes: true })) {
+      if (!runEntry.isDirectory()) {
+        continue;
+      }
+
+      const runRoot = path.join(activeDir, runEntry.name);
+      const statePath = path.join(runRoot, "STATE.json");
+      if (!fs.existsSync(statePath)) {
+        continue;
+      }
+
+      try {
+        const raw = fs.readFileSync(statePath, "utf8");
+        const parsed = JSON.parse(raw);
+        const pendingQuestions = Array.isArray(parsed?.pendingQuestions)
+          ? parsed.pendingQuestions
+          : [];
+        snapshots.set(runRoot, {
+          runRoot,
+          topicSlug: normalizeText(parsed?.topicSlug) || topicEntry.name,
+          runSlug: normalizeText(parsed?.runSlug) || runEntry.name,
+          rootQuestion: normalizeText(parsed?.rootQuestion),
+          status: normalizeText(parsed?.status) || "unknown",
+          pendingCount: pendingQuestions.length,
+          logPath: path.join(runRoot, "LOG.md"),
+          wikiIndexPath: path.join(RESEARCH_ROOT, topicEntry.name, "wiki", "index.md"),
+        });
+      } catch (error) {
+        console.error(
+          `[${timestamp()}] Failed reading autoresearch state at ${statePath}: ${error.message}`
+        );
+      }
+    }
+  }
+
+  return snapshots;
+}
+
+function collectCompletedAutoresearchRuns(beforeRuns, afterRuns) {
+  const completed = [];
+
+  for (const [runRoot, before] of beforeRuns.entries()) {
+    if (before.status !== "active" || before.pendingCount === 0) {
+      continue;
+    }
+
+    const after = afterRuns.get(runRoot);
+    if (!after) {
+      continue;
+    }
+
+    if (after.status === "completed" || after.pendingCount === 0) {
+      completed.push(after);
+    }
+  }
+
+  return completed;
+}
+
+function formatAutoresearchCompletionNotice(run) {
+  const topicLabel = formatSlugForDisplay(run.topicSlug);
+  const lines = [`Autoresearch completed for ${topicLabel}.`];
+
+  if (run.rootQuestion) {
+    lines.push(`Question: ${truncateText(run.rootQuestion, 220)}`);
+  }
+
+  lines.push(`Wiki index: ${run.wikiIndexPath}`);
+  lines.push(`Run log: ${run.logPath}`);
+  return lines.join("\n");
 }
 
 async function processJob(job) {
@@ -1030,12 +1192,15 @@ async function processJob(job) {
   }
 
   if (job.command.type === "new" && !job.command.prompt) {
-    clearState();
+    clearSessionState("interactive");
     await sendJobReply(job, "Started a new Sable session. Your next message will use fresh context.");
     return;
   }
 
-  const shouldResume = Boolean(state.lastSessionId) && job.command.type !== "new";
+  const backgroundJob = isBackgroundJob(job);
+  const sessionStateKey = getSessionStateKeyForJob(job);
+  const sessionKind = backgroundJob ? "background" : "interactive";
+  const shouldResume = Boolean(state[sessionStateKey]) && job.command.type !== "new";
   const imagePaths = await materializeIncomingImages(job.context);
   const filePaths = await materializeIncomingFiles(job.context);
   let audioPaths = [];
@@ -1055,8 +1220,12 @@ async function processJob(job) {
     audioPaths = await materializeIncomingAudio(job.context);
   }
   const jobControl = createJobControl(job.sender);
-  activeSender = job.sender;
-  activeJobControl = jobControl;
+  const autoresearchBefore =
+    backgroundJob && isAutoresearchTickJob(job) ? snapshotAutoresearchRuns() : null;
+  if (!backgroundJob) {
+    activeSender = job.sender;
+    activeJobControl = jobControl;
+  }
 
   try {
     let prompt = job.command.prompt;
@@ -1123,17 +1292,20 @@ async function processJob(job) {
       return;
     }
 
-    setInFlightTurn(job.sender, prompt);
+    if (!backgroundJob) {
+      setInFlightTurn(job.sender, prompt);
+    }
     const result = await runCodex(
       prompt,
-      shouldResume ? state.lastSessionId : null,
+      shouldResume ? state[sessionStateKey] : null,
       imagePaths,
       jobControl,
-      shouldSuppressJobReplies(job)
+      backgroundJob || shouldSuppressJobReplies(job),
+      () => clearSessionState(sessionKind)
     );
 
     if (result.sessionId) {
-      state.lastSessionId = result.sessionId;
+      state[sessionStateKey] = result.sessionId;
       saveState();
     }
 
@@ -1158,22 +1330,40 @@ async function processJob(job) {
       job.allowSilentNoReply &&
       normalizeText(result.message) === SCHEDULED_NO_REPLY_MARKER
     ) {
+      if (autoresearchBefore) {
+        const completedRuns = collectCompletedAutoresearchRuns(
+          autoresearchBefore,
+          snapshotAutoresearchRuns()
+        );
+        for (const completedRun of completedRuns) {
+          await sendReply(job.sender, formatAutoresearchCompletionNotice(completedRun));
+        }
+      }
       return;
     }
 
     if (result.message) {
       await sendJobReply(job, result.message);
-      return;
-    }
-
-    if (!shouldSuppressJobReplies(job)) {
+    } else if (!shouldSuppressJobReplies(job)) {
       await sendReply(job.sender, "Sable completed without a final message.");
     }
+
+    if (autoresearchBefore) {
+      const completedRuns = collectCompletedAutoresearchRuns(
+        autoresearchBefore,
+        snapshotAutoresearchRuns()
+      );
+      for (const completedRun of completedRuns) {
+        await sendReply(job.sender, formatAutoresearchCompletionNotice(completedRun));
+      }
+    }
   } finally {
-    clearInFlightTurn();
-    activeSender = null;
-    if (activeJobControl === jobControl) {
-      activeJobControl = null;
+    if (!backgroundJob) {
+      clearInFlightTurn();
+      activeSender = null;
+      if (activeJobControl === jobControl) {
+        activeJobControl = null;
+      }
     }
     await cleanupPaths(imagePaths);
     await cleanupPaths(audioPaths);
@@ -1197,7 +1387,8 @@ async function runCodex(
   sessionId,
   imagePaths = [],
   jobControl = null,
-  suppressLiveUpdates = false
+  suppressLiveUpdates = false,
+  onInvalidSession = null
 ) {
   recordTestAppServerSpawnArgs();
 
@@ -1207,7 +1398,8 @@ async function runCodex(
       sessionId,
       imagePaths,
       jobControl,
-      suppressLiveUpdates
+      suppressLiveUpdates,
+      onInvalidSession
     );
   }
   return runCodexViaAppServer(
@@ -1215,7 +1407,8 @@ async function runCodex(
     sessionId,
     imagePaths,
     jobControl,
-    suppressLiveUpdates
+    suppressLiveUpdates,
+    onInvalidSession
   );
 }
 
@@ -1296,7 +1489,8 @@ function runCodexViaAppServer(
   sessionId,
   imagePaths = [],
   jobControl = null,
-  suppressLiveUpdates = false
+  suppressLiveUpdates = false,
+  onInvalidSession = null
 ) {
   return new Promise((resolve, reject) => {
     const startedAt = timestamp();
@@ -1524,7 +1718,9 @@ function runCodexViaAppServer(
         resetTimeout();
       } catch (error) {
         if (sessionId && isInvalidSessionError(String(error?.message || error))) {
-          clearState();
+          if (typeof onInvalidSession === "function") {
+            onInvalidSession();
+          }
           client.close();
           try {
             const freshResult = await runCodexViaAppServer(
@@ -1532,7 +1728,8 @@ function runCodexViaAppServer(
               null,
               imagePaths,
               null,
-              suppressLiveUpdates
+              suppressLiveUpdates,
+              onInvalidSession
             );
             resolve({
               ...freshResult,
@@ -2160,7 +2357,11 @@ function shouldForwardAgentMessageAlongsideToolSuggestion(message) {
 }
 
 async function checkForPendingPluginAuth() {
-  if (!state.pendingPluginAuth || state.pendingPluginAuth.status !== "pending" || isProcessing) {
+  if (
+    !state.pendingPluginAuth ||
+    state.pendingPluginAuth.status !== "pending" ||
+    isProcessingInteractive
+  ) {
     return;
   }
 
@@ -2578,6 +2779,14 @@ function truncateText(text, maxLength) {
   }
 
   return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function formatSlugForDisplay(value) {
+  return normalizeText(value)
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }
 
 let activeSender = null;
@@ -3572,7 +3781,12 @@ function checkForRestartRequest() {
     restartRequested = true;
   }
 
-  if (!isProcessing && queue.length === 0) {
+  if (
+    !isProcessingInteractive &&
+    !isProcessingBackground &&
+    interactiveQueue.length === 0 &&
+    backgroundQueue.length === 0
+  ) {
     void restartIfRequested();
   }
 }
@@ -3640,16 +3854,21 @@ async function getBridgeStatusReport() {
     getSystemdUnitSummary("signal-codex-bridge-restart.service"),
   ]);
 
-  const sessionLine = state.lastSessionId
-    ? `session: ${truncateText(state.lastSessionId, 20)}`
-    : "session: none";
+  const interactiveSessionLine = state.interactiveSessionId
+    ? `interactive session: ${truncateText(state.interactiveSessionId, 20)}`
+    : "interactive session: none";
+  const backgroundSessionLine = state.backgroundSessionId
+    ? `background session: ${truncateText(state.backgroundSessionId, 20)}`
+    : "background session: none";
 
   return [
     `bridge: ${formatUnitSummary(bridgeService)}`,
     `watcher: ${formatUnitSummary(watcherService)}`,
-    `queue: ${queue.length} pending, processing=${isProcessing ? "yes" : "no"}`,
+    `interactive queue: ${interactiveQueue.length} pending, processing=${isProcessingInteractive ? "yes" : "no"}`,
+    `background queue: ${backgroundQueue.length} pending, processing=${isProcessingBackground ? "yes" : "no"}`,
     `scheduler: ${schedulerJobs.filter((job) => job?.active !== false).length} active workflow${schedulerJobs.filter((job) => job?.active !== false).length === 1 ? "" : "s"}`,
-    sessionLine,
+    interactiveSessionLine,
+    backgroundSessionLine,
     `auth: ${summarizePendingPluginAuth(state.pendingPluginAuth)}`,
   ].join("\n");
 }
@@ -3898,13 +4117,21 @@ function shutdown() {
 
   shutdownRequested = true;
 
-  if (isProcessing || queue.length > 0) {
+  if (
+    isProcessingInteractive ||
+    isProcessingBackground ||
+    interactiveQueue.length > 0 ||
+    backgroundQueue.length > 0
+  ) {
     restartRequested = true;
     console.log(
-      `[${timestamp()}] Shutdown requested while work is active; deferring exit until the queue drains`
+      `[${timestamp()}] Shutdown requested while work is active; deferring exit until both queues drain`
     );
-    if (!isProcessing && queue.length > 0) {
-      void processQueue();
+    if (!isProcessingInteractive && interactiveQueue.length > 0) {
+      void processInteractiveQueue();
+    }
+    if (!isProcessingBackground && backgroundQueue.length > 0) {
+      void processBackgroundQueue();
     }
     return;
   }

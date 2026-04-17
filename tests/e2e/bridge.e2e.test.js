@@ -64,7 +64,7 @@ test("/schedules lists persisted recurring workflows", async () => {
         recurrence: { type: "daily" },
         time: { hour: 8, minute: 0, text: "8:00 AM" },
         workflowPrompt: "Give me a daily briefing of my day",
-        nextRunAt: "2026-04-17T07:00:00.000Z",
+        nextRunAt: "2026-04-18T07:00:00.000Z",
         lastRunAt: "",
       },
     ],
@@ -88,14 +88,26 @@ test("/schedules lists persisted recurring workflows", async () => {
   }
 });
 
-test("due scheduled workflows enqueue and run through the normal bridge queue", async () => {
+test("due scheduled workflows run in the background without blocking live chat turns", async () => {
   const pastDue = new Date(Date.now() - 60_000).toISOString();
   const harness = await startBridgeScenario({
-    signalScenario: { receive: [] },
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 150,
+          sender: "+15551112222",
+          message: "hello from live chat",
+        },
+      ],
+    },
     codexScenario: {
       turns: [
         {
           message: "scheduled daily briefing",
+          messageDelayMs: 400,
+        },
+        {
+          message: "interactive reply",
           messageDelayMs: 40,
         },
       ],
@@ -117,15 +129,11 @@ test("due scheduled workflows enqueue and run through the normal bridge queue", 
   });
 
   try {
-    const turnStart = await harness.waitForCodexRequest(
-      (request) => request.method === "turn/start",
-      "scheduled turn start"
-    );
-    const promptText = turnStart.params?.input?.[0]?.text || "";
-    assert.match(promptText, /Give me a daily briefing of my day/);
-    assert.match(
-      promptText,
-      /This is a scheduled recurring workflow triggered automatically by Sable\./
+    await waitFor(
+      async () =>
+        (await harness.getCodexRequests()).filter((request) => request.method === "turn/start")
+          .length >= 2,
+      { description: "both scheduled and interactive turn starts" }
     );
 
     await harness.waitForSignalRequest(
@@ -133,10 +141,23 @@ test("due scheduled workflows enqueue and run through the normal bridge queue", 
         request.method === "send" && request.params?.message === "scheduled daily briefing",
       "scheduled workflow reply"
     );
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" && request.params?.message === "interactive reply",
+      "interactive reply"
+    );
+
+    const sentMessages = extractSentMessages(await harness.getSignalRequests());
+    assert.equal(sentMessages.includes("Queued, will process after current task."), false);
 
     const stored = JSON.parse(await fsp.readFile(harness.schedulerJobsPath, "utf8"));
     assert.equal(stored.jobs[0].lastRunAt.length > 0, true);
     assert.notEqual(stored.jobs[0].nextRunAt, pastDue);
+
+    const state = JSON.parse(await fsp.readFile(harness.statePath, "utf8"));
+    assert.equal(typeof state.backgroundSessionId, "string");
+    assert.equal(typeof state.interactiveSessionId, "string");
+    assert.notEqual(state.backgroundSessionId, state.interactiveSessionId);
   } finally {
     await harness.shutdown();
   }
@@ -237,6 +258,116 @@ test("scheduled workflows in silent mode suppress bridge replies", async () => {
     const sentMessages = extractSentMessages(await harness.getSignalRequests());
     assert.equal(sentMessages.includes("silent background work finished"), false);
     assert.equal(sentMessages.length, 0);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("completed autoresearch runs send a single completion notice even from silent background mode", async () => {
+  const pastDue = new Date(Date.now() - 60_000).toISOString();
+  const harness = await startBridgeScenario({
+    signalScenario: { receive: [] },
+    codexScenario: {
+      turns: [
+        {
+          message: "__SABLE_NO_REPLY__",
+          messageDelayMs: 300,
+        },
+      ],
+    },
+    extraEnv: ({ tempRoot }) => ({
+      SABLE_SCHEDULER_POLL_INTERVAL_MS: "500",
+      SABLE_RESEARCH_ROOT: path.join(tempRoot, "research"),
+    }),
+  });
+
+  try {
+    const researchRoot = path.join(harness.tempRoot, "research");
+    const runRoot = path.join(
+      researchRoot,
+      "darkbloom",
+      "autoresearch",
+      "active",
+      "privacy-audit"
+    );
+    await fsp.mkdir(path.join(researchRoot, "darkbloom", "wiki"), { recursive: true });
+    await fsp.mkdir(runRoot, { recursive: true });
+    await fsp.writeFile(
+      path.join(runRoot, "STATE.json"),
+      `${JSON.stringify(
+        {
+          topicSlug: "darkbloom",
+          runSlug: "privacy-audit",
+          status: "active",
+          rootQuestion: "How does Dark Bloom privacy fail?",
+          pendingQuestions: [{ id: "q1", question: "pending" }],
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await fsp.writeFile(path.join(runRoot, "LOG.md"), "# Run Log\n", "utf8");
+    await fsp.writeFile(path.join(researchRoot, "darkbloom", "wiki", "index.md"), "# Index\n", "utf8");
+    await fsp.writeFile(
+      harness.schedulerJobsPath,
+      `${JSON.stringify(
+        {
+          jobs: [
+            {
+              id: "sched-autoresearch",
+              sender: "+15551112222",
+              createdAt: "2026-04-17T00:00:00.000Z",
+              updatedAt: "2026-04-17T00:00:00.000Z",
+              active: true,
+              recurrence: { type: "interval", intervalMinutes: 5 },
+              replyMode: "silent",
+              workflowPrompt:
+                "Run the bounded autoresearch tick for Sable. First read /home/arya/memory/knowledge/research/AUTORESEARCH.md.",
+              nextRunAt: pastDue,
+              lastRunAt: "",
+            },
+          ],
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    await harness.waitForCodexRequest(
+      (request) => request.method === "turn/start",
+      "autoresearch background turn start"
+    );
+
+    await fsp.writeFile(
+      path.join(runRoot, "STATE.json"),
+      `${JSON.stringify(
+        {
+          topicSlug: "darkbloom",
+          runSlug: "privacy-audit",
+          status: "completed",
+          rootQuestion: "How does Dark Bloom privacy fail?",
+          pendingQuestions: [],
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const completionNotice = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("Autoresearch completed for Darkbloom."),
+      "autoresearch completion notice"
+    );
+
+    assert.match(completionNotice.params.message, /Wiki index:/);
+    assert.match(completionNotice.params.message, /Run log:/);
+    const sentMessages = extractSentMessages(await harness.getSignalRequests());
+    assert.equal(sentMessages.includes("__SABLE_NO_REPLY__"), false);
   } finally {
     await harness.shutdown();
   }
