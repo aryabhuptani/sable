@@ -104,6 +104,7 @@ const OBSIDIAN_VAULT_ROOT = path.resolve(
 );
 const OBSIDIAN_VAULT_NAME =
   normalizeText(process.env.SABLE_OBSIDIAN_VAULT_NAME) ||
+  discoverObsidianVaultName(OBSIDIAN_VAULT_ROOT) ||
   path.basename(OBSIDIAN_VAULT_ROOT);
 const OBSIDIAN_LINK_SERVER_HOST =
   normalizeText(process.env.SABLE_OBSIDIAN_LINK_HOST) || "127.0.0.1";
@@ -314,6 +315,45 @@ function discoverTailscaleMagicDnsBaseUrl() {
   } catch (error) {
     return "";
   }
+}
+
+function discoverObsidianVaultName(vaultRoot) {
+  const normalizedRoot = normalizeText(vaultRoot);
+  if (!normalizedRoot) {
+    return "";
+  }
+
+  const syncRoot = path.join(os.homedir(), ".config", "obsidian-headless", "sync");
+  if (!fs.existsSync(syncRoot)) {
+    return "";
+  }
+
+  try {
+    for (const entry of fs.readdirSync(syncRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const configPath = path.join(syncRoot, entry.name, "config.json");
+      if (!fs.existsSync(configPath)) {
+        continue;
+      }
+
+      const raw = fs.readFileSync(configPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (path.resolve(parsed?.vaultPath || "") !== normalizedRoot) {
+        continue;
+      }
+
+      return normalizeText(parsed?.vaultName);
+    }
+  } catch (error) {
+    console.error(
+      `[${timestamp()}] Failed discovering Obsidian vault name for ${normalizedRoot}: ${error.message}`
+    );
+  }
+
+  return "";
 }
 
 function startObsidianLinkServer() {
