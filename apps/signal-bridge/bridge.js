@@ -1413,6 +1413,7 @@ function snapshotAutoresearchRuns() {
           rootQuestion: normalizeText(parsed?.rootQuestion),
           status: normalizeText(parsed?.status) || "unknown",
           pendingCount: pendingQuestions.length,
+          statePath,
           logPath: path.join(runRoot, "LOG.md"),
           wikiIndexPath: path.join(RESEARCH_ROOT, topicEntry.name, "wiki", "index.md"),
         });
@@ -1448,12 +1449,118 @@ function collectCompletedAutoresearchRuns(beforeRuns, afterRuns) {
   return completed;
 }
 
+function loadAutoresearchRunState(statePath) {
+  if (!statePath || !fs.existsSync(statePath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch (error) {
+    console.error(`[${timestamp()}] Failed reading completed autoresearch run state at ${statePath}: ${error.message}`);
+    return null;
+  }
+}
+
+function buildAutoresearchCompletionSummary(run) {
+  const state = loadAutoresearchRunState(run.statePath);
+  const processedQuestions = Array.isArray(state?.processedQuestions)
+    ? state.processedQuestions
+    : [];
+  const evidenceText = [
+    normalizeText(state?.rootQuestion),
+    ...processedQuestions
+      .slice(-3)
+      .flatMap((question) => [normalizeText(question?.question), ...(Array.isArray(question?.notes) ? question.notes : [])]),
+  ]
+    .map((text) => normalizeText(text).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  const conclusions = [];
+  const followUps = [];
+
+  if (evidenceText.includes("plaintext") && evidenceText.includes("request")) {
+    conclusions.push(
+      "Request delivery is better than a plain-JSON baseline, but plaintext-compatible request shapes still exist in the protocol surface."
+    );
+    followUps.push(
+      "Exercise downgrade and legacy request paths to prove plaintext prompts cannot be reintroduced through compatibility routes."
+    );
+  }
+
+  if (evidenceText.includes("response") && evidenceText.includes("plaintext")) {
+    conclusions.push(
+      "Response confidentiality is still the weakest live boundary: the provider response path remains plaintext to the coordinator today."
+    );
+    followUps.push(
+      "Close or explicitly de-scope the live response plaintext path, including streaming, retry, and logging branches."
+    );
+  }
+
+  if (
+    evidenceText.includes("open mode") ||
+    evidenceText.includes("missing hash") ||
+    evidenceText.includes("trust tier") ||
+    evidenceText.includes("routing floor") ||
+    evidenceText.includes("runtime verified") ||
+    evidenceText.includes("attestation")
+  ) {
+    conclusions.push(
+      "Attestation and trust enforcement still have downgrade or fail-open edges, so privacy depends on operator policy staying strict."
+    );
+    followUps.push(
+      "Audit Open Mode, missing-hash handling, and trust-floor overrides with proof-of-concept attempts to confirm they fail closed where the privacy story expects them to."
+    );
+  }
+
+  if (conclusions.length === 0) {
+    const fallbackNotes = processedQuestions
+      .slice(-2)
+      .flatMap((question) => Array.isArray(question?.notes) ? question.notes : [])
+      .map((note) => truncateText(note, 220))
+      .filter(Boolean);
+    conclusions.push(
+      fallbackNotes[0] || "The run completed without preserving a machine-readable synthesis in the artifacts."
+    );
+    if (fallbackNotes[1]) {
+      conclusions.push(fallbackNotes[1]);
+    }
+  }
+
+  if (followUps.length === 0) {
+    followUps.push(
+      "Review the most recent completed branches and pick the next deepest path with a downgrade, plaintext, or fail-open surface."
+    );
+  }
+
+  return {
+    conclusions: dedupeStrings(conclusions),
+    followUps: dedupeStrings(followUps),
+  };
+}
+
 function formatAutoresearchCompletionNotice(run) {
   const topicLabel = formatSlugForDisplay(run.topicSlug);
+  const summary = buildAutoresearchCompletionSummary(run);
   const lines = [`Autoresearch completed for ${topicLabel}.`];
 
   if (run.rootQuestion) {
     lines.push(`Question: ${truncateText(run.rootQuestion, 220)}`);
+  }
+
+  if (summary.conclusions.length > 0) {
+    lines.push("Conclusions:");
+    for (const conclusion of summary.conclusions) {
+      lines.push(`- ${conclusion}`);
+    }
+  }
+
+  if (summary.followUps.length > 0) {
+    lines.push("Follow-ups:");
+    for (const followUp of summary.followUps) {
+      lines.push(`- ${followUp}`);
+    }
   }
 
   lines.push(`Wiki index: ${run.wikiIndexPath}`);
@@ -3131,6 +3238,23 @@ function formatSlugForDisplay(value) {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+}
+
+function dedupeStrings(values) {
+  const seen = new Set();
+  const result = [];
+
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
 }
 
 let activeSender = null;

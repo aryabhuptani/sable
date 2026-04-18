@@ -426,6 +426,24 @@ test("completed autoresearch runs send a single completion notice even from sile
           status: "completed",
           rootQuestion: "How does Dark Bloom privacy fail?",
           pendingQuestions: [],
+          processedQuestions: [
+            {
+              id: "q1",
+              question: "Can provider responses still reach the coordinator in plaintext?",
+              notes: [
+                "Verified that the live provider response path still forwards plaintext chunk data to the coordinator.",
+                "Promoted the split between crypto-layer intent and live plaintext behavior into the wiki.",
+              ],
+            },
+            {
+              id: "q2",
+              question: "Can missing runtime hashes or softer trust floors keep providers routable?",
+              notes: [
+                "Verified that Open Mode and self-signed providers can become routable once the operator lowers the trust floor.",
+                "Verified that missing runtime hashes can bypass comparison instead of failing closed.",
+              ],
+            },
+          ],
         },
         null,
         2
@@ -441,6 +459,16 @@ test("completed autoresearch runs send a single completion notice even from sile
       "autoresearch completion notice"
     );
 
+    assert.match(completionNotice.params.message, /Conclusions:/);
+    assert.match(
+      completionNotice.params.message,
+      /Response confidentiality is still the weakest live boundary: the provider response path remains plaintext to the coordinator today\./
+    );
+    assert.match(completionNotice.params.message, /Follow-ups:/);
+    assert.match(
+      completionNotice.params.message,
+      /Audit Open Mode, missing-hash handling, and trust-floor overrides with proof-of-concept attempts/
+    );
     assert.match(completionNotice.params.message, /Wiki index:/);
     assert.match(completionNotice.params.message, /Run log:/);
     const sentMessages = extractSentMessages(await harness.getSignalRequests());
