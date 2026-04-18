@@ -56,6 +56,16 @@ This creates an active run under the topic KB with:
 - `autoresearch/active/<run-slug>/SOURCES.md`
 - `autoresearch/active/<run-slug>/LOG.md`
 
+New deep-audit runs now default to a stronger contract:
+
+- `mode: deep_audit`
+- `maxDepth: 5`
+- `maxTotalQuestions: 15`
+- `maxFollowupsPerQuestion: 4`
+- `minProcessedQuestionsBeforeComplete: 4`
+- `minTicksBeforeComplete: 4`
+- `requireFrontierExpansionOnRoot: true`
+
 The live scheduler now also supports interval workflows, which is how the shared `every 5 minutes` autoresearch tick runs without creating a little bureaucratic republic of separate scheduler jobs.
 
 ## Autotweet Framework

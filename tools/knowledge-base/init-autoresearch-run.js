@@ -6,9 +6,13 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 
 const DEFAULT_RESEARCH_ROOT = "/home/arya/memory/knowledge/research";
-const DEFAULT_MAX_DEPTH = 3;
-const DEFAULT_MAX_TOTAL_QUESTIONS = 7;
-const DEFAULT_MAX_FOLLOWUPS_PER_QUESTION = 2;
+const DEFAULT_RUN_MODE = "deep_audit";
+const DEFAULT_MAX_DEPTH = 5;
+const DEFAULT_MAX_TOTAL_QUESTIONS = 15;
+const DEFAULT_MAX_FOLLOWUPS_PER_QUESTION = 4;
+const DEFAULT_MIN_PROCESSED_QUESTIONS_BEFORE_COMPLETE = 4;
+const DEFAULT_MIN_TICKS_BEFORE_COMPLETE = 4;
+const DEFAULT_REQUIRE_FRONTIER_EXPANSION_ON_ROOT = true;
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -49,6 +53,21 @@ async function main() {
     DEFAULT_MAX_FOLLOWUPS_PER_QUESTION,
     "max followups per question"
   );
+  const minProcessedQuestionsBeforeComplete = parsePositiveInteger(
+    options.minProcessedQuestionsBeforeComplete,
+    DEFAULT_MIN_PROCESSED_QUESTIONS_BEFORE_COMPLETE,
+    "min processed questions before complete"
+  );
+  const minTicksBeforeComplete = parsePositiveInteger(
+    options.minTicksBeforeComplete,
+    DEFAULT_MIN_TICKS_BEFORE_COMPLETE,
+    "min ticks before complete"
+  );
+  const requireFrontierExpansionOnRoot = parseBoolean(
+    options.requireFrontierExpansionOnRoot,
+    DEFAULT_REQUIRE_FRONTIER_EXPANSION_ON_ROOT
+  );
+  const mode = normalizeMode(options.mode, DEFAULT_RUN_MODE);
 
   const runRoot = path.join(topicRoot, "autoresearch", "active", runSlug);
   if (fs.existsSync(runRoot)) {
@@ -60,9 +79,13 @@ async function main() {
     topicSlug,
     runSlug,
     rootQuestion,
+    mode,
     maxDepth,
     maxTotalQuestions,
     maxFollowupsPerQuestion,
+    minProcessedQuestionsBeforeComplete,
+    minTicksBeforeComplete,
+    requireFrontierExpansionOnRoot,
   });
 
   process.stdout.write(
@@ -80,9 +103,13 @@ async function createAutoresearchRun({
   topicSlug,
   runSlug,
   rootQuestion,
-  maxDepth,
-  maxTotalQuestions,
-  maxFollowupsPerQuestion,
+  mode = DEFAULT_RUN_MODE,
+  maxDepth = DEFAULT_MAX_DEPTH,
+  maxTotalQuestions = DEFAULT_MAX_TOTAL_QUESTIONS,
+  maxFollowupsPerQuestion = DEFAULT_MAX_FOLLOWUPS_PER_QUESTION,
+  minProcessedQuestionsBeforeComplete = DEFAULT_MIN_PROCESSED_QUESTIONS_BEFORE_COMPLETE,
+  minTicksBeforeComplete = DEFAULT_MIN_TICKS_BEFORE_COMPLETE,
+  requireFrontierExpansionOnRoot = DEFAULT_REQUIRE_FRONTIER_EXPANSION_ON_ROOT,
 }) {
   const autoresearchRoot = path.join(topicRoot, "autoresearch");
   const activeRoot = path.join(autoresearchRoot, "active");
@@ -99,10 +126,16 @@ async function createAutoresearchRun({
     maxTotalQuestions,
     maxFollowupsPerQuestion,
   };
+  const completionPolicy = {
+    mode,
+    minProcessedQuestionsBeforeComplete,
+    minTicksBeforeComplete,
+    requireFrontierExpansionOnRoot,
+  };
 
   await writeFile(
     path.join(runRoot, "RUN.md"),
-    buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets })
+    buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets, completionPolicy })
   );
   await writeFile(
     path.join(runRoot, "STATE.json"),
@@ -113,6 +146,7 @@ async function createAutoresearchRun({
         rootQuestion,
         createdAt,
         budgets,
+        completionPolicy,
       }),
       null,
       2
@@ -123,7 +157,10 @@ async function createAutoresearchRun({
     buildQuestionsLedger({ rootQuestion, createdAt })
   );
   await writeFile(path.join(runRoot, "SOURCES.md"), buildSourcesLedger({ createdAt }));
-  await writeFile(path.join(runRoot, "LOG.md"), buildRunLog({ createdAt, rootQuestion }));
+  await writeFile(
+    path.join(runRoot, "LOG.md"),
+    buildRunLog({ createdAt, rootQuestion, completionPolicy })
+  );
 }
 
 async function ensureAutoresearchReadme(autoresearchRoot, topicSlug) {
@@ -160,7 +197,7 @@ async function ensureAutoresearchReadme(autoresearchRoot, topicSlug) {
   );
 }
 
-function buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets }) {
+function buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets, completionPolicy }) {
   return [
     `# Autoresearch Run: ${runSlug}`,
     "",
@@ -175,21 +212,27 @@ function buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets })
     "",
     "## Operating Rules",
     "",
+    `- Run mode: \`${completionPolicy.mode}\``,
     "- Prefer primary sources: papers, specs, official docs, repos, code, and source materials from the system being studied.",
     "- Secondary sources are allowed only for orientation and should be labeled as such in `SOURCES.md`.",
     "- Each tick should execute one bounded step, persist state, and stop.",
     "- Promote durable findings into the topic `wiki/` as atomic, zettelkasten-like notes with semantic links.",
     "- Keep the original question intact while generating deeper follow-up questions; do not drift into adjacent fluff.",
+    "- Do not complete a deep-audit run after a single synthesis pass if concrete unresolved branches remain.",
     "",
     "## Budgets",
     "",
     `- Max depth: ${budgets.maxDepth}`,
     `- Max total questions: ${budgets.maxTotalQuestions}`,
     `- Max followups per question: ${budgets.maxFollowupsPerQuestion}`,
+    `- Min processed questions before complete: ${completionPolicy.minProcessedQuestionsBeforeComplete}`,
+    `- Min ticks before complete: ${completionPolicy.minTicksBeforeComplete}`,
+    `- Require frontier expansion on root: ${completionPolicy.requireFrontierExpansionOnRoot ? "true" : "false"}`,
     "",
     "## Stop Conditions",
     "",
-    "- The root question has been answered to the current evidence threshold.",
+    "- The root question has been answered and the frontier is actually exhausted.",
+    "- The run has met its minimum exploration floors for a deep-audit run.",
     "- The run has reached its configured depth budget.",
     "- The run has reached its configured total-question budget.",
     "- The loop is blocked on missing access, bad source quality, or contradictory evidence that needs human review.",
@@ -197,11 +240,12 @@ function buildRunBrief({ topicSlug, runSlug, rootQuestion, createdAt, budgets })
   ].join("\n");
 }
 
-function buildState({ topicSlug, runSlug, rootQuestion, createdAt, budgets }) {
+function buildState({ topicSlug, runSlug, rootQuestion, createdAt, budgets, completionPolicy }) {
   return {
     topicSlug,
     runSlug,
     status: "active",
+    mode: completionPolicy.mode,
     createdAt,
     updatedAt: createdAt,
     rootQuestion,
@@ -209,6 +253,9 @@ function buildState({ topicSlug, runSlug, rootQuestion, createdAt, budgets }) {
     maxDepth: budgets.maxDepth,
     maxTotalQuestions: budgets.maxTotalQuestions,
     maxFollowupsPerQuestion: budgets.maxFollowupsPerQuestion,
+    minProcessedQuestionsBeforeComplete: completionPolicy.minProcessedQuestionsBeforeComplete,
+    minTicksBeforeComplete: completionPolicy.minTicksBeforeComplete,
+    requireFrontierExpansionOnRoot: completionPolicy.requireFrontierExpansionOnRoot,
     pendingQuestions: [
       {
         id: `${runSlug}-q1`,
@@ -264,13 +311,15 @@ function buildSourcesLedger({ createdAt }) {
   ].join("\n");
 }
 
-function buildRunLog({ createdAt, rootQuestion }) {
+function buildRunLog({ createdAt, rootQuestion, completionPolicy }) {
   return [
     "# Run Log",
     "",
     `## ${createdAt}`,
     "",
     `- Initialized autoresearch run with root question: ${rootQuestion}`,
+    `- Run mode: ${completionPolicy.mode}`,
+    `- Minimum exploration floors: processed >= ${completionPolicy.minProcessedQuestionsBeforeComplete}, ticks >= ${completionPolicy.minTicksBeforeComplete}, frontier expansion required on root: ${completionPolicy.requireFrontierExpansionOnRoot ? "yes" : "no"}.`,
     "",
   ].join("\n");
 }
@@ -285,9 +334,13 @@ function parseArgs(argv) {
     question: "",
     slug: "",
     root: "",
+    mode: "",
     maxDepth: "",
     maxTotalQuestions: "",
     maxFollowupsPerQuestion: "",
+    minProcessedQuestionsBeforeComplete: "",
+    minTicksBeforeComplete: "",
+    requireFrontierExpansionOnRoot: "",
     help: false,
   };
 
@@ -317,6 +370,11 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === "--mode") {
+      parsed.mode = normalizeWhitespace(argv[index + 1] || "");
+      index += 1;
+      continue;
+    }
     if (token === "--max-depth") {
       parsed.maxDepth = argv[index + 1] || "";
       index += 1;
@@ -332,6 +390,21 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === "--min-processed-questions-before-complete") {
+      parsed.minProcessedQuestionsBeforeComplete = argv[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    if (token === "--min-ticks-before-complete") {
+      parsed.minTicksBeforeComplete = argv[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    if (token === "--require-frontier-expansion-on-root") {
+      parsed.requireFrontierExpansionOnRoot = argv[index + 1] || "";
+      index += 1;
+      continue;
+    }
   }
 
   return parsed;
@@ -340,7 +413,7 @@ function parseArgs(argv) {
 function printUsage(exitCode) {
   const output = [
     "Usage:",
-    "  node tools/knowledge-base/init-autoresearch-run.js --topic darkbloom --question \"What is the core technical architecture of Darkbloom?\" [--slug run-slug] [--max-depth 5] [--max-total-questions 15] [--max-followups-per-question 2] [--root /path/to/research]",
+    "  node tools/knowledge-base/init-autoresearch-run.js --topic darkbloom --question \"What is the core technical architecture of Darkbloom?\" [--slug run-slug] [--mode deep_audit] [--max-depth 5] [--max-total-questions 15] [--max-followups-per-question 4] [--min-processed-questions-before-complete 4] [--min-ticks-before-complete 4] [--require-frontier-expansion-on-root true] [--root /path/to/research]",
   ].join("\n");
   const stream = exitCode === 0 ? process.stdout : process.stderr;
   stream.write(`${output}\n`);
@@ -356,6 +429,31 @@ function parsePositiveInteger(value, fallback, label) {
     throw new Error(`Invalid ${label}: ${value}`);
   }
   return parsed;
+}
+
+function parseBoolean(value, fallback) {
+  const normalized = normalizeWhitespace(value).toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`Invalid boolean value: ${value}`);
+}
+
+function normalizeMode(value, fallback) {
+  const normalized = normalizeWhitespace(value).toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["deep_audit", "survey", "cleanup", "source_ingest"].includes(normalized)) {
+    return normalized;
+  }
+  throw new Error(`Invalid mode: ${value}`);
 }
 
 function slugify(value) {
