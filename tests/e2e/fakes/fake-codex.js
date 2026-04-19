@@ -18,6 +18,39 @@ function writeJson(message) {
   fs.writeSync(1, `${JSON.stringify(message)}\n`);
 }
 
+function emitScenarioNotifications(notifications, turnId) {
+  if (!Array.isArray(notifications)) {
+    return;
+  }
+
+  notifications.forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+
+    const delayMs = Number.isFinite(entry.delayMs) ? entry.delayMs : 0;
+    const message = entry.message && typeof entry.message === "object" ? entry.message : null;
+    if (!message) {
+      return;
+    }
+
+    setTimeout(() => {
+      const payload = JSON.parse(JSON.stringify(message));
+      if (
+        payload.method === "turn/started" ||
+        payload.method === "turn/completed"
+      ) {
+        payload.params = payload.params || {};
+        payload.params.turn = payload.params.turn || {};
+        if (!payload.params.turn.id) {
+          payload.params.turn.id = turnId;
+        }
+      }
+      writeJson(payload);
+    }, delayMs);
+  });
+}
+
 function takeTurnConfig() {
   let index = 0;
 
@@ -53,6 +86,7 @@ function scheduleTurnLifecycle(turnConfig) {
   );
   const finalMessage =
     typeof turnConfig.message === "string" ? turnConfig.message : `fake reply ${turnId}`;
+  const hasCustomNotifications = Array.isArray(turnConfig.notifications);
 
   setTimeout(() => {
     writeJson({
@@ -81,6 +115,11 @@ function scheduleTurnLifecycle(turnConfig) {
       },
     });
   }, turnResponseDelayMs);
+
+  if (hasCustomNotifications) {
+    emitScenarioNotifications(turnConfig.notifications, turnId);
+    return;
+  }
 
   setTimeout(() => {
     writeJson({

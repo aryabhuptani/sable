@@ -1951,6 +1951,7 @@ function runCodexViaAppServer(
     let parsedSessionId = sessionId || null;
     let pendingAgentMessage = null;
     let finalMessage = "";
+    const subagentState = createSubagentProgressState();
     let turnId = null;
     let toolSuggestion = null;
     let didFinish = false;
@@ -2050,10 +2051,12 @@ function runCodexViaAppServer(
       }
 
       if (message.method === "item/started" || message.method === "item/completed") {
+        handleSubagentToolCallNotification(message, subagentState, liveUpdates);
         const parsed = handleCodexAppServerItem(message.params?.item, {
           pendingAgentMessage,
           finalMessage,
           liveUpdates,
+          subagentState,
         });
         pendingAgentMessage = parsed.pendingAgentMessage;
         finalMessage = parsed.finalMessage;
@@ -2062,7 +2065,7 @@ function runCodexViaAppServer(
 
       if (message.method === "item/mcpToolCall/progress") {
         const progress = normalizeText(message.params?.message);
-        if (progress) {
+        if (progress && !subagentState.activeCount) {
           liveUpdates.queue(formatProgressMessage(progress));
         }
         return;
@@ -2249,13 +2252,18 @@ function captureToolSuggestionFromNotification(message, callsById) {
 }
 
 function handleCodexAppServerItem(item, stateSnapshot) {
-  let { pendingAgentMessage, finalMessage, liveUpdates } = stateSnapshot;
+  let { pendingAgentMessage, finalMessage, liveUpdates, subagentState } = stateSnapshot;
 
   if (!item || typeof item !== "object") {
     return { pendingAgentMessage, finalMessage };
   }
 
   if (item.type === "agentMessage") {
+    if (subagentState?.activeCount) {
+      pendingAgentMessage = null;
+      return { pendingAgentMessage, finalMessage };
+    }
+
     const text = normalizeText(item.text);
     if (text) {
       if (pendingAgentMessage) {
@@ -2268,8 +2276,10 @@ function handleCodexAppServerItem(item, stateSnapshot) {
   }
 
   if (item.type === "commandExecution") {
-    if (pendingAgentMessage) {
+    if (pendingAgentMessage && !subagentState?.activeCount) {
       liveUpdates.queue(formatProgressMessage(pendingAgentMessage));
+      pendingAgentMessage = null;
+    } else if (subagentState?.activeCount) {
       pendingAgentMessage = null;
     }
 
@@ -2294,6 +2304,87 @@ function handleCodexAppServerItem(item, stateSnapshot) {
   }
 
   return { pendingAgentMessage, finalMessage };
+}
+
+function createSubagentProgressState() {
+  return {
+    activeToolCalls: new Set(),
+    activeCount: 0,
+    announcedInTurn: false,
+  };
+}
+
+function handleSubagentToolCallNotification(message, subagentState, liveUpdates) {
+  if (!subagentState || !liveUpdates) {
+    return;
+  }
+
+  const item = message?.params?.item;
+  if (!item || item.type !== "mcpToolCall") {
+    return;
+  }
+
+  const toolName = extractMcpToolCallName(item);
+  if (!isSubagentToolName(toolName)) {
+    return;
+  }
+
+  const toolCallKey = extractMcpToolCallKey(item, toolName);
+  if (!toolCallKey) {
+    return;
+  }
+
+  if (message.method === "item/started") {
+    const wasIdle = subagentState.activeCount === 0;
+    if (!subagentState.activeToolCalls.has(toolCallKey)) {
+      subagentState.activeToolCalls.add(toolCallKey);
+      subagentState.activeCount = subagentState.activeToolCalls.size;
+    }
+
+    if (wasIdle && !subagentState.announcedInTurn) {
+      liveUpdates.queue("• Kicking off a subagent for a bounded task...");
+      subagentState.announcedInTurn = true;
+    }
+    return;
+  }
+
+  if (message.method === "item/completed") {
+    subagentState.activeToolCalls.delete(toolCallKey);
+    subagentState.activeCount = subagentState.activeToolCalls.size;
+  }
+}
+
+function extractMcpToolCallName(item) {
+  return normalizeText(
+    item.toolName ||
+      item.name ||
+      item.tool?.name ||
+      item.call?.toolName ||
+      item.call?.name ||
+      item.metadata?.toolName
+  ).toLowerCase();
+}
+
+function extractMcpToolCallKey(item, toolName) {
+  return normalizeText(
+    item.id ||
+      item.callId ||
+      item.toolCallId ||
+      item.invocationId ||
+      item.call?.id ||
+      item.call?.callId ||
+      toolName
+  );
+}
+
+function isSubagentToolName(toolName) {
+  return (
+    toolName === "spawn_agent" ||
+    toolName === "wait_agent" ||
+    toolName === "send_input" ||
+    toolName === "resume_agent" ||
+    toolName === "close_agent"
+  );
 }
 
 function buildAppServerThreadParams(threadId = null) {
