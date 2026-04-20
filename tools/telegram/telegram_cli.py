@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 
 DEFAULT_SESSION_PATH = "/home/arya/.local/state/sable-telegram/telethon.session"
+DEFAULT_ENV_PATH = pathlib.Path(__file__).with_name(".env")
 DEFAULT_DIRECT_REPLY_WINDOW_HOURS = 72
 DEFAULT_ACTIVE_REPLY_WINDOW_HOURS = 24
 SPAM_KEYWORDS = (
@@ -70,6 +71,7 @@ class DialogSnapshot:
 
 
 def load_config() -> TelegramConfig:
+    load_local_env(DEFAULT_ENV_PATH)
     session_path = pathlib.Path(
         os.environ.get("SABLE_TELEGRAM_SESSION_PATH", DEFAULT_SESSION_PATH)
     ).expanduser()
@@ -86,6 +88,20 @@ def normalize_text(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def load_local_env(env_path: pathlib.Path) -> None:
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = value.strip().strip("'").strip('"')
 
 
 def has_required_config(config: TelegramConfig) -> bool:

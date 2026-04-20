@@ -15,6 +15,7 @@ Current scope:
    - `SABLE_TELEGRAM_API_ID`
    - `SABLE_TELEGRAM_API_HASH`
    - `SABLE_TELEGRAM_PHONE`
+   Or place them in `tools/telegram/.env`, which is ignored by git.
 3. Install Telethon:
 
 ```bash

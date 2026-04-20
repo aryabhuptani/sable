@@ -14,3 +14,4 @@ apps/signal-bridge/.env
 apps/signal-bridge/bridge.log
 apps/signal-bridge/.bridge-state.json
 apps/signal-bridge/.restart-requested
+tools/telegram/.env
