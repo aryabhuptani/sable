@@ -50,7 +50,15 @@ class TelegramCliTests(unittest.TestCase):
             unread_count=4,
             snippet="Huge investment bonus signal for your launchpool profit",
         )
-        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "spam")
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
+    def test_classify_muted_chat_as_ignored(self):
+        dialog = self.build_dialog(is_muted=True, unread_count=10)
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
+    def test_classify_old_chat_as_ignored(self):
+        dialog = self.build_dialog(last_message_at=self.now - timedelta(days=9), unread_count=1)
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
     def test_format_triage_report_groups_dialogs(self):
         dialogs = [

@@ -25,12 +25,15 @@ import pathlib
 import shutil
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 
 DEFAULT_SESSION_PATH = "/home/arya/.local/state/sable-telegram/telethon.session"
 DEFAULT_ENV_PATH = pathlib.Path(__file__).with_name(".env")
 DEFAULT_DIRECT_REPLY_WINDOW_HOURS = 72
 DEFAULT_ACTIVE_REPLY_WINDOW_HOURS = 24
+DEFAULT_STALE_DAYS = 7
+DEFAULT_GROUP_URGENT_UNREAD_LIMIT = 12
 SPAM_KEYWORDS = (
     "airdrop",
     "bonus",
@@ -118,16 +121,24 @@ def classify_dialog(
     now: datetime | None = None,
     direct_reply_window_hours: int = DEFAULT_DIRECT_REPLY_WINDOW_HOURS,
     active_reply_window_hours: int = DEFAULT_ACTIVE_REPLY_WINDOW_HOURS,
+    stale_days: int = DEFAULT_STALE_DAYS,
 ) -> str:
-    """Return one of: now, today, low, spam."""
+    """Return one of: now, today, low, ignored."""
     now = now or utc_now()
 
-    if looks_like_spam(dialog):
-        return "spam"
-
     age = age_timedelta(dialog.last_message_at, now)
+    stale_cutoff = timedelta(days=stale_days)
     within_direct_window = age is not None and age <= timedelta(hours=direct_reply_window_hours)
     within_active_window = age is not None and age <= timedelta(hours=active_reply_window_hours)
+
+    if dialog.is_muted:
+        return "ignored"
+
+    if looks_like_spam(dialog):
+        return "ignored"
+
+    if age is not None and age > stale_cutoff:
+        return "ignored"
 
     if dialog.unread_mentions_count > 0:
         return "now"
@@ -135,8 +146,17 @@ def classify_dialog(
     if dialog.unread_count > 0 and dialog.is_user and within_direct_window:
         return "now"
 
-    if dialog.unread_count >= 3 and within_active_window:
+    if dialog.unread_count >= DEFAULT_GROUP_URGENT_UNREAD_LIMIT and dialog.is_group and within_active_window:
+        return "today"
+
+    if dialog.unread_count >= 3 and dialog.is_group and within_active_window:
+        return "today"
+
+    if dialog.unread_count >= 3 and dialog.is_user and within_active_window:
         return "now"
+
+    if dialog.is_channel:
+        return "low"
 
     if dialog.unread_count > 0:
         return "today"
@@ -216,17 +236,22 @@ def summarize_dialog(dialog: DialogSnapshot, now: datetime | None = None) -> str
     )
 
 
-def format_triage_report(dialogs: list[DialogSnapshot], now: datetime | None = None) -> str:
+def format_triage_report(
+    dialogs: list[DialogSnapshot],
+    now: datetime | None = None,
+    *,
+    stale_days: int = DEFAULT_STALE_DAYS,
+) -> str:
     now = now or utc_now()
     buckets: dict[str, list[DialogSnapshot]] = defaultdict(list)
     for dialog in dialogs:
-        buckets[classify_dialog(dialog, now=now)].append(dialog)
+        buckets[classify_dialog(dialog, now=now, stale_days=stale_days)].append(dialog)
 
     ordered_sections = [
         ("now", "Needs reply now"),
         ("today", "Should reply today"),
         ("low", "Low-priority / can wait"),
-        ("spam", "Spam / likely noise"),
+        ("ignored", "Ignored by default"),
     ]
     lines = []
     total = len(dialogs)
@@ -253,6 +278,16 @@ def format_triage_report(dialogs: list[DialogSnapshot], now: datetime | None = N
 
 def ensure_session_parent(session_path: pathlib.Path) -> None:
     session_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def detect_muted(dialog: Any) -> bool:
+    notify_settings = getattr(getattr(dialog, "dialog", None), "notify_settings", None)
+    if notify_settings is None:
+        return False
+    mute_until = getattr(notify_settings, "mute_until", None)
+    if isinstance(mute_until, datetime):
+        return mute_until.astimezone(timezone.utc) > utc_now()
+    return bool(getattr(notify_settings, "silent", False))
 
 
 def import_telethon():
@@ -373,9 +408,7 @@ async def fetch_dialogs(config: TelegramConfig, limit: int) -> list[DialogSnapsh
                     is_group=bool(dialog.is_group),
                     is_channel=bool(dialog.is_channel),
                     is_bot=bool(getattr(entity, "bot", False)),
-                    is_muted=bool(
-                        getattr(getattr(dialog, "dialog", None), "notify_settings", None)
-                    ),
+                    is_muted=detect_muted(dialog),
                     archived=bool(getattr(dialog, "folder_id", None) == 1),
                 )
             )
@@ -394,7 +427,7 @@ async def command_list_dialogs(args: argparse.Namespace) -> int:
 
 async def command_triage(args: argparse.Namespace) -> int:
     dialogs = await fetch_dialogs(load_config(), args.limit)
-    print(format_triage_report(dialogs))
+    print(format_triage_report(dialogs, stale_days=args.stale_days))
     return 0
 
 
@@ -417,6 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
         "triage", help="Bucket recent dialogs into reply/ignore queues."
     )
     triage_parser.add_argument("--limit", type=int, default=25)
+    triage_parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS)
 
     return parser
 
