@@ -24,6 +24,7 @@ class TelegramCliTests(unittest.TestCase):
             unread_mentions_count=0,
             last_message_at=self.now - timedelta(hours=1),
             snippet="normal message",
+            last_message_outgoing=False,
             is_user=False,
             is_group=True,
             is_channel=False,
@@ -58,6 +59,14 @@ class TelegramCliTests(unittest.TestCase):
 
     def test_classify_old_chat_as_ignored(self):
         dialog = self.build_dialog(last_message_at=self.now - timedelta(days=9), unread_count=1)
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now, stale_days=7), "ignored")
+
+    def test_classify_latest_outgoing_as_ignored(self):
+        dialog = self.build_dialog(last_message_outgoing=True, is_user=True, is_group=False)
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
+    def test_classify_telegram_system_chat_as_ignored(self):
+        dialog = self.build_dialog(title="Telegram", is_user=True, is_group=False)
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
     def test_format_triage_report_groups_dialogs(self):

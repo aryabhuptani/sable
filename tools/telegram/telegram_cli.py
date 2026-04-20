@@ -32,8 +32,9 @@ DEFAULT_SESSION_PATH = "/home/arya/.local/state/sable-telegram/telethon.session"
 DEFAULT_ENV_PATH = pathlib.Path(__file__).with_name(".env")
 DEFAULT_DIRECT_REPLY_WINDOW_HOURS = 72
 DEFAULT_ACTIVE_REPLY_WINDOW_HOURS = 24
-DEFAULT_STALE_DAYS = 7
+DEFAULT_STALE_DAYS = 21
 DEFAULT_GROUP_URGENT_UNREAD_LIMIT = 12
+DEFAULT_TRIAGE_LIMIT = 25
 SPAM_KEYWORDS = (
     "airdrop",
     "bonus",
@@ -47,6 +48,14 @@ SPAM_KEYWORDS = (
     "signal",
     "token sale",
     "whitelist",
+)
+CLOSURE_PREFIXES = (
+    "great to be at the finish line",
+    "hope this is useful",
+    "likewise",
+    "sounds good",
+    "thanks everyone",
+    "thank you",
 )
 
 
@@ -65,6 +74,7 @@ class DialogSnapshot:
     unread_mentions_count: int
     last_message_at: datetime | None
     snippet: str
+    last_message_outgoing: bool
     is_user: bool
     is_group: bool
     is_channel: bool
@@ -134,10 +144,19 @@ def classify_dialog(
     if dialog.is_muted:
         return "ignored"
 
+    if is_telegram_system_chat(dialog):
+        return "ignored"
+
+    if dialog.last_message_outgoing:
+        return "ignored"
+
     if looks_like_spam(dialog):
         return "ignored"
 
     if age is not None and age > stale_cutoff:
+        return "ignored"
+
+    if looks_like_closure(dialog):
         return "ignored"
 
     if dialog.unread_mentions_count > 0:
@@ -180,6 +199,17 @@ def looks_like_spam(dialog: DialogSnapshot) -> bool:
     if dialog.is_channel and dialog.unread_count >= 10 and keyword_hits >= 1:
         return True
     return False
+
+
+def is_telegram_system_chat(dialog: DialogSnapshot) -> bool:
+    return dialog.title.strip().lower() == "telegram"
+
+
+def looks_like_closure(dialog: DialogSnapshot) -> bool:
+    if dialog.unread_count > 0 or dialog.unread_mentions_count > 0:
+        return False
+    snippet = dialog.snippet.strip().lower()
+    return any(snippet.startswith(prefix) for prefix in CLOSURE_PREFIXES)
 
 
 def age_timedelta(then: datetime | None, now: datetime) -> timedelta | None:
@@ -404,6 +434,7 @@ async def fetch_dialogs(config: TelegramConfig, limit: int) -> list[DialogSnapsh
                     unread_mentions_count=int(dialog.unread_mentions_count or 0),
                     last_message_at=getattr(dialog.message, "date", None),
                     snippet=snippet or "",
+                    last_message_outgoing=bool(getattr(dialog.message, "out", False)),
                     is_user=bool(getattr(entity, "bot", False) is False and dialog.is_user),
                     is_group=bool(dialog.is_group),
                     is_channel=bool(dialog.is_channel),
@@ -444,12 +475,12 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser = subparsers.add_parser(
         "list-dialogs", help="Print recent dialogs with unread counts and snippets."
     )
-    list_parser.add_argument("--limit", type=int, default=25)
+    list_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
 
     triage_parser = subparsers.add_parser(
         "triage", help="Bucket recent dialogs into reply/ignore queues."
     )
-    triage_parser.add_argument("--limit", type=int, default=25)
+    triage_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
     triage_parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS)
 
     return parser

@@ -96,10 +96,10 @@ const TRANSCRIBE_PYTHON_BIN = selectTranscribePythonBin();
 const PDF_EXTRACT_PYTHON_BIN = selectPdfExtractPythonBin();
 const TELEGRAM_CLI_PATH = path.join("/home/arya/projects/sable", "tools", "telegram", "telegram_cli.py");
 const TELEGRAM_PYTHON_BIN = normalizeText(process.env.SABLE_TELEGRAM_PYTHON_BIN) || "python3";
-const TELEGRAM_TRIAGE_LIMIT = normalizeIntegerEnv(process.env.SABLE_TELEGRAM_TRIAGE_LIMIT, 12);
+const TELEGRAM_TRIAGE_LIMIT = normalizeIntegerEnv(process.env.SABLE_TELEGRAM_TRIAGE_LIMIT, 25);
 const TELEGRAM_TRIAGE_STALE_DAYS = normalizeIntegerEnv(
   process.env.SABLE_TELEGRAM_TRIAGE_STALE_DAYS,
-  7
+  21
 );
 const TEST_RECEIVE_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_RECEIVE_SCENARIO_PATH);
 const TEST_APP_SERVER_LOG_PATH = normalizeText(process.env.SABLE_E2E_APP_SERVER_LOG_PATH);
