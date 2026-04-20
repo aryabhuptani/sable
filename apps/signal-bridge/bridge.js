@@ -94,11 +94,19 @@ const VENV_PYTHON_PATH = path.join(PROJECT_DIR, ".venv", "bin", "python");
 const VENV_PDF_PYTHON_PATH = path.join(PROJECT_DIR, ".venv-pdf", "bin", "python");
 const TRANSCRIBE_PYTHON_BIN = selectTranscribePythonBin();
 const PDF_EXTRACT_PYTHON_BIN = selectPdfExtractPythonBin();
+const TELEGRAM_CLI_PATH = path.join("/home/arya/projects/sable", "tools", "telegram", "telegram_cli.py");
+const TELEGRAM_PYTHON_BIN = normalizeText(process.env.SABLE_TELEGRAM_PYTHON_BIN) || "python3";
+const TELEGRAM_TRIAGE_LIMIT = normalizeIntegerEnv(process.env.SABLE_TELEGRAM_TRIAGE_LIMIT, 12);
+const TELEGRAM_TRIAGE_STALE_DAYS = normalizeIntegerEnv(
+  process.env.SABLE_TELEGRAM_TRIAGE_STALE_DAYS,
+  7
+);
 const TEST_RECEIVE_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_RECEIVE_SCENARIO_PATH);
 const TEST_APP_SERVER_LOG_PATH = normalizeText(process.env.SABLE_E2E_APP_SERVER_LOG_PATH);
 const TEST_TURN_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_TURN_SCENARIO_PATH);
 const TEST_TURN_CURSOR_PATH = normalizeText(process.env.SABLE_E2E_TURN_CURSOR_PATH);
 const TEST_SIGNAL_LOG_PATH = normalizeText(process.env.SABLE_E2E_SIGNAL_LOG_PATH);
+const TEST_TELEGRAM_TRIAGE_OUTPUT = normalizeText(process.env.SABLE_E2E_TELEGRAM_TRIAGE_OUTPUT);
 const OBSIDIAN_VAULT_ROOT = path.resolve(
   normalizeText(process.env.SABLE_OBSIDIAN_VAULT_ROOT) || "/home/arya/memory"
 );
@@ -1163,6 +1171,19 @@ function parseCommand(text, hasImages = false, hasAudio = false, hasFiles = fals
     return { type: "auth-resume" };
   }
 
+  if (trimmed === "/telegram") {
+    return { type: "telegram-triage", limit: TELEGRAM_TRIAGE_LIMIT };
+  }
+
+  if (trimmed.startsWith("/telegram ")) {
+    const rawLimit = trimmed.slice("/telegram ".length).trim();
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    return {
+      type: "telegram-triage",
+      limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : TELEGRAM_TRIAGE_LIMIT,
+    };
+  }
+
   if (trimmed !== "/new" && !trimmed.startsWith("/new ")) {
     return { type: "prompt", prompt: trimmed };
   }
@@ -1449,6 +1470,51 @@ function collectCompletedAutoresearchRuns(beforeRuns, afterRuns) {
   return completed;
 }
 
+function countRunnableAutoresearchRuns(runs) {
+  let count = 0;
+
+  for (const run of runs.values()) {
+    if (run.status === "active" && run.pendingCount > 0) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function didAutoresearchFrontierDrain(beforeRuns, afterRuns) {
+  return (
+    countRunnableAutoresearchRuns(beforeRuns) > 0 &&
+    countRunnableAutoresearchRuns(afterRuns) === 0
+  );
+}
+
+function formatAutoresearchAllCompleteNotice(beforeRuns, afterRuns) {
+  const completedNow = collectCompletedAutoresearchRuns(beforeRuns, afterRuns);
+  const topics = dedupeStrings(
+    [...afterRuns.values()].map((run) => formatSlugForDisplay(run.topicSlug))
+  );
+  const runLabels = completedNow.map((run) => formatSlugForDisplay(run.runSlug));
+  const wikiIndexes = dedupeStrings(
+    [...afterRuns.values()].map((run) => normalizeText(run.wikiIndexPath)).filter(Boolean)
+  );
+  const lines = [
+    `All active autoresearch work is complete${topics.length > 0 ? ` for ${topics.join(", ")}` : ""}.`,
+  ];
+
+  if (runLabels.length > 0) {
+    lines.push(`Final completed run${runLabels.length === 1 ? "" : "s"}: ${runLabels.join(", ")}.`);
+  }
+
+  lines.push("The active autoresearch frontier is now empty, so this is the handoff point to review findings and choose the next phase.");
+
+  if (wikiIndexes.length > 0) {
+    lines.push(`Review starting point: ${wikiIndexes[0]}`);
+  }
+
+  return lines.join("\n");
+}
+
 function loadAutoresearchRunState(statePath) {
   if (!statePath || !fs.existsSync(statePath)) {
     return null;
@@ -1635,6 +1701,11 @@ async function processJob(job) {
     job.command = { type: "prompt", prompt: resumePrompt };
   }
 
+  if (job.command.type === "telegram-triage") {
+    await sendJobReply(job, await getTelegramTriageReport(job.command.limit));
+    return;
+  }
+
   if (job.command.type === "new" && !job.command.prompt) {
     clearSessionState("interactive");
     await sendJobReply(job, "Started a new Sable session. Your next message will use fresh context.");
@@ -1775,12 +1846,19 @@ async function processJob(job) {
       normalizeText(result.message) === SCHEDULED_NO_REPLY_MARKER
     ) {
       if (autoresearchBefore) {
+        const autoresearchAfter = snapshotAutoresearchRuns();
         const completedRuns = collectCompletedAutoresearchRuns(
           autoresearchBefore,
-          snapshotAutoresearchRuns()
+          autoresearchAfter
         );
         for (const completedRun of completedRuns) {
           await sendReply(job.sender, formatAutoresearchCompletionNotice(completedRun));
+        }
+        if (didAutoresearchFrontierDrain(autoresearchBefore, autoresearchAfter)) {
+          await sendReply(
+            job.sender,
+            formatAutoresearchAllCompleteNotice(autoresearchBefore, autoresearchAfter)
+          );
         }
       }
       return;
@@ -1793,12 +1871,19 @@ async function processJob(job) {
     }
 
     if (autoresearchBefore) {
+      const autoresearchAfter = snapshotAutoresearchRuns();
       const completedRuns = collectCompletedAutoresearchRuns(
         autoresearchBefore,
-        snapshotAutoresearchRuns()
+        autoresearchAfter
       );
       for (const completedRun of completedRuns) {
         await sendReply(job.sender, formatAutoresearchCompletionNotice(completedRun));
+      }
+      if (didAutoresearchFrontierDrain(autoresearchBefore, autoresearchAfter)) {
+        await sendReply(
+          job.sender,
+          formatAutoresearchAllCompleteNotice(autoresearchBefore, autoresearchAfter)
+        );
       }
     }
   } finally {
@@ -4484,6 +4569,46 @@ function getSystemdUnitSummary(unitName) {
         }
 
         resolve(parseSystemdShowOutput(stdout));
+      }
+    );
+  });
+}
+
+function getTelegramTriageReport(limit = TELEGRAM_TRIAGE_LIMIT) {
+  if (TEST_TELEGRAM_TRIAGE_OUTPUT) {
+    return Promise.resolve(TEST_TELEGRAM_TRIAGE_OUTPUT);
+  }
+
+  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.trunc(limit) : TELEGRAM_TRIAGE_LIMIT;
+  return new Promise((resolve) => {
+    execFile(
+      TELEGRAM_PYTHON_BIN,
+      [
+        TELEGRAM_CLI_PATH,
+        "triage",
+        "--limit",
+        String(normalizedLimit),
+        "--stale-days",
+        String(TELEGRAM_TRIAGE_STALE_DAYS),
+      ],
+      {
+        cwd: "/home/arya/projects/sable",
+        encoding: "utf8",
+        env: process.env,
+        timeout: 30_000,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = truncateText(
+            normalizeText(stderr) || normalizeText(stdout) || error.message || "unknown failure",
+            400
+          );
+          resolve(`Telegram triage failed: ${detail}`);
+          return;
+        }
+
+        const report = normalizeText(stdout);
+        resolve(report || "Telegram triage returned no output.");
       }
     );
   });

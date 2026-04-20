@@ -1,3 +1,4 @@
+const fs = require("node:fs");
 const test = require("node:test");
 
 const {
@@ -8,6 +9,11 @@ const {
   startBridgeScenario,
   waitFor,
 } = require("./helpers/bridge-harness");
+
+const EMPTY_TURN_SCENARIO_ENV = {
+  SABLE_E2E_TURN_SCENARIO_PATH: "",
+  SABLE_E2E_TURN_CURSOR_PATH: "",
+};
 
 test("text message round-trip sends the final reply", async () => {
   const harness = await startBridgeScenario({
@@ -28,6 +34,7 @@ test("text message round-trip sends the final reply", async () => {
         },
       ],
     },
+    extraEnv: EMPTY_TURN_SCENARIO_ENV,
   });
 
   try {
@@ -114,6 +121,46 @@ test("/bridgestatus reports Obsidian link server configuration", async () => {
     );
 
     assert.match(statusReply.params.message, /obsidian links: /);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("/telegram returns the local Telegram triage summary", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/telegram",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+    extraEnv: {
+      SABLE_E2E_TELEGRAM_TRIAGE_OUTPUT: [
+        "Telegram queue review: 3 dialogs",
+        "",
+        "Needs reply now: 1",
+        "- Important DM [direct; 1 unread; 2m ago] — can you send the doc?",
+      ].join("\n"),
+    },
+  });
+
+  try {
+    const reply = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send"
+        && typeof request.params?.message === "string"
+        && request.params.message.includes("Telegram queue review: 3 dialogs"),
+      "telegram triage reply"
+    );
+
+    assert.match(reply.params.message, /Needs reply now: 1/);
+
+    const codexRequests = await harness.getCodexRequests();
+    assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
   } finally {
     await harness.shutdown();
   }
@@ -251,6 +298,7 @@ test("scheduler picks up jobs added on disk after the bridge has already started
         },
       ],
     },
+    extraEnv: EMPTY_TURN_SCENARIO_ENV,
   });
 
   try {
@@ -340,7 +388,7 @@ test("scheduled workflows in silent mode suppress bridge replies", async () => {
   }
 });
 
-test("completed autoresearch runs send a single completion notice even from silent background mode", async () => {
+test("completed autoresearch runs send per-run and final aggregate notices even from silent background mode", async () => {
   const pastDue = new Date(Date.now() - 60_000).toISOString();
   const harness = await startBridgeScenario({
     signalScenario: { receive: [] },
@@ -471,8 +519,31 @@ test("completed autoresearch runs send a single completion notice even from sile
     );
     assert.match(completionNotice.params.message, /Wiki index:/);
     assert.match(completionNotice.params.message, /Run log:/);
+
+    const finalNotice = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("All active autoresearch work is complete for Darkbloom."),
+      "autoresearch all-complete notice"
+    );
+
+    assert.match(
+      finalNotice.params.message,
+      /Final completed run: Privacy Audit\./
+    );
+    assert.match(
+      finalNotice.params.message,
+      /The active autoresearch frontier is now empty, so this is the handoff point to review findings and choose the next phase\./
+    );
+    assert.match(finalNotice.params.message, /Review starting point:/);
+
     const sentMessages = extractSentMessages(await harness.getSignalRequests());
     assert.equal(sentMessages.includes("__SABLE_NO_REPLY__"), false);
+    assert.deepEqual(sentMessages.slice(-2), [
+      completionNotice.params.message,
+      finalNotice.params.message,
+    ]);
   } finally {
     await harness.shutdown();
   }
@@ -1096,6 +1167,87 @@ test("unsupported binary file attachments warn but still expose the local path t
       (request) =>
         request.method === "send" && request.params?.message === "blob analyzed via path",
       "final text reply"
+    );
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("voice note attachments are transcribed, echoed, and sent to codex as the prompt", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      attachments: {
+        voice1: {
+          dataBase64: Buffer.from("fake audio bytes").toString("base64"),
+        },
+      },
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "",
+          attachments: [
+            {
+              id: "voice1",
+              contentType: "audio/ogg",
+              filename: "note.ogg",
+            },
+          ],
+        },
+      ],
+    },
+    codexScenario: {
+      turns: [
+        {
+          message: "voice note handled",
+          messageDelayMs: 40,
+        },
+      ],
+    },
+    extraEnv: ({ binDir }) => {
+      const pythonShimPath = path.join(binDir, "python3");
+      fs.writeFileSync(
+        pythonShimPath,
+        `#!/bin/bash
+if [ "$1" = "-c" ]; then
+  exit 0
+fi
+echo '{"ok":true,"transcript":"hello from the voice note"}'
+`,
+        "utf8"
+      );
+      fs.chmodSync(pythonShimPath, 0o755);
+      return {
+        ...EMPTY_TURN_SCENARIO_ENV,
+      };
+    },
+  });
+
+  try {
+    const turnStart = await harness.waitForCodexRequest(
+      (request) => request.method === "turn/start",
+      "voice note turn start"
+    );
+    const promptText = turnStart.params?.input?.[0]?.text || "";
+    assert.match(promptText, /hello from the voice note/);
+
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        request.params?.message === "Transcribing voice note...",
+      "voice note transcription progress"
+    );
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        request.params?.message === "hello from the voice note",
+      "voice note transcript echo"
+    );
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        request.params?.message === "voice note handled",
+      "voice note final reply"
     );
   } finally {
     await harness.shutdown();
