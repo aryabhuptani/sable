@@ -49,6 +49,16 @@ SPAM_KEYWORDS = (
     "token sale",
     "whitelist",
 )
+PROMO_DIRECT_KEYWORDS = (
+    "campaign service",
+    "caught our attention",
+    "exchange listing",
+    "kol",
+    "open to chatting",
+    "open to chat",
+    "partnership opportunity",
+    "promo",
+)
 CLOSURE_PREFIXES = (
     "great to be at the finish line",
     "hope this is useful",
@@ -56,6 +66,14 @@ CLOSURE_PREFIXES = (
     "sounds good",
     "thanks everyone",
     "thank you",
+)
+COMPLIMENT_ONLY_PREFIXES = (
+    "that's such a good tweet",
+    "thats such a good tweet",
+    "great tweet",
+    "love this",
+    "nice post",
+    "nice tweet",
 )
 
 
@@ -159,6 +177,9 @@ def classify_dialog(
     if looks_like_closure(dialog):
         return "ignored"
 
+    if looks_like_compliment_only(dialog):
+        return "ignored"
+
     if dialog.unread_mentions_count > 0:
         return "now"
 
@@ -192,6 +213,9 @@ def classify_dialog(
 def looks_like_spam(dialog: DialogSnapshot) -> bool:
     text = " ".join([dialog.title, dialog.snippet]).lower()
     keyword_hits = sum(1 for keyword in SPAM_KEYWORDS if keyword in text)
+    promo_hits = sum(1 for keyword in PROMO_DIRECT_KEYWORDS if keyword in text)
+    if dialog.is_user and promo_hits >= 1:
+        return True
     if keyword_hits >= 2:
         return True
     if dialog.is_bot and dialog.unread_count > 0 and keyword_hits >= 1:
@@ -210,6 +234,13 @@ def looks_like_closure(dialog: DialogSnapshot) -> bool:
         return False
     snippet = dialog.snippet.strip().lower()
     return any(snippet.startswith(prefix) for prefix in CLOSURE_PREFIXES)
+
+
+def looks_like_compliment_only(dialog: DialogSnapshot) -> bool:
+    if dialog.unread_count > 0 or dialog.unread_mentions_count > 0:
+        return False
+    snippet = dialog.snippet.strip().lower()
+    return any(snippet.startswith(prefix) for prefix in COMPLIMENT_ONLY_PREFIXES)
 
 
 def age_timedelta(then: datetime | None, now: datetime) -> timedelta | None:

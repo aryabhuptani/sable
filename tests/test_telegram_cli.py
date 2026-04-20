@@ -69,6 +69,24 @@ class TelegramCliTests(unittest.TestCase):
         dialog = self.build_dialog(title="Telegram", is_user=True, is_group=False)
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
+    def test_classify_direct_promo_as_ignored(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            unread_count=1,
+            snippet="Came across your project and caught our attention. Open to chatting about exchange listing support?",
+        )
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
+    def test_classify_compliment_only_as_ignored(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            unread_count=0,
+            snippet="thats such a good tweet",
+        )
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
     def test_format_triage_report_groups_dialogs(self):
         dialogs = [
             self.build_dialog(title="Urgent DM", is_user=True, is_group=False, unread_count=2),
