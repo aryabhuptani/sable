@@ -22,7 +22,7 @@ function createClient(envSource = {}) {
   });
 }
 
-test("codex child env does not inherit bridge CODEX_HOME", () => {
+test("codex child env inherits bridge CODEX_HOME", () => {
   const client = createClient({
     CODEX_HOME: "/home/arya/.codex-bridge",
     PATH: "/usr/bin",
@@ -30,7 +30,7 @@ test("codex child env does not inherit bridge CODEX_HOME", () => {
 
   const env = client.buildCodexChildEnv("+12025550123");
 
-  assert.equal(env.CODEX_HOME, undefined);
+  assert.equal(env.CODEX_HOME, "/home/arya/.codex-bridge");
   assert.equal(env.PATH, "/usr/bin");
   assert.equal(env.SIGNAL_BRIDGE_DIR, "/home/arya/projects/sable/apps/signal-bridge");
   assert.equal(env.SIGNAL_REPLY_TO, "+12025550123");
