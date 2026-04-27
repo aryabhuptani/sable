@@ -96,6 +96,8 @@ Sable now includes an initial autotweet scaffold inside this repo rather than as
 
 - KB/context collector:
   `npm run autotweet:context`
+- Suggestions helper:
+  `npm run autotweet:suggestions -- help`
 - Typefully CLI helper:
   `npm run autotweet:typefully -- help`
 - Tests:

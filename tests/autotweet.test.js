@@ -9,6 +9,10 @@ const {
   loadAutotweetConfig,
 } = require("../tools/autotweet/config");
 const {
+  listReadySuggestions,
+  markSuggestionsDrafted,
+} = require("../tools/autotweet/suggestions");
+const {
   buildDraftListQuery,
   buildDraftPayload,
   extractPublishedXPosts,
@@ -37,6 +41,8 @@ platforms:
   - linkedin
 knowledge_bases:
   - /tmp/kb-a
+suggestion_files:
+  - /tmp/suggestions.md
 queue_mode: draft
 ---
 
@@ -51,6 +57,7 @@ queue_mode: draft
     assert.equal(config.draftCount, 7);
     assert.deepEqual(config.platforms, ["x", "linkedin"]);
     assert.deepEqual(config.knowledgeBases, ["/tmp/kb-a"]);
+    assert.deepEqual(config.suggestionFiles, ["/tmp/suggestions.md"]);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -248,4 +255,99 @@ test("bootstrap parseArgs uses style guide path by default", () => {
   assert.equal(options.limit, 10);
   assert.equal(options.socialSetId, "55737");
   assert.equal(options.outputPath.endsWith("/autotweet/STYLE_GUIDE.md"), true);
+});
+
+test("listReadySuggestions returns only ready_for_drafting entries", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-autotweet-suggestions-"));
+  const suggestionsPath = path.join(tempRoot, "SUGGESTIONS.md");
+  await fs.writeFile(
+    suggestionsPath,
+    `# Autotweet Suggestions
+
+Intro.
+
+## Queue
+
+### \`ready-one\`
+
+- \`status\`: \`ready_for_drafting\`
+- \`priority\`: \`high\`
+- \`effort\`: \`research\`
+- \`title\`: Ready one
+- \`source_kbs\`:
+  - darkbloom
+- \`angle\`: One
+
+### \`parked-one\`
+
+- \`status\`: \`parked\`
+- \`priority\`: \`low\`
+- \`effort\`: \`quick\`
+- \`title\`: Parked one
+- \`source_kbs\`:
+  - sable
+- \`angle\`: Two
+
+## Capture Template
+
+Template.
+`,
+    "utf8"
+  );
+
+  try {
+    const ready = listReadySuggestions(suggestionsPath);
+    assert.equal(ready.length, 1);
+    assert.equal(ready[0].id, "ready-one");
+    assert.equal(ready[0].title, "Ready one");
+    assert.deepEqual(ready[0].source_kbs, ["darkbloom"]);
+    assert.equal(ready[0].angle, "One");
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("markSuggestionsDrafted updates status and metadata in the suggestions file", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-autotweet-suggestions-"));
+  const suggestionsPath = path.join(tempRoot, "SUGGESTIONS.md");
+  await fs.writeFile(
+    suggestionsPath,
+    `# Autotweet Suggestions
+
+Intro.
+
+## Queue
+
+### \`ready-one\`
+
+- \`status\`: \`ready_for_drafting\`
+- \`priority\`: \`high\`
+- \`effort\`: \`research\`
+- \`title\`: Ready one
+- \`source_kbs\`:
+  - darkbloom
+- \`angle\`: One
+
+## Capture Template
+
+Template.
+`,
+    "utf8"
+  );
+
+  try {
+    const result = markSuggestionsDrafted(suggestionsPath, ["ready-one"], {
+      draftedAt: "2026-04-27T21:00:00.000Z",
+      draftNotes: "Queued in Typefully",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.updatedCount, 1);
+
+    const updated = await fs.readFile(suggestionsPath, "utf8");
+    assert.match(updated, /`status`: `drafted`/);
+    assert.match(updated, /`drafted_at`: 2026-04-27T21:00:00.000Z/);
+    assert.match(updated, /`draft_notes`: Queued in Typefully/);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
 });

@@ -7,6 +7,8 @@ const DEFAULT_CONFIG_PATH = "/home/arya/memory/knowledge/projects/sable/autotwee
 const DEFAULT_STYLE_GUIDE_PATH = "/home/arya/memory/knowledge/projects/sable/autotweet/STYLE_GUIDE.md";
 const DEFAULT_QUESTION_BANK_PATH =
   "/home/arya/memory/knowledge/projects/sable/autotweet/QUESTION_BANK.md";
+const DEFAULT_SUGGESTIONS_PATH =
+  "/home/arya/memory/knowledge/projects/sable/autotweet/SUGGESTIONS.md";
 
 function loadAutotweetConfig(configPath = DEFAULT_CONFIG_PATH) {
   const raw = fs.readFileSync(configPath, "utf8");
@@ -23,6 +25,7 @@ function loadAutotweetConfig(configPath = DEFAULT_CONFIG_PATH) {
     knowledgeBases: toStringArray(frontmatter.knowledge_bases, []),
     questionFiles: toStringArray(frontmatter.question_files, [DEFAULT_QUESTION_BANK_PATH]),
     styleGuideFiles: toStringArray(frontmatter.style_guide_files, [DEFAULT_STYLE_GUIDE_PATH]),
+    suggestionFiles: toStringArray(frontmatter.suggestion_files, [DEFAULT_SUGGESTIONS_PATH]),
     queueMode: normalizeText(frontmatter.queue_mode) || "draft",
   };
 }
@@ -153,6 +156,7 @@ function listMarkdownFiles(directoryPath) {
 module.exports = {
   DEFAULT_CONFIG_PATH,
   DEFAULT_QUESTION_BANK_PATH,
+  DEFAULT_SUGGESTIONS_PATH,
   DEFAULT_STYLE_GUIDE_PATH,
   discoverKbFiles,
   loadAutotweetConfig,

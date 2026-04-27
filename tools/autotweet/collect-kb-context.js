@@ -56,6 +56,10 @@ function main() {
   sections.push("## Question Files");
   appendFileSections(sections, config.questionFiles, config.maxCharsPerFile);
 
+  sections.push("");
+  sections.push("## Suggestion Files");
+  appendFileSections(sections, config.suggestionFiles, config.maxCharsPerFile);
+
   process.stdout.write(`${sections.join("\n")}\n`);
 }
 

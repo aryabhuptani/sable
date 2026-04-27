@@ -17,6 +17,7 @@
     "kb:init": "node tools/knowledge-base/init-topic.js",
     "kb:init-run": "node tools/knowledge-base/init-autoresearch-run.js",
     "autotweet:context": "node tools/autotweet/collect-kb-context.js",
+    "autotweet:suggestions": "node tools/autotweet/suggestions.js",
     "autotweet:typefully": "node tools/autotweet/typefully-cli.js",
     "autotweet:style-guide": "node tools/autotweet/bootstrap-style-guide.js",
     "ha:cli": "python3 tools/homeassistant/homeassistant_cli.py",
