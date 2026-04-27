@@ -106,6 +106,7 @@ Canonical markdown config lives in:
 - `/home/arya/memory/knowledge/projects/sable/autotweet/CONFIG.md`
 - `/home/arya/memory/knowledge/projects/sable/autotweet/STYLE_GUIDE.md`
 - `/home/arya/memory/knowledge/projects/sable/autotweet/QUESTION_BANK.md`
+- `/home/arya/memory/knowledge/projects/sable/autotweet/SUGGESTIONS.md`
 
 Required environment variables for live Typefully queueing:
 
@@ -115,7 +116,7 @@ Required environment variables for live Typefully queueing:
 The current workflow is intentionally conservative:
 
 1. pull ideas from configured knowledge bases
-2. use the style guide and question bank
+2. use the style guide, question bank, and explicit suggestions queue
 3. queue drafts in Typefully for review
 4. do not auto-publish
 
