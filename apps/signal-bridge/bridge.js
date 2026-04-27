@@ -11,6 +11,7 @@ const {
   loadSchedulerJobs,
   saveSchedulerJobs,
 } = require("./scheduler");
+const { parseCommand } = require("./bridge-commands");
 
 require("dotenv").config();
 
@@ -1107,9 +1108,12 @@ async function handleReceiveEvent(message) {
         : fileAttachments.length > 0
           ? DEFAULT_FILE_PROMPT
           : ""),
-    imageAttachments.length > 0,
-    audioAttachments.length > 0,
-    fileAttachments.length > 0
+    {
+      hasImages: imageAttachments.length > 0,
+      hasAudio: audioAttachments.length > 0,
+      hasFiles: fileAttachments.length > 0,
+      telegramTriageLimit: TELEGRAM_TRIAGE_LIMIT,
+    }
   );
 
   if (command.type === "cancel") {
@@ -1248,78 +1252,6 @@ function buildAttachmentContext(
     imageAttachments,
     audioAttachments,
     fileAttachments,
-  };
-}
-
-function parseCommand(text, hasImages = false, hasAudio = false, hasFiles = false) {
-  const trimmed = text.trim();
-  if (trimmed === "/bridgestatus") {
-    return { type: "status" };
-  }
-
-  if (trimmed === "/ops") {
-    return { type: "ops" };
-  }
-
-  if (trimmed === "/schedules") {
-    return { type: "list-schedules" };
-  }
-
-  if (trimmed.startsWith("/unschedule ")) {
-    return { type: "unschedule", scheduleId: trimmed.slice("/unschedule ".length).trim() };
-  }
-
-  if (trimmed === "/cancel") {
-    return { type: "cancel" };
-  }
-
-  if (trimmed === "/setavatar") {
-    return { type: "set-avatar" };
-  }
-
-  if (trimmed === "/removeavatar") {
-    return { type: "remove-avatar" };
-  }
-
-  if (trimmed === "/authstatus") {
-    return { type: "auth-status" };
-  }
-
-  if (trimmed === "/authcancel") {
-    return { type: "auth-cancel" };
-  }
-
-  if (trimmed === "/authresume") {
-    return { type: "auth-resume" };
-  }
-
-  if (trimmed === "/telegram") {
-    return { type: "telegram-triage", limit: TELEGRAM_TRIAGE_LIMIT };
-  }
-
-  if (trimmed.startsWith("/telegram ")) {
-    const rawLimit = trimmed.slice("/telegram ".length).trim();
-    const parsedLimit = Number.parseInt(rawLimit, 10);
-    return {
-      type: "telegram-triage",
-      limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : TELEGRAM_TRIAGE_LIMIT,
-    };
-  }
-
-  if (trimmed !== "/new" && !trimmed.startsWith("/new ")) {
-    return { type: "prompt", prompt: trimmed };
-  }
-
-  if (hasAudio) {
-    return { type: "prompt", prompt: null };
-  }
-
-  const remainder = trimmed.slice(4).trim();
-  return {
-    type: "new",
-    prompt:
-      remainder ||
-      (hasImages ? DEFAULT_IMAGE_PROMPT : hasFiles ? DEFAULT_FILE_PROMPT : null),
   };
 }
 
