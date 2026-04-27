@@ -18,6 +18,7 @@
     "kb:init-run": "node tools/knowledge-base/init-autoresearch-run.js",
     "autotweet:context": "node tools/autotweet/collect-kb-context.js",
     "autotweet:typefully": "node tools/autotweet/typefully-cli.js",
+    "autotweet:style-guide": "node tools/autotweet/bootstrap-style-guide.js",
     "ha:cli": "python3 tools/homeassistant/homeassistant_cli.py",
     "telegram:cli": "python3 tools/telegram/telegram_cli.py",
     "signal:attach": "node tools/signal/send_attachment.js"

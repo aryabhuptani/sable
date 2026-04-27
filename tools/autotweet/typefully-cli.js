@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const { URLSearchParams } = require("node:url");
 
 const DEFAULT_API_BASE_URL = "https://api.typefully.com";
 
@@ -53,6 +54,22 @@ async function main() {
     }
 
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+
+  if (command === "published-drafts") {
+    const options = parseArgs(args);
+    const response = await listDrafts({
+      socialSetId: getSocialSetId(options),
+      status: "published",
+      limit: options.limit,
+      offset: options.offset,
+    });
+    const normalized = {
+      ...response,
+      x_posts: extractPublishedXPosts(response),
+    };
+    process.stdout.write(`${JSON.stringify(normalized, null, 2)}\n`);
     return;
   }
 
@@ -142,6 +159,63 @@ async function typefullyRequest(pathname, { method, body }) {
   return response.json();
 }
 
+async function listDrafts({ socialSetId, status, limit, offset }) {
+  const query = buildDraftListQuery({ status, limit, offset });
+  return typefullyRequest(`/v2/social-sets/${socialSetId}/drafts?${query}`, {
+    method: "GET",
+  });
+}
+
+function buildDraftListQuery({ status, limit, offset }) {
+  const params = new URLSearchParams();
+  const normalizedStatus = normalizeText(status);
+  if (normalizedStatus) {
+    params.set("status", normalizedStatus);
+  }
+
+  if (Number.isInteger(limit) && limit > 0) {
+    params.set("limit", String(limit));
+  }
+
+  if (Number.isInteger(offset) && offset >= 0) {
+    params.set("offset", String(offset));
+  }
+
+  return params.toString();
+}
+
+function extractPublishedXPosts(response) {
+  const drafts = Array.isArray(response?.results) ? response.results : [];
+  const collected = [];
+
+  for (const draft of drafts) {
+    const posts = Array.isArray(draft?.platforms?.x?.posts) ? draft.platforms.x.posts : [];
+    const normalizedPosts = posts
+      .map((post) => ({
+        text: normalizeText(post?.text),
+        mediaIds: Array.isArray(post?.media_ids) ? post.media_ids : [],
+      }))
+      .filter((post) => post.text);
+
+    if (normalizedPosts.length === 0) {
+      continue;
+    }
+
+    collected.push({
+      draftId: draft.id,
+      status: normalizeText(draft.status),
+      publishedAt: normalizeText(draft.published_at || draft.publishedAt),
+      updatedAt: normalizeText(draft.updated_at || draft.updatedAt),
+      preview: normalizeText(draft.preview),
+      postCount: normalizedPosts.length,
+      isThread: normalizedPosts.length > 1,
+      posts: normalizedPosts,
+    });
+  }
+
+  return collected;
+}
+
 function parseArgs(args) {
   const options = {
     dryRun: false,
@@ -149,6 +223,8 @@ function parseArgs(args) {
     publishAt: "",
     input: "",
     socialSetId: "",
+    limit: 25,
+    offset: 0,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -180,6 +256,16 @@ function parseArgs(args) {
       index += 1;
       continue;
     }
+    if (arg === "--limit") {
+      options.limit = parsePositiveInteger(args[index + 1], 25);
+      index += 1;
+      continue;
+    }
+    if (arg === "--offset") {
+      options.offset = parseNonNegativeInteger(args[index + 1], 0);
+      index += 1;
+      continue;
+    }
   }
 
   return options;
@@ -192,6 +278,7 @@ function printUsage() {
       "",
       "Commands:",
       "  node tools/autotweet/typefully-cli.js social-sets",
+      "  node tools/autotweet/typefully-cli.js published-drafts [--limit 25] [--offset 0]",
       "  node tools/autotweet/typefully-cli.js queue --input drafts.json [--dry-run]",
       "",
       "Env:",
@@ -206,10 +293,24 @@ function normalizeText(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+function parsePositiveInteger(rawValue, fallback) {
+  const value = Number.parseInt(rawValue, 10);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function parseNonNegativeInteger(rawValue, fallback) {
+  const value = Number.parseInt(rawValue, 10);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
 module.exports = {
   buildDraftPayload,
+  buildDraftListQuery,
+  extractPublishedXPosts,
+  listDrafts,
   normalizeDraft,
   parseArgs,
+  typefullyRequest,
 };
 
 if (require.main === module) {
