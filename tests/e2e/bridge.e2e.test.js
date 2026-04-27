@@ -345,6 +345,53 @@ test("scheduler picks up jobs added on disk after the bridge has already started
   }
 });
 
+test("stale interval schedules advance to the future after downtime", async () => {
+  const staleDue = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+  const harness = await startBridgeScenario({
+    signalScenario: { receive: [] },
+    codexScenario: {
+      turns: [
+        {
+          message: "__SABLE_NO_REPLY__",
+          messageDelayMs: 40,
+        },
+      ],
+    },
+    initialSchedulerJobs: [
+      {
+        id: "sched-stale-interval",
+        sender: "+15551112222",
+        createdAt: staleDue,
+        updatedAt: staleDue,
+        active: true,
+        recurrence: { type: "interval", intervalMinutes: 5 },
+        replyMode: "silent",
+        workflowPrompt: "Run stale interval maintenance once.",
+        nextRunAt: staleDue,
+        lastRunAt: "",
+      },
+    ],
+  });
+
+  try {
+    await harness.waitForCodexRequest(
+      (request) => request.method === "turn/start",
+      "stale interval scheduled turn start"
+    );
+
+    await waitFor(
+      async () => {
+        const stored = JSON.parse(await fsp.readFile(harness.schedulerJobsPath, "utf8"));
+        const nextRunMs = Date.parse(stored.jobs[0].nextRunAt);
+        return Number.isFinite(nextRunMs) && nextRunMs > Date.now();
+      },
+      { description: "stale interval schedule advanced past now" }
+    );
+  } finally {
+    await harness.shutdown();
+  }
+});
+
 test("scheduled workflows in silent mode suppress bridge replies", async () => {
   const pastDue = new Date(Date.now() - 60_000).toISOString();
   const harness = await startBridgeScenario({

@@ -1330,7 +1330,7 @@ async function checkForDueScheduledJobs() {
 
     queueScheduledWorkflowRun(scheduledJob);
     scheduledJob.lastRunAt = now.toISOString();
-    scheduledJob.nextRunAt = computeFollowingRunAt(scheduledJob, new Date(nextRunMs + 60_000));
+    scheduledJob.nextRunAt = computeFollowingRunAt(scheduledJob, now);
     scheduledJob.updatedAt = timestamp();
     changed = true;
   }
