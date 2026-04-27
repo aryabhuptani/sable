@@ -12,6 +12,7 @@ const {
   saveSchedulerJobs,
 } = require("./scheduler");
 const { parseCommand } = require("./bridge-commands");
+const { createBridgeOpsManager } = require("./bridge-ops");
 
 require("dotenv").config();
 
@@ -140,7 +141,6 @@ const OPS_ROOT =
   normalizeText(process.env.SABLE_OPS_STATE_DIR) || path.join(PROJECT_DIR, ".ops");
 const OPS_HISTORY_DIR = path.join(OPS_ROOT, "history");
 const OPS_STATUS_PATH = path.join(OPS_ROOT, "status.json");
-const OPS_ALERT_STATE_PATH = path.join(OPS_ROOT, "alerts.json");
 const OPS_SNAPSHOT_INTERVAL_MS = normalizeIntegerEnv(
   process.env.SABLE_OPS_SNAPSHOT_INTERVAL_MS,
   60_000
@@ -185,13 +185,40 @@ let activeJobControl = null;
 let obsidianLinkServer = null;
 let obsidianLinkServerAddress = null;
 let isProcessingAttachmentQueue = false;
-const bridgeRuntime = createBridgeRuntimeState();
-let opsAlertState = loadOpsAlertState();
+const ops = createBridgeOpsManager({
+  opsRoot: OPS_ROOT,
+  attachmentQueuePendingDir: ATTACHMENT_QUEUE_PENDING_DIR,
+  alertsEnabled: OPS_ALERTS_ENABLED,
+  alertRecipient: allowedNumbers[0] || "",
+  alertBridgeRssThresholdBytes: OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES,
+  alertInFlightTurnThresholdMs: OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
+  stalledRunThresholdMs: OPS_STALLED_RUN_THRESHOLD_MS,
+  snapshotAutoresearchRuns,
+  getSchedulerJobs: () => schedulerJobs,
+  getLiveState: () => ({
+    interactiveQueueDepth: interactiveQueue.length,
+    interactiveProcessing: isProcessingInteractive,
+    backgroundQueueDepth: backgroundQueue.length,
+    backgroundProcessing: isProcessingBackground,
+    attachmentQueueProcessing: isProcessingAttachmentQueue,
+    inFlightTurn: state.inFlightTurn,
+  }),
+  getSystemdUnitSummary,
+  formatUnitSummary,
+  normalizeText,
+  truncateText,
+  timestamp,
+  sendReply,
+  onError: (message) => {
+    console.error(`[${timestamp()}] ${message}`);
+  },
+});
+const { bridgeRuntime } = ops;
 
 startSignalRpc();
 startObsidianLinkServer();
 ensureAttachmentQueueDirs();
-ensureOpsDirs();
+ops.ensureOpsDirs();
 if (TEST_RECEIVE_SCENARIO_PATH) {
   void startTestReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
 }
@@ -206,13 +233,13 @@ setInterval(checkForPendingPluginAuth, PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS);
 setInterval(checkForDueScheduledJobs, SCHEDULER_POLL_INTERVAL_MS);
 setInterval(checkForPendingAttachmentCommands, 1_000);
 setInterval(() => {
-  void writeOpsSnapshot();
+  void ops.writeOpsSnapshot();
 }, OPS_SNAPSHOT_INTERVAL_MS);
 setTimeout(() => {
   void checkForDueScheduledJobs();
 }, 5_000);
 setTimeout(() => {
-  void writeOpsSnapshot();
+  void ops.writeOpsSnapshot();
 }, 2_500);
 
 function validateConfig() {
@@ -867,60 +894,6 @@ function clearInFlightTurn() {
   saveState();
 }
 
-function createBridgeRuntimeState() {
-  return {
-    startedAt: timestamp(),
-    lastInboundAt: "",
-    lastInboundSender: "",
-    inboundCount: 0,
-    lastOutboundAt: "",
-    lastOutboundRecipient: "",
-    outboundCount: 0,
-    lastCodexTurnStartedAt: "",
-    lastCodexTurnCompletedAt: "",
-    codexTurnStarts: 0,
-    codexTurnCompletions: 0,
-    codexAppServerStderrCount: 0,
-    signalCliStderrCount: 0,
-    bubblewrapWarningCount: 0,
-    permissionDeniedCount: 0,
-    lastCodexAppServerStderr: "",
-    lastSignalCliStderr: "",
-    lastUsageSnapshot: null,
-    lastRateLimitSnapshot: null,
-    lastOpsSnapshotAt: "",
-    lastOpsSnapshotPath: "",
-  };
-}
-
-function loadOpsAlertState() {
-  try {
-    const raw = fs.readFileSync(OPS_ALERT_STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    return {
-      lastBootedAt: normalizeText(parsed?.lastBootedAt),
-      alerts: parsed?.alerts && typeof parsed.alerts === "object" ? parsed.alerts : {},
-    };
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.error(`[${timestamp()}] Failed reading ops alert state: ${error.message}`);
-    }
-    return {
-      lastBootedAt: "",
-      alerts: {},
-    };
-  }
-}
-
-function saveOpsAlertState() {
-  try {
-    ensureOpsDirs();
-    fs.writeFileSync(OPS_ALERT_STATE_PATH, `${JSON.stringify(opsAlertState, null, 2)}\n`, "utf8");
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed writing ops alert state: ${error.message}`);
-  }
-}
-
 function normalizeInFlightTurn(value) {
   if (!value || typeof value !== "object") {
     return null;
@@ -992,7 +965,7 @@ function startSignalRpc() {
   signalProcess.stderr.on("data", (chunk) => {
     const text = chunk.trim();
     if (text) {
-      noteSignalCliStderr(text);
+      ops.noteSignalCliStderr(text);
       console.error(`[${timestamp()}] signal-cli stderr: ${text}`);
     }
   });
@@ -1123,7 +1096,18 @@ async function handleReceiveEvent(message) {
 
   if (shutdownRequested || restartRequested) {
     if (command.type === "status") {
-      await sendReply(sender, await getBridgeStatusReport());
+      await sendReply(
+        sender,
+        await ops.getBridgeStatusReport({
+          interactiveSessionId: state.interactiveSessionId,
+          backgroundSessionId: state.backgroundSessionId,
+          obsidianLinkServerAddress,
+          obsidianLinkServerHost: OBSIDIAN_LINK_SERVER_HOST,
+          obsidianLinksEnabled: OBSIDIAN_LINKS_ENABLED,
+          obsidianBaseUrl: OBSIDIAN_BASE_URL,
+          pendingPluginAuthSummary: summarizePendingPluginAuth(state.pendingPluginAuth),
+        })
+      );
       return;
     }
 
@@ -2188,12 +2172,23 @@ async function getOpsReport() {
 
 async function processJob(job) {
   if (job.command.type === "status") {
-    await sendJobReply(job, await getBridgeStatusReport());
+    await sendJobReply(
+      job,
+      await ops.getBridgeStatusReport({
+        interactiveSessionId: state.interactiveSessionId,
+        backgroundSessionId: state.backgroundSessionId,
+        obsidianLinkServerAddress,
+        obsidianLinkServerHost: OBSIDIAN_LINK_SERVER_HOST,
+        obsidianLinksEnabled: OBSIDIAN_LINKS_ENABLED,
+        obsidianBaseUrl: OBSIDIAN_BASE_URL,
+        pendingPluginAuthSummary: summarizePendingPluginAuth(state.pendingPluginAuth),
+      })
+    );
     return;
   }
 
   if (job.command.type === "ops") {
-    await sendJobReply(job, await getOpsReport());
+    await sendJobReply(job, await ops.getOpsReport());
     return;
   }
 
@@ -2679,13 +2674,12 @@ function runCodexViaAppServer(
 
     function handleNotification(message) {
       resetTimeout();
-      captureUsageSnapshot(message);
-      captureRateLimitSnapshot(message);
+      ops.captureUsageSnapshot(message);
+      ops.captureRateLimitSnapshot(message);
 
       if (message.method === "turn/started") {
         turnId = normalizeText(message.params?.turn?.id) || turnId;
-        bridgeRuntime.codexTurnStarts += 1;
-        bridgeRuntime.lastCodexTurnStartedAt = timestamp();
+        ops.noteTurnStarted();
         liveUpdates.queue("• Working...");
         return;
       }
@@ -2734,8 +2728,7 @@ function runCodexViaAppServer(
 
       if (message.method === "turn/completed") {
         if (normalizeText(message.params?.turn?.id) === turnId || !turnId) {
-          bridgeRuntime.codexTurnCompletions += 1;
-          bridgeRuntime.lastCodexTurnCompletedAt = timestamp();
+          ops.noteTurnCompleted();
           void succeed();
         }
       }
@@ -3298,7 +3291,7 @@ function createAppServerClient({ onNotification, onServerRequest }) {
   child.stderr.on("data", (chunk) => {
     const text = chunk.trim();
     if (text) {
-      noteCodexAppServerStderr(text);
+      ops.noteCodexAppServerStderr(text);
       console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
     }
   });
@@ -3780,7 +3773,7 @@ function callCodexAppServer(method, params) {
     child.stderr.on("data", (chunk) => {
       const text = chunk.trim();
       if (text) {
-        noteCodexAppServerStderr(text);
+        ops.noteCodexAppServerStderr(text);
         console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
       }
     });
@@ -5454,17 +5447,13 @@ function rejectAllPendingSignalRequests(error) {
 }
 
 function logIncoming(sender, message, imageCount = 0) {
-  bridgeRuntime.lastInboundAt = timestamp();
-  bridgeRuntime.lastInboundSender = sender;
-  bridgeRuntime.inboundCount += 1;
+  ops.noteIncoming(sender);
   const imageLabel = imageCount > 0 ? ` [images=${imageCount}]` : "";
   console.log(`[${timestamp()}] IN  ${sender}${imageLabel}: ${message}`);
 }
 
 function logOutgoing(recipient, message, chunkNumber, totalChunks) {
-  bridgeRuntime.lastOutboundAt = timestamp();
-  bridgeRuntime.lastOutboundRecipient = recipient;
-  bridgeRuntime.outboundCount += 1;
+  ops.noteOutgoing(recipient);
   const label = totalChunks > 1 ? ` (${chunkNumber}/${totalChunks})` : "";
   console.log(
     `[${timestamp()}] OUT ${recipient}${label}: ${message.slice(0, 120).replace(/\n/g, "\\n")}`
