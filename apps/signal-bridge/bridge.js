@@ -128,6 +128,13 @@ const OBSIDIAN_BASE_URL_OVERRIDE = normalizeText(process.env.SABLE_OBSIDIAN_BASE
 const OBSIDIAN_BASE_URL = normalizeText(
   OBSIDIAN_BASE_URL_OVERRIDE || discoverTailscaleMagicDnsBaseUrl()
 );
+const SIGNAL_REPLY_TO_ENV = "SABLE_SIGNAL_REPLY_TO";
+const SIGNAL_BRIDGE_DIR_ENV = "SABLE_SIGNAL_BRIDGE_DIR";
+const ATTACHMENT_QUEUE_ROOT =
+  normalizeText(process.env.SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR) ||
+  path.join(PROJECT_DIR, ".attachment-queue");
+const ATTACHMENT_QUEUE_PENDING_DIR = path.join(ATTACHMENT_QUEUE_ROOT, "pending");
+const ATTACHMENT_QUEUE_RESULTS_DIR = path.join(ATTACHMENT_QUEUE_ROOT, "results");
 
 const phoneNumber = process.env.PHONE_NUMBER?.trim();
 const allowedNumbers = parseAllowedNumbers(process.env.ALLOWED_NUMBERS);
@@ -151,9 +158,11 @@ let shutdownRequested = false;
 let activeJobControl = null;
 let obsidianLinkServer = null;
 let obsidianLinkServerAddress = null;
+let isProcessingAttachmentQueue = false;
 
 startSignalRpc();
 startObsidianLinkServer();
+ensureAttachmentQueueDirs();
 if (TEST_RECEIVE_SCENARIO_PATH) {
   void startTestReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
 }
@@ -166,6 +175,7 @@ setTimeout(() => {
 setInterval(checkForRestartRequest, 2_000);
 setInterval(checkForPendingPluginAuth, PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS);
 setInterval(checkForDueScheduledJobs, SCHEDULER_POLL_INTERVAL_MS);
+setInterval(checkForPendingAttachmentCommands, 1_000);
 setTimeout(() => {
   void checkForDueScheduledJobs();
 }, 5_000);
@@ -469,6 +479,25 @@ function handleObsidianLinkRequest(req, res) {
     }),
     method
   );
+}
+
+function normalizeOutgoingAttachmentPaths(files) {
+  if (!Array.isArray(files)) {
+    return [];
+  }
+
+  return files
+    .map((filePath) => normalizeText(filePath))
+    .filter(Boolean)
+    .map((filePath) => path.resolve(filePath))
+    .filter((filePath, index, list) => list.indexOf(filePath) === index)
+    .filter((filePath) => {
+      try {
+        return fs.statSync(filePath).isFile();
+      } catch (error) {
+        return false;
+      }
+    });
 }
 
 function respondHtml(res, statusCode, html, method = "GET") {
@@ -2601,6 +2630,7 @@ function buildAutoAcceptedMcpElicitationValue(definition) {
 function createAppServerClient({ onNotification, onServerRequest }) {
   const child = spawn("codex", buildCodexAppServerArgs(), {
     cwd: CODEX_CWD,
+    env: buildCodexChildEnv(activeSender),
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -3114,6 +3144,7 @@ function callCodexAppServer(method, params) {
   return new Promise((resolve, reject) => {
     const child = spawn("codex", buildCodexAppServerArgs(), {
       cwd: CODEX_CWD,
+      env: buildCodexChildEnv(activeSender),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -3258,6 +3289,20 @@ function buildCodexAppServerArgs() {
     "--listen",
     "stdio://",
   ];
+}
+
+function buildCodexChildEnv(replyRecipient = "") {
+  const env = { ...process.env };
+  env[SIGNAL_BRIDGE_DIR_ENV] = PROJECT_DIR;
+
+  const normalizedRecipient = normalizeText(replyRecipient);
+  if (normalizedRecipient) {
+    env[SIGNAL_REPLY_TO_ENV] = normalizedRecipient;
+  } else {
+    delete env[SIGNAL_REPLY_TO_ENV];
+  }
+
+  return env;
 }
 
 function recordTestAppServerSpawnArgs() {
@@ -4709,6 +4754,98 @@ function sendSignalMessage(recipient, message) {
     recipient: [recipient],
     message,
   });
+}
+
+function sendSignalAttachmentMessage(recipient, message = "", attachmentPaths = []) {
+  const files = normalizeOutgoingAttachmentPaths(attachmentPaths);
+  if (!recipient || files.length === 0) {
+    return Promise.reject(new Error("Missing recipient or attachment paths."));
+  }
+
+  return sendSignalRequest("send", {
+    recipient: [recipient],
+    message: normalizeText(message),
+    attachment: files,
+  });
+}
+
+function ensureAttachmentQueueDirs() {
+  try {
+    fs.mkdirSync(ATTACHMENT_QUEUE_PENDING_DIR, { recursive: true });
+    fs.mkdirSync(ATTACHMENT_QUEUE_RESULTS_DIR, { recursive: true });
+  } catch (error) {
+    console.error(`[${timestamp()}] Failed ensuring attachment queue dirs: ${error.message}`);
+  }
+}
+
+function checkForPendingAttachmentCommands() {
+  if (isProcessingAttachmentQueue || shutdownRequested) {
+    return;
+  }
+
+  isProcessingAttachmentQueue = true;
+  void processNextAttachmentCommand().finally(() => {
+    isProcessingAttachmentQueue = false;
+  });
+}
+
+async function processNextAttachmentCommand() {
+  let requestPath = "";
+
+  try {
+    const entries = await fs.promises.readdir(ATTACHMENT_QUEUE_PENDING_DIR);
+    const nextEntry = entries
+      .filter((entry) => entry.endsWith(".json"))
+      .sort()[0];
+
+    if (!nextEntry) {
+      return;
+    }
+
+    requestPath = path.join(ATTACHMENT_QUEUE_PENDING_DIR, nextEntry);
+    const payload = JSON.parse(await fs.promises.readFile(requestPath, "utf8"));
+    const requestId = normalizeText(payload?.id) || path.basename(nextEntry, ".json");
+    const recipient = normalizeText(payload?.recipient) || allowedNumbers[0] || "";
+    const message = normalizeText(payload?.message);
+    const files = normalizeOutgoingAttachmentPaths(payload?.files);
+
+    if (!recipient) {
+      throw new Error("Attachment request did not include a recipient.");
+    }
+    if (files.length === 0) {
+      throw new Error("Attachment request did not include any valid files.");
+    }
+
+    await sendSignalAttachmentMessage(recipient, message, files);
+    await writeAttachmentCommandResult(requestId, {
+      ok: true,
+      recipient,
+      message,
+      files,
+      completedAt: timestamp(),
+    });
+  } catch (error) {
+    if (requestPath) {
+      const requestId = path.basename(requestPath, ".json");
+      await writeAttachmentCommandResult(requestId, {
+        ok: false,
+        error: normalizeText(error?.message) || "Attachment send failed.",
+        completedAt: timestamp(),
+      });
+    } else {
+      console.error(`[${timestamp()}] Attachment queue processing failed before reading a request: ${error.message}`);
+    }
+  } finally {
+    if (requestPath) {
+      await fs.promises.rm(requestPath, { force: true });
+    }
+  }
+}
+
+async function writeAttachmentCommandResult(requestId, payload) {
+  ensureAttachmentQueueDirs();
+  const resultPath = path.join(ATTACHMENT_QUEUE_RESULTS_DIR, `${requestId}.json`);
+  await fs.promises.writeFile(resultPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
 function updateSignalProfileAvatar({ avatarPath = "", remove = false } = {}) {

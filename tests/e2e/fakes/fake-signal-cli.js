@@ -17,6 +17,9 @@ const attachments = scenario.attachments && typeof scenario.attachments === "obj
   ? scenario.attachments
   : {};
 const keepAlive = setInterval(() => {}, 60_000);
+const argv = process.argv.slice(2);
+const sendModeIndex = argv.indexOf("send");
+const jsonRpcMode = argv.includes("jsonRpc");
 
 function appendLog(entry) {
   fs.appendFileSync(logPath, `${JSON.stringify({ at: Date.now(), ...entry })}\n`);
@@ -35,6 +38,19 @@ function buildEnvelope(event) {
       attachments: Array.isArray(event.attachments) ? event.attachments : [],
     },
   };
+}
+
+if (sendModeIndex >= 0 && !jsonRpcMode) {
+  const params = parseSendParams(argv.slice(sendModeIndex + 1));
+  appendLog({
+    direction: "request",
+    message: {
+      method: "send",
+      params,
+    },
+  });
+  clearInterval(keepAlive);
+  process.exit(0);
 }
 
 if (emitReceiveEvents) {
@@ -121,3 +137,34 @@ process.on("SIGTERM", () => {
   clearInterval(keepAlive);
   process.exit(0);
 });
+
+function parseSendParams(args) {
+  const params = {
+    recipient: [],
+    message: "",
+    attachment: [],
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "-m" || arg === "--message") {
+      params.message = args[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    if (arg === "-a" || arg === "--attachment") {
+      index += 1;
+      while (index < args.length && !args[index].startsWith("-")) {
+        params.attachment.push(args[index]);
+        index += 1;
+      }
+      index -= 1;
+      continue;
+    }
+    if (!arg.startsWith("-")) {
+      params.recipient.push(arg);
+    }
+  }
+
+  return params;
+}

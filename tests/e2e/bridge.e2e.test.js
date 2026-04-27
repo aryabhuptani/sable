@@ -15,6 +15,21 @@ const EMPTY_TURN_SCENARIO_ENV = {
   SABLE_E2E_TURN_CURSOR_PATH: "",
 };
 
+async function assertNoCodexTurnStarted(harness) {
+  const codexRequests = await harness.getCodexRequests();
+  assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+}
+
+async function queueAttachmentRequest(queueDir, requestId, payload) {
+  const pendingPath = path.join(queueDir, "pending", `${requestId}.json`);
+  await fsp.mkdir(path.dirname(pendingPath), { recursive: true });
+  await fsp.writeFile(
+    pendingPath,
+    `${JSON.stringify({ id: requestId, ...payload }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
 test("text message round-trip sends the final reply", async () => {
   const harness = await startBridgeScenario({
     signalScenario: {
@@ -159,8 +174,136 @@ test("/telegram returns the local Telegram triage summary", async () => {
 
     assert.match(reply.params.message, /Needs reply now: 1/);
 
-    const codexRequests = await harness.getCodexRequests();
-    assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("/telegram with an explicit limit forwards the parsed limit to the local triage command", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/telegram 7",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+    extraEnv: ({ tempRoot }) => {
+      const fakeTelegramPythonPath = path.join(tempRoot, "fake-telegram-python");
+      fs.writeFileSync(
+        fakeTelegramPythonPath,
+        "#!/bin/sh\nshift\nprintf 'argv:%s\\n' \"$*\"\n",
+        "utf8"
+      );
+      fs.chmodSync(fakeTelegramPythonPath, 0o755);
+      return {
+        SABLE_TELEGRAM_PYTHON_BIN: fakeTelegramPythonPath,
+      };
+    },
+  });
+
+  try {
+    const reply = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send"
+        && typeof request.params?.message === "string"
+        && request.params.message.includes("argv:triage --limit 7"),
+      "telegram triage reply with explicit limit"
+    );
+
+    assert.match(reply.params.message, /argv:triage --limit 7 --stale-days \d+/);
+
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("bridge attachment queue sends a file attachment through signal-cli", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: { receive: [] },
+    codexScenario: { turns: [] },
+    extraEnv: ({ tempRoot }) => {
+      const attachmentPath = path.join(tempRoot, "report.pdf");
+      const queueDir = path.join(tempRoot, "attachment-queue");
+      fs.writeFileSync(attachmentPath, "fake-pdf", "utf8");
+      return {
+        SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR: queueDir,
+      };
+    },
+  });
+
+  try {
+    const attachmentPath = path.join(harness.tempRoot, "report.pdf");
+    const queueDir = path.join(harness.tempRoot, "attachment-queue");
+    await queueAttachmentRequest(queueDir, "attach-test", {
+        recipient: "+15551112222",
+        message: "attached report",
+        files: [attachmentPath],
+    });
+
+    const sendRequest = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send"
+        && Array.isArray(request.params?.attachment)
+        && request.params.attachment.includes(attachmentPath)
+        && request.params.message === "attached report",
+      "attachment send request"
+    );
+
+    assert.deepEqual(sendRequest.params.recipient, ["+15551112222"]);
+
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("bridge attachment queue writes a failure result when queued files are invalid", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: { receive: [] },
+    codexScenario: { turns: [] },
+    extraEnv: ({ tempRoot }) => ({
+      SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR: path.join(tempRoot, "attachment-queue"),
+    }),
+  });
+
+  try {
+    const queueDir = path.join(harness.tempRoot, "attachment-queue");
+    const resultPath = path.join(queueDir, "results", "attach-invalid.json");
+    await queueAttachmentRequest(queueDir, "attach-invalid", {
+        recipient: "+15551112222",
+        message: "broken attachment request",
+        files: [path.join(harness.tempRoot, "missing.pdf")],
+    });
+
+    await waitFor(
+      async () => {
+        try {
+          await fsp.access(resultPath);
+          return true;
+        } catch (error) {
+          return false;
+        }
+      },
+      { description: "attachment failure result file" }
+    );
+
+    const result = JSON.parse(await fsp.readFile(resultPath, "utf8"));
+    assert.equal(result.ok, false);
+    assert.match(result.error, /did not include any valid files/i);
+
+    const signalRequests = await harness.getSignalRequests();
+    assert.equal(
+      signalRequests.find((request) => request.method === "send"),
+      undefined
+    );
+
+    await assertNoCodexTurnStarted(harness);
   } finally {
     await harness.shutdown();
   }
@@ -205,12 +348,12 @@ test("/schedules lists persisted recurring workflows", async () => {
 
     assert.match(listing.params.message, /Give me a daily briefing of my day/);
 
-    const codexRequests = await harness.getCodexRequests();
-    assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+    await assertNoCodexTurnStarted(harness);
   } finally {
     await harness.shutdown();
   }
 });
+
 
 test("due scheduled workflows run in the background without blocking live chat turns", async () => {
   const pastDue = new Date(Date.now() - 60_000).toISOString();
@@ -1022,6 +1165,62 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
   }
 });
 
+test("incoming Signal image attachments start a turn with the default image prompt and local image input", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "",
+          attachments: [
+            {
+              id: "image-1",
+              filename: "photo.png",
+              contentType: "image/png",
+            },
+          ],
+        },
+      ],
+      attachments: {
+        "image-1": {
+          dataBase64: Buffer.from("fake-image-bytes", "utf8").toString("base64"),
+        },
+      },
+    },
+    codexScenario: {
+      turns: [
+        {
+          message: "image handled",
+          messageDelayMs: 40,
+        },
+      ],
+    },
+  });
+
+  try {
+    const turnStart = await harness.waitForCodexRequest(
+      (request) => request.method === "turn/start",
+      "incoming image turn start"
+    );
+    const inputItems = turnStart.params?.input || [];
+    const promptItem = inputItems.find((item) => item?.type === "text");
+    const imageItem = inputItems.find((item) => item?.type === "localImage");
+
+    assert.match(promptItem?.text || "", /^Please analyze the attached image\./);
+    assert.match(promptItem?.text || "", /Local attachment paths for this turn only:/);
+    assert.ok(imageItem, "expected a local image input item");
+    assert.match(imageItem.path, /photo\.png$/);
+
+    await harness.waitForSignalRequest(
+      (request) => request.method === "send" && request.params?.message === "image handled",
+      "incoming image final reply"
+    );
+  } finally {
+    await harness.shutdown();
+  }
+});
+
 test("file attachments expose a temporary local path to codex and clean it up afterward", async () => {
   const harness = await startBridgeScenario({
     signalScenario: {
@@ -1340,8 +1539,7 @@ test("/unschedule removes a persisted recurring workflow without spawning codex"
     const stored = JSON.parse(await fsp.readFile(harness.schedulerJobsPath, "utf8"));
     assert.deepStrictEqual(stored.jobs, []);
 
-    const codexRequests = await harness.getCodexRequests();
-    assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+    await assertNoCodexTurnStarted(harness);
   } finally {
     await harness.shutdown();
   }
@@ -1389,8 +1587,7 @@ test("/setavatar uses the live signal session instead of spawning a second signa
       "avatar success reply"
     );
 
-    const codexRequests = await harness.getCodexRequests();
-    assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+    await assertNoCodexTurnStarted(harness);
   } finally {
     await harness.shutdown();
   }
