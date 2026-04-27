@@ -28,6 +28,9 @@ function createBridgeCodexClient({
 
   function buildCodexChildEnv(replyRecipient = "") {
     const env = { ...envSource };
+    // Let Codex use its default home; the bridge's dedicated home can carry a
+    // sandbox profile that hides Codex's own vendored runtime under /usr/lib.
+    delete env.CODEX_HOME;
     env[signalBridgeDirEnv] = projectDir;
 
     const normalizedRecipient = normalizeText(replyRecipient);
