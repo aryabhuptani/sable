@@ -13,6 +13,7 @@ const {
 } = require("./scheduler");
 const { parseCommand } = require("./bridge-commands");
 const { createBridgeOpsManager } = require("./bridge-ops");
+const { createBridgeCodexClient } = require("./bridge-codex-client");
 
 require("dotenv").config();
 
@@ -214,6 +215,27 @@ const ops = createBridgeOpsManager({
   },
 });
 const { bridgeRuntime } = ops;
+const codexClient = createBridgeCodexClient({
+  spawn,
+  cwd: CODEX_CWD,
+  projectDir: PROJECT_DIR,
+  signalReplyToEnv: SIGNAL_REPLY_TO_ENV,
+  signalBridgeDirEnv: SIGNAL_BRIDGE_DIR_ENV,
+  appServerClientVersion: APP_SERVER_CLIENT_VERSION,
+  appServerRequestTimeoutMs: APP_SERVER_REQUEST_TIMEOUT_MS,
+  normalizeText,
+  timestamp,
+  appendTestAppServerLog,
+  onStderr(text) {
+    ops.noteCodexAppServerStderr(text);
+    console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
+  },
+});
+const {
+  createAppServerClient,
+  callCodexAppServer,
+  recordTestAppServerSpawnArgs,
+} = codexClient;
 
 startSignalRpc();
 startObsidianLinkServer();
@@ -2598,6 +2620,7 @@ function runCodexViaAppServer(
     const client = createAppServerClient({
       onNotification: handleNotification,
       onServerRequest: handleServerRequest,
+      replyRecipient: activeSender,
     });
     const unregisterCancellation = registerCancellationHandler(jobControl, (error) => {
       fail(error);
@@ -3154,165 +3177,6 @@ function buildAutoAcceptedMcpElicitationValue(definition) {
   return undefined;
 }
 
-function createAppServerClient({ onNotification, onServerRequest }) {
-  const child = spawn("codex", buildCodexAppServerArgs(), {
-    cwd: CODEX_CWD,
-    env: buildCodexChildEnv(activeSender),
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  let buffer = "";
-  let nextRequestId = 1;
-  const pending = new Map();
-  let closed = false;
-
-  function rejectPending(error) {
-    for (const [id, entry] of pending.entries()) {
-      pending.delete(id);
-      entry.reject(error);
-    }
-  }
-
-  function close() {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    rejectPending(new Error("app-server client closed"));
-    if (!child.killed) {
-      child.kill("SIGTERM");
-    }
-  }
-
-  function request(method, params) {
-    const id = nextRequestId++;
-    const payload = JSON.stringify({
-      jsonrpc: "2.0",
-      id,
-      method,
-      params,
-    });
-
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
-      child.stdin.write(`${payload}\n`, (error) => {
-        if (error) {
-          pending.delete(id);
-          reject(error);
-        }
-      });
-    });
-  }
-
-  async function initialize() {
-    return request("initialize", {
-      clientInfo: {
-        name: "signal-codex-bridge",
-        version: APP_SERVER_CLIENT_VERSION,
-      },
-      capabilities: {
-        experimentalApi: true,
-      },
-    });
-  }
-
-  async function handleServerRequestMessage(message) {
-    let result = {};
-
-    try {
-      if (typeof onServerRequest === "function") {
-        result = (await onServerRequest(message)) || {};
-      }
-      child.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`
-      );
-    } catch (error) {
-      child.stdin.write(
-        `${JSON.stringify({
-          jsonrpc: "2.0",
-          id: message.id,
-          error: { code: -32000, message: error.message || "Bridge server request failed" },
-        })}\n`
-      );
-    }
-  }
-
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    buffer += chunk;
-
-    while (true) {
-      const newlineIndex = buffer.indexOf("\n");
-      if (newlineIndex === -1) {
-        break;
-      }
-
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-
-      if (!line) {
-        continue;
-      }
-
-      let message;
-      try {
-        message = JSON.parse(line);
-      } catch (error) {
-        continue;
-      }
-
-      if (Object.prototype.hasOwnProperty.call(message, "id") && !message.method) {
-        const entry = pending.get(message.id);
-        if (!entry) {
-          continue;
-        }
-
-        pending.delete(message.id);
-        if (message.error) {
-          entry.reject(new Error(message.error.message || "Unknown app-server error"));
-        } else {
-          entry.resolve(message.result);
-        }
-        continue;
-      }
-
-      if (Object.prototype.hasOwnProperty.call(message, "id") && message.method) {
-        void handleServerRequestMessage(message);
-        continue;
-      }
-
-      if (typeof onNotification === "function") {
-        onNotification(message);
-      }
-    }
-  });
-
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    const text = chunk.trim();
-    if (text) {
-      ops.noteCodexAppServerStderr(text);
-      console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
-    }
-  });
-
-  child.on("error", (error) => {
-    rejectPending(error);
-  });
-
-  child.on("exit", (code) => {
-    if (!closed && code !== 0) {
-      rejectPending(new Error(`codex app-server exited with code ${code}`));
-    }
-  });
-
-  return {
-    initialize,
-    request,
-    close,
-  };
-}
-
 async function findToolSuggestionForTurn(threadId, startedAtIso) {
   const sessionPath = await findSessionFileForThread(threadId);
   if (!sessionPath) {
@@ -3666,181 +3530,6 @@ function splitPluginId(pluginId) {
     pluginName: normalized.slice(0, atIndex),
     marketplaceName: normalized.slice(atIndex + 1),
   };
-}
-
-function callCodexAppServer(method, params) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("codex", buildCodexAppServerArgs(), {
-      cwd: CODEX_CWD,
-      env: buildCodexChildEnv(activeSender),
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    let buffer = "";
-    let nextRequestId = 1;
-    const pending = new Map();
-    let settled = false;
-    const timeout = setTimeout(() => {
-      fail(new Error(`app-server request timed out for ${method}`));
-    }, APP_SERVER_REQUEST_TIMEOUT_MS);
-
-    function cleanup() {
-      clearTimeout(timeout);
-      if (!child.killed) {
-        child.kill("SIGTERM");
-      }
-    }
-
-    function fail(error) {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error);
-    }
-
-    function succeed(result) {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve(result);
-    }
-
-    function sendRequest(requestMethod, requestParams) {
-      const id = nextRequestId++;
-      const payload = JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        method: requestMethod,
-        params: requestParams,
-      });
-
-      return new Promise((innerResolve, innerReject) => {
-        pending.set(id, { resolve: innerResolve, reject: innerReject });
-        child.stdin.write(`${payload}\n`, (error) => {
-          if (error) {
-            pending.delete(id);
-            innerReject(error);
-          }
-        });
-      });
-    }
-
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      buffer += chunk;
-
-      while (true) {
-        const newlineIndex = buffer.indexOf("\n");
-        if (newlineIndex === -1) {
-          break;
-        }
-
-        const line = buffer.slice(0, newlineIndex).trim();
-        buffer = buffer.slice(newlineIndex + 1);
-
-        if (!line) {
-          continue;
-        }
-
-        let message;
-        try {
-          message = JSON.parse(line);
-        } catch (error) {
-          continue;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(message, "id")) {
-          const entry = pending.get(message.id);
-          if (!entry) {
-            continue;
-          }
-
-          pending.delete(message.id);
-          if (message.error) {
-            entry.reject(new Error(message.error.message || "Unknown app-server error"));
-          } else {
-            entry.resolve(message.result);
-          }
-        }
-      }
-    });
-
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.trim();
-      if (text) {
-        ops.noteCodexAppServerStderr(text);
-        console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
-      }
-    });
-
-    child.on("error", fail);
-    child.on("exit", (code) => {
-      if (!settled && code !== 0) {
-        fail(new Error(`codex app-server exited with code ${code}`));
-      }
-    });
-
-    (async () => {
-      try {
-        await sendRequest("initialize", {
-          clientInfo: {
-            name: "signal-codex-bridge",
-            version: "1.0.0",
-          },
-          capabilities: {
-            experimentalApi: true,
-          },
-        });
-
-        const result = await sendRequest(method, params);
-        succeed(result);
-      } catch (error) {
-        fail(error);
-      }
-    })();
-  });
-}
-
-function buildCodexAppServerArgs() {
-  return [
-    "--search",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "-C",
-    CODEX_CWD,
-    "-c",
-    "shell_environment_policy.inherit=all",
-    "app-server",
-    "--listen",
-    "stdio://",
-  ];
-}
-
-function buildCodexChildEnv(replyRecipient = "") {
-  const env = { ...process.env };
-  env[SIGNAL_BRIDGE_DIR_ENV] = PROJECT_DIR;
-
-  const normalizedRecipient = normalizeText(replyRecipient);
-  if (normalizedRecipient) {
-    env[SIGNAL_REPLY_TO_ENV] = normalizedRecipient;
-  } else {
-    delete env[SIGNAL_REPLY_TO_ENV];
-  }
-
-  return env;
-}
-
-function recordTestAppServerSpawnArgs() {
-  appendTestAppServerLog({
-    method: "spawn",
-    params: {
-      args: buildCodexAppServerArgs(),
-    },
-  });
 }
 
 function formatPendingPluginAuthPrompt(pendingPluginAuth) {
