@@ -4935,6 +4935,7 @@ function isInvalidSessionError(stderr) {
   return (
     text.includes("session not found") ||
     text.includes("conversation not found") ||
+    text.includes("no rollout found for thread id") ||
     (text.includes("thread") && text.includes("not found")) ||
     (text.includes("invalid") && text.includes("session"))
   );
