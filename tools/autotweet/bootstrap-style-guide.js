@@ -8,6 +8,7 @@ const {
 } = require("./config");
 const {
   extractPublishedXPosts,
+  getDraft,
   listDrafts,
 } = require("./typefully-cli");
 
@@ -59,7 +60,11 @@ async function fetchPublishedXDrafts({ socialSetId, sampleSize }) {
       offset,
     });
 
-    const page = extractPublishedXPosts(response);
+    const detailedDrafts = await hydrateDraftDetails({
+      socialSetId: normalizedSocialSetId,
+      drafts: Array.isArray(response?.results) ? response.results : [],
+    });
+    const page = extractPublishedXPosts(detailedDrafts);
     if (page.length === 0) {
       break;
     }
@@ -72,6 +77,43 @@ async function fetchPublishedXDrafts({ socialSetId, sampleSize }) {
   }
 
   return collected.slice(0, targetCount);
+}
+
+async function hydrateDraftDetails({ socialSetId, drafts }) {
+  const results = [];
+
+  for (const draft of drafts) {
+    const draftId = Number.isInteger(draft?.id) ? draft.id : 0;
+    if (!draftId) {
+      continue;
+    }
+
+    try {
+      const detail = await getDraft({ socialSetId, draftId });
+      results.push(mergeDraftSummaryAndDetail(draft, detail));
+    } catch {
+      results.push(draft);
+    }
+  }
+
+  return results;
+}
+
+function mergeDraftSummaryAndDetail(summary, detail) {
+  return {
+    ...summary,
+    ...detail,
+    id: detail?.id || summary?.id,
+    preview: normalizeText(detail?.preview) || normalizeText(summary?.preview),
+    published_at:
+      normalizeText(detail?.published_at) ||
+      normalizeText(summary?.published_at) ||
+      normalizeText(summary?.publishedAt),
+    updated_at:
+      normalizeText(detail?.updated_at) ||
+      normalizeText(summary?.updated_at) ||
+      normalizeText(summary?.updatedAt),
+  };
 }
 
 function renderStyleGuide(xDrafts, { generatedAt, sourceSocialSetId }) {
@@ -285,6 +327,7 @@ function normalizeText(value) {
 
 module.exports = {
   fetchPublishedXDrafts,
+  mergeDraftSummaryAndDetail,
   parseArgs,
   renderStyleGuide,
   summarizeDrafts,

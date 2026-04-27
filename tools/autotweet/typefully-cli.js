@@ -67,9 +67,24 @@ async function main() {
     });
     const normalized = {
       ...response,
-      x_posts: extractPublishedXPosts(response),
+      x_posts: extractPublishedXPosts(response.results || []),
     };
     process.stdout.write(`${JSON.stringify(normalized, null, 2)}\n`);
+    return;
+  }
+
+  if (command === "draft") {
+    const options = parseArgs(args);
+    const draftId = parsePositiveInteger(options.draftId, 0);
+    if (!draftId) {
+      throw new Error("Missing required --draft-id <id> argument.");
+    }
+
+    const response = await getDraft({
+      socialSetId: getSocialSetId(options),
+      draftId,
+    });
+    process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
     return;
   }
 
@@ -166,6 +181,12 @@ async function listDrafts({ socialSetId, status, limit, offset }) {
   });
 }
 
+async function getDraft({ socialSetId, draftId }) {
+  return typefullyRequest(`/v2/social-sets/${socialSetId}/drafts/${draftId}`, {
+    method: "GET",
+  });
+}
+
 function buildDraftListQuery({ status, limit, offset }) {
   const params = new URLSearchParams();
   const normalizedStatus = normalizeText(status);
@@ -184,15 +205,15 @@ function buildDraftListQuery({ status, limit, offset }) {
   return params.toString();
 }
 
-function extractPublishedXPosts(response) {
-  const drafts = Array.isArray(response?.results) ? response.results : [];
+function extractPublishedXPosts(drafts) {
+  const normalizedDrafts = Array.isArray(drafts) ? drafts : [];
   const collected = [];
 
-  for (const draft of drafts) {
-    const posts = Array.isArray(draft?.platforms?.x?.posts) ? draft.platforms.x.posts : [];
+  for (const draft of normalizedDrafts) {
+    const posts = getXPostsForDraft(draft);
     const normalizedPosts = posts
       .map((post) => ({
-        text: normalizeText(post?.text),
+        text: normalizeText(post?.text || post?.content),
         mediaIds: Array.isArray(post?.media_ids) ? post.media_ids : [],
       }))
       .filter((post) => post.text);
@@ -216,6 +237,23 @@ function extractPublishedXPosts(response) {
   return collected;
 }
 
+function getXPostsForDraft(draft) {
+  const platformCandidates = [
+    draft?.platforms?.x?.posts,
+    draft?.platforms?.twitter?.posts,
+    draft?.x_posts,
+    draft?.twitter_posts,
+  ];
+
+  for (const candidate of platformCandidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  return [];
+}
+
 function parseArgs(args) {
   const options = {
     dryRun: false,
@@ -223,6 +261,7 @@ function parseArgs(args) {
     publishAt: "",
     input: "",
     socialSetId: "",
+    draftId: "",
     limit: 25,
     offset: 0,
   };
@@ -256,6 +295,11 @@ function parseArgs(args) {
       index += 1;
       continue;
     }
+    if (arg === "--draft-id") {
+      options.draftId = args[index + 1] || "";
+      index += 1;
+      continue;
+    }
     if (arg === "--limit") {
       options.limit = parsePositiveInteger(args[index + 1], 25);
       index += 1;
@@ -279,6 +323,7 @@ function printUsage() {
       "Commands:",
       "  node tools/autotweet/typefully-cli.js social-sets",
       "  node tools/autotweet/typefully-cli.js published-drafts [--limit 25] [--offset 0]",
+      "  node tools/autotweet/typefully-cli.js draft --draft-id 12345",
       "  node tools/autotweet/typefully-cli.js queue --input drafts.json [--dry-run]",
       "",
       "Env:",
@@ -307,6 +352,8 @@ module.exports = {
   buildDraftPayload,
   buildDraftListQuery,
   extractPublishedXPosts,
+  getDraft,
+  getXPostsForDraft,
   listDrafts,
   normalizeDraft,
   parseArgs,

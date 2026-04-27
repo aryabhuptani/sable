@@ -12,9 +12,11 @@ const {
   buildDraftListQuery,
   buildDraftPayload,
   extractPublishedXPosts,
+  getXPostsForDraft,
   parseArgs: parseTypefullyArgs,
 } = require("../tools/autotweet/typefully-cli");
 const {
+  mergeDraftSummaryAndDetail,
   parseArgs: parseBootstrapArgs,
   renderStyleGuide,
   summarizeDrafts,
@@ -99,38 +101,36 @@ test("buildDraftListQuery encodes published draft filters", () => {
 });
 
 test("extractPublishedXPosts normalizes only X drafts with text", () => {
-  const normalized = extractPublishedXPosts({
-    results: [
-      {
-        id: 1,
-        status: "published",
-        published_at: "2026-04-27T12:00:00Z",
-        platforms: {
-          x: {
-            posts: [{ text: "hello world" }, { text: "second post" }],
-          },
+  const normalized = extractPublishedXPosts([
+    {
+      id: 1,
+      status: "published",
+      published_at: "2026-04-27T12:00:00Z",
+      platforms: {
+        x: {
+          posts: [{ text: "hello world" }, { text: "second post" }],
         },
       },
-      {
-        id: 2,
-        status: "published",
-        platforms: {
-          linkedin: {
-            posts: [{ text: "ignore me" }],
-          },
+    },
+    {
+      id: 2,
+      status: "published",
+      platforms: {
+        linkedin: {
+          posts: [{ text: "ignore me" }],
         },
       },
-      {
-        id: 3,
-        status: "published",
-        platforms: {
-          x: {
-            posts: [{ text: "   " }],
-          },
+    },
+    {
+      id: 3,
+      status: "published",
+      platforms: {
+        x: {
+          posts: [{ text: "   " }],
         },
       },
-    ],
-  });
+    },
+  ]);
 
   assert.deepEqual(normalized, [
     {
@@ -147,6 +147,26 @@ test("extractPublishedXPosts normalizes only X drafts with text", () => {
       ],
     },
   ]);
+});
+
+test("getXPostsForDraft supports x, twitter, and flat fallback fields", () => {
+  assert.deepEqual(
+    getXPostsForDraft({
+      platforms: {
+        twitter: {
+          posts: [{ text: "from twitter field" }],
+        },
+      },
+    }),
+    [{ text: "from twitter field" }]
+  );
+
+  assert.deepEqual(
+    getXPostsForDraft({
+      x_posts: [{ text: "from flat field" }],
+    }),
+    [{ text: "from flat field" }]
+  );
 });
 
 test("typefully parseArgs accepts published-drafts pagination options", () => {
@@ -199,6 +219,28 @@ test("renderStyleGuide creates a usable markdown bootstrap", () => {
   assert.match(markdown, /Source social set id: 55737/);
   assert.match(markdown, /Representative Single Posts/);
   assert.match(markdown, /Representative Thread Openers/);
+});
+
+test("mergeDraftSummaryAndDetail prefers detail fields while preserving summary fallback", () => {
+  const merged = mergeDraftSummaryAndDetail(
+    {
+      id: 123,
+      preview: "summary preview",
+      published_at: "2026-04-01T00:00:00Z",
+    },
+    {
+      platforms: {
+        x: {
+          posts: [{ text: "full post text" }],
+        },
+      },
+    }
+  );
+
+  assert.equal(merged.id, 123);
+  assert.equal(merged.preview, "summary preview");
+  assert.equal(merged.published_at, "2026-04-01T00:00:00Z");
+  assert.deepEqual(merged.platforms.x.posts, [{ text: "full post text" }]);
 });
 
 test("bootstrap parseArgs uses style guide path by default", () => {
