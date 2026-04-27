@@ -25,6 +25,11 @@ const {
   renderStyleGuide,
   summarizeDrafts,
 } = require("../tools/autotweet/bootstrap-style-guide");
+const {
+  extractJsonArrayFromText,
+  handleDraftingItem,
+  normalizeGeneratedDrafts,
+} = require("../tools/autotweet/run-draft-cycle");
 
 test("loadAutotweetConfig parses markdown frontmatter config", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-autotweet-config-"));
@@ -350,4 +355,38 @@ Template.
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("extractJsonArrayFromText parses fenced JSON arrays", () => {
+  const parsed = extractJsonArrayFromText("```json\n[{\"suggestion_id\":\"a\",\"text\":\"hello\"}]\n```");
+  assert.deepEqual(parsed, [{ suggestion_id: "a", text: "hello" }]);
+});
+
+test("normalizeGeneratedDrafts keeps only valid single-post and thread drafts", () => {
+  const normalized = normalizeGeneratedDrafts([
+    { suggestion_id: "a", text: "hello" },
+    { suggestion_id: "b", posts: [{ text: "one" }, { text: "two" }] },
+    { suggestion_id: "", text: "bad" },
+    { suggestion_id: "c", posts: [{ text: "   " }] },
+  ]);
+
+  assert.deepEqual(normalized, [
+    { suggestion_id: "a", text: "hello" },
+    { suggestion_id: "b", posts: [{ text: "one" }, { text: "two" }] },
+  ]);
+});
+
+test("handleDraftingItem keeps the latest agent message text", () => {
+  assert.equal(
+    handleDraftingItem({ type: "agentMessage", text: "first" }, ""),
+    "first"
+  );
+  assert.equal(
+    handleDraftingItem({ type: "commandExecution", text: "ignored" }, "first"),
+    "first"
+  );
+  assert.equal(
+    handleDraftingItem({ type: "agentMessage", text: "second" }, "first"),
+    "second"
+  );
 });
