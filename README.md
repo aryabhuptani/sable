@@ -96,3 +96,34 @@ The current workflow is intentionally conservative:
 2. use the style guide and question bank
 3. queue drafts in Typefully for review
 4. do not auto-publish
+
+## Home Assistant Tooling
+
+Sable now includes a local Home Assistant helper CLI:
+
+- Command:
+  `npm run ha:cli -- <subcommand>`
+- Tests:
+  `npm run test:homeassistant`
+
+Current focus:
+
+- inventory-style reads from the local Home Assistant config/state tree
+- scene activation and generic service calls through the Home Assistant HTTP API when URL/token are configured
+- Sable-managed schedule creation/removal by editing `automations.yaml`
+
+Environment variables:
+
+- `SABLE_HOME_ASSISTANT_URL` or `HOME_ASSISTANT_URL`
+- `SABLE_HOME_ASSISTANT_TOKEN` or `HOME_ASSISTANT_TOKEN`
+- optional config overrides:
+  - `SABLE_HOME_ASSISTANT_CONFIG_DIR`
+  - `SABLE_HOME_ASSISTANT_AUTOMATIONS_FILE`
+  - `SABLE_HOME_ASSISTANT_SCENES_FILE`
+
+Examples:
+
+1. `npm run ha:cli -- summary`
+2. `npm run ha:cli -- list-devices --area "Living Room"`
+3. `npm run ha:cli -- call-service --domain light --service turn_on --data '{"entity_id":"light.smart_bulb"}'`
+4. `npm run ha:cli -- add-scene-schedule --alias "Evening scene" --scene-entity-id scene.evening --time 18:30`
