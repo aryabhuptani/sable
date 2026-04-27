@@ -256,7 +256,7 @@ function buildDraftPrompt({ config, selectedSuggestions, contextPacket }) {
 }
 
 async function runCodexPrompt(prompt) {
-  const codexStateRoot = ensureCodexStateRoot();
+  const envSource = buildCodexEnvSource();
   const codexClient = createBridgeCodexClient({
     spawn,
     cwd: DEFAULT_CODEX_CWD,
@@ -269,13 +269,7 @@ async function runCodexPrompt(prompt) {
     timestamp: () => new Date().toISOString(),
     appendTestAppServerLog: () => {},
     onStderr: () => {},
-    envSource: {
-      ...process.env,
-      CODEX_HOME: path.join(codexStateRoot, "home"),
-      XDG_STATE_HOME: path.join(codexStateRoot, "xdg", "state"),
-      XDG_CACHE_HOME: path.join(codexStateRoot, "xdg", "cache"),
-      XDG_CONFIG_HOME: path.join(codexStateRoot, "xdg", "config"),
-    },
+    envSource,
   });
 
   let finalMessage = "";
@@ -377,13 +371,24 @@ function handleDraftingItem(item, currentFinalMessage) {
   return text || currentFinalMessage;
 }
 
-function ensureCodexStateRoot() {
+function buildCodexEnvSource() {
+  const explicitCodexHome = normalizeText(process.env.CODEX_HOME);
+  if (explicitCodexHome) {
+    return { ...process.env };
+  }
+
   const root = DEFAULT_CODEX_STATE_ROOT;
   fs.mkdirSync(path.join(root, "home"), { recursive: true });
   fs.mkdirSync(path.join(root, "xdg", "state"), { recursive: true });
   fs.mkdirSync(path.join(root, "xdg", "cache"), { recursive: true });
   fs.mkdirSync(path.join(root, "xdg", "config"), { recursive: true });
-  return root;
+  return {
+    ...process.env,
+    CODEX_HOME: path.join(root, "home"),
+    XDG_STATE_HOME: path.join(root, "xdg", "state"),
+    XDG_CACHE_HOME: path.join(root, "xdg", "cache"),
+    XDG_CONFIG_HOME: path.join(root, "xdg", "config"),
+  };
 }
 
 function extractJsonArrayFromText(text) {

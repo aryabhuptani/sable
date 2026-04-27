@@ -65,7 +65,8 @@ const VOICE_NOTES_ECHO_TRANSCRIPT = normalizeBooleanEnv(
   process.env.VOICE_NOTES_ECHO_TRANSCRIPT,
   true
 );
-const CODEX_SESSIONS_DIR = path.join("/home/arya/.codex", "sessions");
+const CODEX_HOME_ROOT = normalizeText(process.env.CODEX_HOME) || "/home/arya/.codex";
+const CODEX_SESSIONS_DIR = path.join(CODEX_HOME_ROOT, "sessions");
 const APP_SERVER_REQUEST_TIMEOUT_MS = normalizeIntegerEnv(
   process.env.APP_SERVER_REQUEST_TIMEOUT_MS,
   20_000
@@ -235,6 +236,7 @@ const {
   createAppServerClient,
   callCodexAppServer,
   recordTestAppServerSpawnArgs,
+  probeRuntimeProfile,
 } = codexClient;
 
 startSignalRpc();
@@ -263,6 +265,12 @@ setTimeout(() => {
 setTimeout(() => {
   void ops.writeOpsSnapshot();
 }, 2_500);
+setTimeout(() => {
+  void refreshCodexRuntimeProbe();
+}, 3_500);
+setInterval(() => {
+  void refreshCodexRuntimeProbe();
+}, 30 * 60 * 1000);
 
 function validateConfig() {
   const missing = [];
@@ -280,6 +288,20 @@ function validateConfig() {
       `[${timestamp()}] Missing required environment variables: ${missing.join(", ")}`
     );
     process.exit(1);
+  }
+}
+
+async function refreshCodexRuntimeProbe() {
+  try {
+    const probe = await probeRuntimeProfile();
+    ops.noteCodexRuntimeProbe(probe);
+  } catch (error) {
+    ops.noteCodexRuntimeProbe({
+      observedAt: timestamp(),
+      error: error.message || String(error),
+      codexHome: CODEX_HOME_ROOT,
+    });
+    console.error(`[${timestamp()}] Failed probing Codex runtime profile: ${error.message}`);
   }
 }
 

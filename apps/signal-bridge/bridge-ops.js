@@ -403,6 +403,11 @@ function createBridgeOpsManager({
       return "unknown";
     }
 
+    const errorText = normalizeText(probe.error);
+    if (errorText) {
+      return `probe failed: ${errorText}`;
+    }
+
     const parts = [];
     const model = normalizeText(probe.model);
     const codexHome = normalizeText(probe.codexHome);
@@ -410,9 +415,10 @@ function createBridgeOpsManager({
       normalizeText(probe.sandbox?.mode) ||
       normalizeText(probe.sandbox?.type) ||
       normalizeText(probe.permissionProfile?.sandboxMode);
-    const approvalPolicy =
-      normalizeText(probe.permissionProfile?.approvalPolicy) ||
-      normalizeText(probe.approvalPolicy);
+    const networkEnabled =
+      typeof probe.permissionProfile?.network?.enabled === "boolean"
+        ? probe.permissionProfile.network.enabled
+        : null;
 
     if (model) {
       parts.push(`model=${model}`);
@@ -420,8 +426,8 @@ function createBridgeOpsManager({
     if (sandbox) {
       parts.push(`sandbox=${sandbox}`);
     }
-    if (approvalPolicy) {
-      parts.push(`approval=${approvalPolicy}`);
+    if (networkEnabled !== null) {
+      parts.push(`network=${networkEnabled ? "enabled" : "restricted"}`);
     }
     if (codexHome) {
       parts.push(`home=${codexHome}`);
