@@ -48,6 +48,7 @@ function createBridgeOpsManager({
       permissionDeniedCount: 0,
       lastCodexAppServerStderr: "",
       lastSignalCliStderr: "",
+      lastCodexRuntimeProbe: null,
       lastUsageSnapshot: null,
       lastRateLimitSnapshot: null,
       lastOpsSnapshotAt: "",
@@ -385,6 +386,50 @@ function createBridgeOpsManager({
     bridgeRuntime.outboundCount += 1;
   }
 
+  function noteCodexRuntimeProbe(probe) {
+    if (!probe || typeof probe !== "object") {
+      return;
+    }
+
+    try {
+      bridgeRuntime.lastCodexRuntimeProbe = JSON.parse(JSON.stringify(probe));
+    } catch {
+      bridgeRuntime.lastCodexRuntimeProbe = probe;
+    }
+  }
+
+  function formatCodexRuntimeLine(probe) {
+    if (!probe || typeof probe !== "object") {
+      return "unknown";
+    }
+
+    const parts = [];
+    const model = normalizeText(probe.model);
+    const codexHome = normalizeText(probe.codexHome);
+    const sandbox =
+      normalizeText(probe.sandbox?.mode) ||
+      normalizeText(probe.sandbox?.type) ||
+      normalizeText(probe.permissionProfile?.sandboxMode);
+    const approvalPolicy =
+      normalizeText(probe.permissionProfile?.approvalPolicy) ||
+      normalizeText(probe.approvalPolicy);
+
+    if (model) {
+      parts.push(`model=${model}`);
+    }
+    if (sandbox) {
+      parts.push(`sandbox=${sandbox}`);
+    }
+    if (approvalPolicy) {
+      parts.push(`approval=${approvalPolicy}`);
+    }
+    if (codexHome) {
+      parts.push(`home=${codexHome}`);
+    }
+
+    return parts.length > 0 ? parts.join(", ") : "captured";
+  }
+
   function buildOpsSnapshot(now = new Date()) {
     const host = buildHostSnapshot(now);
     const runs = snapshotAutoresearchRuns();
@@ -434,6 +479,7 @@ function createBridgeOpsManager({
         permissionDeniedCount: bridgeRuntime.permissionDeniedCount,
         lastCodexAppServerStderr: bridgeRuntime.lastCodexAppServerStderr,
         lastSignalCliStderr: bridgeRuntime.lastSignalCliStderr,
+        codexRuntimeProbe: bridgeRuntime.lastCodexRuntimeProbe,
       },
       scheduler,
       research,
@@ -554,12 +600,14 @@ function createBridgeOpsManager({
     const usageStatus = snapshot.usage.available
       ? "capturing snapshots"
       : "not surfaced by Codex yet";
+    const codexRuntimeLine = formatCodexRuntimeLine(snapshot.bridge.codexRuntimeProbe);
     const lines = [
       `host: up ${formatDuration(snapshot.host.uptimeMs)}, load=${snapshot.host.loadAverage.map((value) => value.toFixed(2)).join("/")}, mem=${formatByteSize(snapshot.host.usedMemBytes)}/${formatByteSize(snapshot.host.totalMemBytes)}`,
       `booted: ${snapshot.host.bootedAt}`,
       `host flags: lingering=${snapshot.host.lingeringEnabled ? "yes" : "no"}`,
       `bridge: ${formatUnitSummary(bridgeService)} | watcher: ${formatUnitSummary(watcherService)}`,
       `bridge uptime: ${formatDuration(snapshot.bridge.uptimeMs)}, rss=${formatByteSize(snapshot.bridge.rssBytes)}, pid=${snapshot.bridge.pid}`,
+      `codex runtime: ${codexRuntimeLine}`,
       `queues: interactive=${snapshot.bridge.interactiveQueueDepth}${snapshot.bridge.interactiveProcessing ? " (busy)" : ""}, background=${snapshot.bridge.backgroundQueueDepth}${snapshot.bridge.backgroundProcessing ? " (busy)" : ""}, attachments=${snapshot.bridge.attachmentQueueDepth}${snapshot.bridge.attachmentQueueProcessing ? " (busy)" : ""}`,
       `traffic: inbound=${snapshot.bridge.inboundCount} (last ${snapshot.bridge.lastInboundAt ? `${formatRelativeAge(snapshot.bridge.lastInboundAt, now)} ago from ${snapshot.bridge.lastInboundSender || "unknown"}` : "never"}), outbound=${snapshot.bridge.outboundCount} (last ${snapshot.bridge.lastOutboundAt ? `${formatRelativeAge(snapshot.bridge.lastOutboundAt, now)} ago to ${snapshot.bridge.lastOutboundRecipient || "unknown"}` : "never"})`,
       `turns: started=${snapshot.bridge.codexTurnStarts}, completed=${snapshot.bridge.codexTurnCompletions}, in flight=${snapshot.bridge.inFlightTurn ? `${formatRelativeAge(snapshot.bridge.inFlightTurn.startedAt, now)} (${truncateText(snapshot.bridge.inFlightTurn.promptPreview || "no preview", 80)})` : "none"}`,
@@ -650,6 +698,7 @@ function createBridgeOpsManager({
     noteTurnCompleted,
     noteIncoming,
     noteOutgoing,
+    noteCodexRuntimeProbe,
     writeOpsSnapshot,
     getOpsReport,
     getBridgeStatusReport,

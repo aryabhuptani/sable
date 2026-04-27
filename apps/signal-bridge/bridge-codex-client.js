@@ -348,12 +348,41 @@ function createBridgeCodexClient({
     });
   }
 
+  async function probeRuntimeProfile({ replyRecipient = "" } = {}) {
+    const client = createAppServerClient({
+      onNotification: () => {},
+      onServerRequest: () => ({}),
+      replyRecipient,
+    });
+
+    try {
+      const init = await client.initialize();
+      const thread = await client.request("thread/start", {
+        cwd,
+        approvalPolicy: "never",
+        approvalsReviewer: "guardian_subagent",
+        personality: "pragmatic",
+      });
+
+      return {
+        observedAt: new Date().toISOString(),
+        codexHome: init?.codexHome || "",
+        sandbox: thread?.sandbox || null,
+        permissionProfile: thread?.permissionProfile || null,
+        model: thread?.model || "",
+      };
+    } finally {
+      client.close();
+    }
+  }
+
   return {
     buildCodexAppServerArgs,
     buildCodexChildEnv,
     recordTestAppServerSpawnArgs,
     createAppServerClient,
     callCodexAppServer,
+    probeRuntimeProfile,
   };
 }
 
