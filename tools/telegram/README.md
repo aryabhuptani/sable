@@ -6,7 +6,7 @@ Current scope:
 - authenticate a local Telethon session for Arya's user account
 - inspect recent dialogs on the minipc
 - bucket them into queue-clearing categories
-- stay read-only until the review workflow proves useful
+- send explicit messages and optional attachments when Arya asks for that step
 
 ## Setup
 
@@ -40,8 +40,20 @@ npm run telegram:cli -- login
 npm run telegram:cli -- triage --limit 30
 ```
 
+7. Send a message explicitly:
+
+```bash
+npm run telegram:cli -- send --target "Mitchell Amador | Immunefi" --message "hey, just following up here"
+```
+
+8. Send a message with attachments:
+
+```bash
+npm run telegram:cli -- send --target "@mitchella" --message "sending this over now" --file /abs/path/to/file.pdf
+```
+
 ## Notes
 
 - Session state defaults to `/home/arya/.local/state/sable-telegram/telethon.session`.
-- This is deliberately not sending messages yet.
-- The next layer should be integrating the triage output into Signal-facing digests and thread-level draft assistance.
+- Target matching currently accepts dialog title, username, or numeric dialog id from recent dialogs.
+- The next layer should be integrating thread-level draft assistance and then a Signal-facing approval/send flow so Arya can review proposed replies from Signal before they are sent.

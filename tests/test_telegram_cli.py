@@ -20,6 +20,8 @@ class TelegramCliTests(unittest.TestCase):
     def build_dialog(self, **overrides):
         base = dict(
             title="Test Chat",
+            dialog_id=12345,
+            username="test_chat",
             unread_count=0,
             unread_mentions_count=0,
             last_message_at=self.now - timedelta(hours=1),
@@ -96,6 +98,25 @@ class TelegramCliTests(unittest.TestCase):
         self.assertIn("Needs reply now: 1", report)
         self.assertIn("Low-priority / can wait: 1", report)
         self.assertIn("Urgent DM", report)
+
+    def test_match_dialog_target_by_exact_title(self):
+        dialogs = [
+            self.build_dialog(title="Mitchell Amador | Immunefi", dialog_id=111),
+            self.build_dialog(title="Other Chat", dialog_id=222),
+        ]
+        matched = telegram_cli.match_dialog_target(dialogs, "Mitchell Amador | Immunefi")
+        self.assertEqual(matched.dialog_id, 111)
+
+    def test_match_dialog_target_by_username(self):
+        dialogs = [
+            self.build_dialog(title="Mitchell", username="mitchella", dialog_id=333),
+        ]
+        matched = telegram_cli.match_dialog_target(dialogs, "@mitchella")
+        self.assertEqual(matched.dialog_id, 333)
+
+    def test_validate_attachment_paths_rejects_missing_file(self):
+        with self.assertRaises(SystemExit):
+            telegram_cli.validate_attachment_paths(["/tmp/definitely-missing-telegram-attachment.pdf"])
 
 
 if __name__ == "__main__":

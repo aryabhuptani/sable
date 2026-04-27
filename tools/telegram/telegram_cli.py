@@ -88,6 +88,8 @@ class TelegramConfig:
 @dataclasses.dataclass(slots=True)
 class DialogSnapshot:
     title: str
+    dialog_id: int | None
+    username: str
     unread_count: int
     unread_mentions_count: int
     last_message_at: datetime | None
@@ -297,6 +299,15 @@ def summarize_dialog(dialog: DialogSnapshot, now: datetime | None = None) -> str
     )
 
 
+def build_dialog_selector(dialog: DialogSnapshot) -> str:
+    parts = []
+    if dialog.dialog_id is not None:
+        parts.append(f"id={dialog.dialog_id}")
+    if dialog.username:
+        parts.append(f"@{dialog.username}")
+    return ", ".join(parts)
+
+
 def format_triage_report(
     dialogs: list[DialogSnapshot],
     now: datetime | None = None,
@@ -444,39 +455,100 @@ async def fetch_dialogs(config: TelegramConfig, limit: int) -> list[DialogSnapsh
                 "Telegram session is not authorized yet. Run:\n"
                 "python3 tools/telegram/telegram_cli.py login"
             )
-
-        snapshots: list[DialogSnapshot] = []
-        async for dialog in client.iter_dialogs(limit=limit, ignore_pinned=False):
-            entity = dialog.entity
-            title = (
-                dialog.name
-                or getattr(entity, "title", None)
-                or getattr(entity, "first_name", None)
-            )
-            snippet = ""
-            if dialog.message is not None:
-                snippet = getattr(dialog.message, "message", None) or getattr(
-                    dialog.message, "raw_text", ""
-                )
-            snapshots.append(
-                DialogSnapshot(
-                    title=truncate_text(title or "Untitled chat", 80),
-                    unread_count=int(dialog.unread_count or 0),
-                    unread_mentions_count=int(dialog.unread_mentions_count or 0),
-                    last_message_at=getattr(dialog.message, "date", None),
-                    snippet=snippet or "",
-                    last_message_outgoing=bool(getattr(dialog.message, "out", False)),
-                    is_user=bool(getattr(entity, "bot", False) is False and dialog.is_user),
-                    is_group=bool(dialog.is_group),
-                    is_channel=bool(dialog.is_channel),
-                    is_bot=bool(getattr(entity, "bot", False)),
-                    is_muted=detect_muted(dialog),
-                    archived=bool(getattr(dialog, "folder_id", None) == 1),
-                )
-            )
-        return snapshots
+        return await fetch_dialogs_from_client(client, limit)
     finally:
         await client.disconnect()
+
+
+async def fetch_dialogs_from_client(client: Any, limit: int) -> list[DialogSnapshot]:
+    snapshots: list[DialogSnapshot] = []
+    async for dialog in client.iter_dialogs(limit=limit, ignore_pinned=False):
+        entity = dialog.entity
+        title = (
+            dialog.name
+            or getattr(entity, "title", None)
+            or getattr(entity, "first_name", None)
+        )
+        snippet = ""
+        if dialog.message is not None:
+            snippet = getattr(dialog.message, "message", None) or getattr(
+                dialog.message, "raw_text", ""
+            )
+        snapshots.append(
+            DialogSnapshot(
+                title=truncate_text(title or "Untitled chat", 80),
+                dialog_id=getattr(dialog, "id", None),
+                username=normalize_text(getattr(entity, "username", None)) or "",
+                unread_count=int(dialog.unread_count or 0),
+                unread_mentions_count=int(dialog.unread_mentions_count or 0),
+                last_message_at=getattr(dialog.message, "date", None),
+                snippet=snippet or "",
+                last_message_outgoing=bool(getattr(dialog.message, "out", False)),
+                is_user=bool(getattr(entity, "bot", False) is False and dialog.is_user),
+                is_group=bool(dialog.is_group),
+                is_channel=bool(dialog.is_channel),
+                is_bot=bool(getattr(entity, "bot", False)),
+                is_muted=detect_muted(dialog),
+                archived=bool(getattr(dialog, "folder_id", None) == 1),
+            )
+        )
+    return snapshots
+
+
+def normalize_target(value: str) -> str:
+    return str(value or "").strip().lstrip("@").casefold()
+
+
+def match_dialog_target(dialogs: list[DialogSnapshot], target: str) -> DialogSnapshot:
+    normalized_target = normalize_target(target)
+    if not normalized_target:
+        raise SystemExit("Missing Telegram target. Pass --target with a chat title, username, or dialog id.")
+
+    exact_matches = [
+        dialog
+        for dialog in dialogs
+        if normalize_target(dialog.title) == normalized_target
+        or normalize_target(dialog.username) == normalized_target
+        or (
+            dialog.dialog_id is not None
+            and str(dialog.dialog_id) == normalized_target
+        )
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
+        labels = [f"{dialog.title} ({build_dialog_selector(dialog) or 'no id'})" for dialog in exact_matches[:6]]
+        raise SystemExit(
+            "Telegram target matched multiple dialogs:\n- " + "\n- ".join(labels)
+        )
+
+    partial_matches = [
+        dialog
+        for dialog in dialogs
+        if normalized_target in normalize_target(dialog.title)
+        or normalized_target in normalize_target(dialog.username)
+    ]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    if len(partial_matches) > 1:
+        labels = [f"{dialog.title} ({build_dialog_selector(dialog) or 'no id'})" for dialog in partial_matches[:6]]
+        raise SystemExit(
+            "Telegram target was ambiguous:\n- " + "\n- ".join(labels)
+        )
+
+    raise SystemExit(f"No Telegram dialog matched target: {target}")
+
+
+def validate_attachment_paths(paths: list[str]) -> list[pathlib.Path]:
+    resolved = []
+    for raw_path in paths:
+        file_path = pathlib.Path(raw_path).expanduser().resolve()
+        if not file_path.exists():
+            raise SystemExit(f"Attachment path does not exist: {file_path}")
+        if not file_path.is_file():
+            raise SystemExit(f"Attachment path is not a file: {file_path}")
+        resolved.append(file_path)
+    return resolved
 
 
 async def command_list_dialogs(args: argparse.Namespace) -> int:
@@ -491,6 +563,54 @@ async def command_triage(args: argparse.Namespace) -> int:
     dialogs = await fetch_dialogs(load_config(), args.limit)
     print(format_triage_report(dialogs, stale_days=args.stale_days))
     return 0
+
+
+async def command_send(args: argparse.Namespace) -> int:
+    config = load_config()
+    if not has_required_config(config):
+        raise SystemExit(
+            "Missing Telegram config. Set SABLE_TELEGRAM_API_ID, "
+            "SABLE_TELEGRAM_API_HASH, and SABLE_TELEGRAM_PHONE first."
+        )
+
+    message = normalize_text(args.message) or ""
+    attachment_paths = validate_attachment_paths(args.file or [])
+    if not message and not attachment_paths:
+        raise SystemExit("Pass --message, --file, or both.")
+
+    client = await build_client(config)
+    await client.connect()
+    try:
+        if not await client.is_user_authorized():
+            raise SystemExit(
+                "Telegram session is not authorized yet. Run:\n"
+                "python3 tools/telegram/telegram_cli.py login"
+            )
+
+        dialogs = await fetch_dialogs_from_client(client, args.limit)
+        matched = match_dialog_target(dialogs, args.target)
+        entity = await client.get_entity(matched.dialog_id or matched.username or matched.title)
+
+        if attachment_paths:
+            await client.send_file(
+                entity,
+                [str(file_path) for file_path in attachment_paths],
+                caption=message or None,
+            )
+        else:
+            await client.send_message(entity, message)
+
+        payload = {
+            "ok": True,
+            "target": matched.title,
+            "selector": build_dialog_selector(matched),
+            "message": message,
+            "attachments": [str(file_path) for file_path in attachment_paths],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+    finally:
+        await client.disconnect()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -514,6 +634,24 @@ def build_parser() -> argparse.ArgumentParser:
     triage_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
     triage_parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS)
 
+    send_parser = subparsers.add_parser(
+        "send", help="Send a message and optional attachments to a Telegram dialog."
+    )
+    send_parser.add_argument("--target", required=True, help="Dialog title, username, or numeric dialog id.")
+    send_parser.add_argument("--message", help="Message text to send.")
+    send_parser.add_argument(
+        "--file",
+        action="append",
+        default=[],
+        help="Attachment file path. Repeat for multiple files.",
+    )
+    send_parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="How many recent dialogs to scan when resolving the target.",
+    )
+
     return parser
 
 
@@ -528,6 +666,8 @@ async def async_main(argv: list[str] | None = None) -> int:
         return await command_list_dialogs(args)
     if args.command == "triage":
         return await command_triage(args)
+    if args.command == "send":
+        return await command_send(args)
     parser.error(f"Unknown command {args.command}")
     return 2
 
