@@ -139,6 +139,7 @@ const OPS_ROOT =
   normalizeText(process.env.SABLE_OPS_STATE_DIR) || path.join(PROJECT_DIR, ".ops");
 const OPS_HISTORY_DIR = path.join(OPS_ROOT, "history");
 const OPS_STATUS_PATH = path.join(OPS_ROOT, "status.json");
+const OPS_ALERT_STATE_PATH = path.join(OPS_ROOT, "alerts.json");
 const OPS_SNAPSHOT_INTERVAL_MS = normalizeIntegerEnv(
   process.env.SABLE_OPS_SNAPSHOT_INTERVAL_MS,
   60_000
@@ -146,6 +147,18 @@ const OPS_SNAPSHOT_INTERVAL_MS = normalizeIntegerEnv(
 const OPS_STALLED_RUN_THRESHOLD_MS = normalizeIntegerEnv(
   process.env.SABLE_OPS_STALLED_RUN_THRESHOLD_MS,
   6 * 60 * 60 * 1000
+);
+const OPS_ALERTS_ENABLED = normalizeBooleanEnv(
+  process.env.SABLE_OPS_ALERTS_ENABLED,
+  !TEST_SIGNAL_LOG_PATH
+);
+const OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES = normalizeIntegerEnv(
+  process.env.SABLE_OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES,
+  1200 * 1024 * 1024
+);
+const OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS = normalizeIntegerEnv(
+  process.env.SABLE_OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
+  20 * 60 * 1000
 );
 
 const phoneNumber = process.env.PHONE_NUMBER?.trim();
@@ -172,6 +185,7 @@ let obsidianLinkServer = null;
 let obsidianLinkServerAddress = null;
 let isProcessingAttachmentQueue = false;
 const bridgeRuntime = createBridgeRuntimeState();
+let opsAlertState = loadOpsAlertState();
 
 startSignalRpc();
 startObsidianLinkServer();
@@ -876,6 +890,34 @@ function createBridgeRuntimeState() {
     lastOpsSnapshotAt: "",
     lastOpsSnapshotPath: "",
   };
+}
+
+function loadOpsAlertState() {
+  try {
+    const raw = fs.readFileSync(OPS_ALERT_STATE_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      lastBootedAt: normalizeText(parsed?.lastBootedAt),
+      alerts: parsed?.alerts && typeof parsed.alerts === "object" ? parsed.alerts : {},
+    };
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.error(`[${timestamp()}] Failed reading ops alert state: ${error.message}`);
+    }
+    return {
+      lastBootedAt: "",
+      alerts: {},
+    };
+  }
+}
+
+function saveOpsAlertState() {
+  try {
+    ensureOpsDirs();
+    fs.writeFileSync(OPS_ALERT_STATE_PATH, `${JSON.stringify(opsAlertState, null, 2)}\n`, "utf8");
+  } catch (error) {
+    console.error(`[${timestamp()}] Failed writing ops alert state: ${error.message}`);
+  }
 }
 
 function normalizeInFlightTurn(value) {
@@ -1930,6 +1972,7 @@ function buildHostSnapshot(now = new Date()) {
     platform: os.platform(),
     uptimeMs,
     bootedAt: new Date(now.getTime() - uptimeMs).toISOString(),
+    lingeringEnabled: fs.existsSync("/var/lib/systemd/linger/arya"),
     loadAverage: os.loadavg(),
     totalMemBytes,
     freeMemBytes,
@@ -2059,6 +2102,88 @@ function buildOpsSnapshot(now = new Date()) {
   };
 }
 
+function buildOpsAlertDefinitions(snapshot) {
+  return [
+    {
+      key: "bridge-memory-high",
+      firing: snapshot.bridge.rssBytes >= OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES,
+      summary: `Bridge RSS is high at ${formatByteSize(snapshot.bridge.rssBytes)}.`,
+    },
+    {
+      key: "in-flight-turn-stuck",
+      firing:
+        Boolean(snapshot.bridge.inFlightTurn) &&
+        Number(snapshot.bridge.inFlightTurn.ageMs || 0) >= OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
+      summary: snapshot.bridge.inFlightTurn
+        ? `A bridge turn has been in flight for ${formatDuration(snapshot.bridge.inFlightTurn.ageMs || 0)}.`
+        : "A bridge turn is stuck in flight.",
+    },
+    {
+      key: "scheduler-overdue",
+      firing: snapshot.scheduler.overdue > 0,
+      summary: `The scheduler has ${snapshot.scheduler.overdue} overdue workflow${snapshot.scheduler.overdue === 1 ? "" : "s"}.`,
+    },
+    {
+      key: "research-stalled",
+      firing: snapshot.research.stalled > 0,
+      summary: `Autoresearch has ${snapshot.research.stalled} stalled run${snapshot.research.stalled === 1 ? "" : "s"} and ${snapshot.research.budgetExhausted} budget-exhausted run${snapshot.research.budgetExhausted === 1 ? "" : "s"}.`,
+    },
+  ];
+}
+
+async function evaluateOpsAlerts(snapshot) {
+  if (!OPS_ALERTS_ENABLED || !allowedNumbers[0]) {
+    return;
+  }
+
+  const recipient = allowedNumbers[0];
+  const notifications = [];
+  const previousBootedAt = normalizeText(opsAlertState.lastBootedAt);
+  const currentBootedAt = normalizeText(snapshot?.host?.bootedAt);
+
+  if (currentBootedAt && previousBootedAt && previousBootedAt !== currentBootedAt) {
+    notifications.push(
+      `Sable ops alert: the minipc appears to have rebooted. Previous boot was ${previousBootedAt}; current boot is ${currentBootedAt}.`
+    );
+  }
+
+  opsAlertState.lastBootedAt = currentBootedAt || previousBootedAt;
+  const nextAlerts = {};
+
+  for (const definition of buildOpsAlertDefinitions(snapshot)) {
+    const previous = opsAlertState.alerts?.[definition.key] || {};
+    const next = {
+      firing: Boolean(definition.firing),
+      summary: normalizeText(definition.summary),
+      lastChangedAt: normalizeText(previous.lastChangedAt),
+      lastNotifiedAt: normalizeText(previous.lastNotifiedAt),
+    };
+
+    if (next.firing !== Boolean(previous.firing)) {
+      next.lastChangedAt = timestamp();
+      next.lastNotifiedAt = next.lastChangedAt;
+      notifications.push(
+        next.firing
+          ? `Sable ops alert: ${next.summary}`
+          : `Sable ops recovery: ${next.summary} Resolved.`
+      );
+    }
+
+    nextAlerts[definition.key] = next;
+  }
+
+  opsAlertState.alerts = nextAlerts;
+  saveOpsAlertState();
+
+  for (const message of notifications) {
+    try {
+      await sendReply(recipient, message);
+    } catch (error) {
+      console.error(`[${timestamp()}] Failed sending ops alert: ${error.message}`);
+    }
+  }
+}
+
 async function writeOpsSnapshot() {
   try {
     ensureOpsDirs();
@@ -2069,6 +2194,7 @@ async function writeOpsSnapshot() {
     await fs.promises.appendFile(historyPath, `${JSON.stringify(snapshot)}\n`, "utf8");
     bridgeRuntime.lastOpsSnapshotAt = snapshot.observedAt;
     bridgeRuntime.lastOpsSnapshotPath = OPS_STATUS_PATH;
+    await evaluateOpsAlerts(snapshot);
   } catch (error) {
     console.error(`[${timestamp()}] Failed writing ops snapshot: ${error.message}`);
   }
@@ -2088,6 +2214,7 @@ async function getOpsReport() {
   const lines = [
     `host: up ${formatDuration(snapshot.host.uptimeMs)}, load=${snapshot.host.loadAverage.map((value) => value.toFixed(2)).join("/")}, mem=${formatByteSize(snapshot.host.usedMemBytes)}/${formatByteSize(snapshot.host.totalMemBytes)}`,
     `booted: ${snapshot.host.bootedAt}`,
+    `host flags: lingering=${snapshot.host.lingeringEnabled ? "yes" : "no"}`,
     `bridge: ${formatUnitSummary(bridgeService)} | watcher: ${formatUnitSummary(watcherService)}`,
     `bridge uptime: ${formatDuration(snapshot.bridge.uptimeMs)}, rss=${formatByteSize(snapshot.bridge.rssBytes)}, pid=${snapshot.bridge.pid}`,
     `queues: interactive=${snapshot.bridge.interactiveQueueDepth}${snapshot.bridge.interactiveProcessing ? " (busy)" : ""}, background=${snapshot.bridge.backgroundQueueDepth}${snapshot.bridge.backgroundProcessing ? " (busy)" : ""}, attachments=${snapshot.bridge.attachmentQueueDepth}${snapshot.bridge.attachmentQueueProcessing ? " (busy)" : ""}`,
