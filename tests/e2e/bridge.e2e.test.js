@@ -141,6 +141,83 @@ test("/bridgestatus reports Obsidian link server configuration", async () => {
   }
 });
 
+test("/ops reports bridge, scheduler, and research health without starting a Codex turn", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/ops",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+    initialSchedulerJobs: [
+      {
+        id: "sched-daily-brief",
+        active: true,
+        nextRunAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      },
+    ],
+    extraEnv: ({ tempRoot }) => {
+      const researchRoot = path.join(tempRoot, "research");
+      const runRoot = path.join(
+        researchRoot,
+        "darkbloom",
+        "autoresearch",
+        "active",
+        "stalled-run"
+      );
+      fs.mkdirSync(runRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(runRoot, "STATE.json"),
+        `${JSON.stringify(
+          {
+            topicSlug: "darkbloom",
+            runSlug: "stalled-run",
+            rootQuestion: "Can multinode inference work?",
+            status: "active",
+            pendingQuestions: [{ question: "still pending" }],
+            processedQuestions: [{ question: "done" }, { question: "done 2" }],
+            maxTotalQuestions: 2,
+            startedAt: "2026-04-21T00:00:00.000Z",
+            updatedAt: "2026-04-21T01:00:00.000Z",
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      return {
+        SABLE_RESEARCH_ROOT: researchRoot,
+        SABLE_OPS_STATE_DIR: path.join(tempRoot, "ops"),
+        SABLE_OPS_SNAPSHOT_INTERVAL_MS: "1000",
+      };
+    },
+  });
+
+  try {
+    const reply = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("research: active=1") &&
+        request.params.message.includes("usage: not surfaced by Codex yet"),
+      "ops report reply"
+    );
+
+    assert.match(reply.params.message, /scheduler: 1 active/);
+    assert.match(reply.params.message, /Research watchlist:/);
+    assert.match(reply.params.message, /darkbloom\/stalled-run: active/);
+
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
 test("/telegram returns the local Telegram triage summary", async () => {
   const harness = await startBridgeScenario({
     signalScenario: {
