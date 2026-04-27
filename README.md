@@ -9,6 +9,28 @@ Sable is Arya's local-first automation and messaging stack on the minipc.
 - `knowledge/`: symlink to canonical project knowledge in `/home/arya/memory/knowledge/projects/sable/`
 - `TASKS.md`: symlink to canonical project tasks in `/home/arya/memory/tasks/projects/sable/TODO.md`
 
+## Bridge Architecture
+
+The Signal bridge is intentionally moving toward a light modular layout rather than one ever-fatter `bridge.js`.
+
+Current boundaries:
+
+- `apps/signal-bridge/bridge.js`
+  - composition root and orchestration
+  - owns the live bridge lifecycle, queue processing, and high-level job flow
+- `apps/signal-bridge/bridge-commands.js`
+  - slash-command parsing
+- `apps/signal-bridge/bridge-ops.js`
+  - `/ops`, `/bridgestatus`, snapshot/history writing, and alert logic
+- `apps/signal-bridge/bridge-codex-client.js`
+  - Codex app-server transport/client plumbing
+
+Refactor policy:
+
+- new bridge features should default to an existing module boundary when one fits
+- `bridge.js` should stay focused on orchestration, not accumulate new subsystem internals
+- scheduler/autoresearch and attachment internals should only be extracted further when feature work creates real pressure, not for aesthetic reasons alone
+
 ## Philosophy
 
 - code lives in `/home/arya/projects/`
