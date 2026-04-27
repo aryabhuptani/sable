@@ -9,6 +9,11 @@ compute_hash() {
   find "$REPO_DIR" \
     \( -path "$REPO_DIR/node_modules" -o \
        -path "$REPO_DIR/.git" -o \
+       -path "$REPO_DIR/.attachment-queue" -o \
+       -path "$REPO_DIR/.ops" -o \
+       -path "$REPO_DIR/.venv" -o \
+       -path "$REPO_DIR/.venv-pdf" -o \
+       -path "$REPO_DIR/__pycache__" -o \
        -path "$REPO_DIR/.bridge-state.json" -o \
        -path "$REPO_DIR/.restart-requested" -o \
        -path "$REPO_DIR/.restart-notice-pending" -o \
