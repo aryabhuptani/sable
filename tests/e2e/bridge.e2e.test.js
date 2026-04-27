@@ -859,6 +859,8 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
     const codexRequests = await harness.getCodexRequests();
     const spawnEntry = codexRequests.find((request) => request.method === "spawn");
     assert.ok(spawnEntry, "expected the app-server spawn entry to be logged");
+    const threadEntry = codexRequests.find((request) => request.method === "thread/start");
+    assert.ok(threadEntry, "expected the app-server thread/start entry to be logged");
     assert.deepStrictEqual(spawnEntry.params.args, [
       "--search",
       "--dangerously-bypass-approvals-and-sandbox",
@@ -870,6 +872,7 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
       "--listen",
       "stdio://",
     ]);
+    assert.equal(threadEntry.params.sandbox, "danger-full-access");
   } finally {
     await harness.shutdown();
   }

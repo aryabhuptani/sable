@@ -359,6 +359,7 @@ function createBridgeCodexClient({
       const init = await client.initialize();
       const thread = await client.request("thread/start", {
         cwd,
+        sandbox: "danger-full-access",
         approvalPolicy: "never",
         approvalsReviewer: "guardian_subagent",
         personality: "pragmatic",

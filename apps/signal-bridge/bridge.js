@@ -3076,6 +3076,7 @@ function isSubagentToolName(toolName) {
 function buildAppServerThreadParams(threadId = null) {
   const params = {
     cwd: CODEX_CWD,
+    sandbox: "danger-full-access",
     approvalPolicy: "never",
     approvalsReviewer: "guardian_subagent",
     personality: "pragmatic",
@@ -3092,6 +3093,7 @@ function buildAppServerTurnParams(threadId, prompt, imagePaths = []) {
   return {
     threadId,
     cwd: CODEX_CWD,
+    sandbox: "danger-full-access",
     approvalPolicy: "never",
     approvalsReviewer: "guardian_subagent",
     personality: "pragmatic",
