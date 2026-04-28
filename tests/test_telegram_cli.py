@@ -80,6 +80,15 @@ class TelegramCliTests(unittest.TestCase):
         )
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
+    def test_classify_direct_market_making_pitch_as_ignored(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            unread_count=1,
+            snippet="Looking for affordable Market Making that keeps your token trading smoothly? Happy to run a free trial.",
+        )
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
     def test_classify_compliment_only_as_ignored(self):
         dialog = self.build_dialog(
             is_user=True,

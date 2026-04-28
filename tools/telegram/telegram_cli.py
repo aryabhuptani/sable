@@ -53,11 +53,14 @@ PROMO_DIRECT_KEYWORDS = (
     "campaign service",
     "caught our attention",
     "exchange listing",
+    "free trial",
     "kol",
+    "market making",
     "open to chatting",
     "open to chat",
     "partnership opportunity",
     "promo",
+    "token trading smoothly",
 )
 CLOSURE_PREFIXES = (
     "great to be at the finish line",
