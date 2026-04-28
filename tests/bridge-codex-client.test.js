@@ -3,13 +3,15 @@ const test = require("node:test");
 
 const { createBridgeCodexClient } = require("../apps/signal-bridge/bridge-codex-client");
 
+const BRIDGE_DIR = "/home/arya/projects/sable/apps/signal-bridge";
+
 function createClient(envSource = {}) {
   return createBridgeCodexClient({
     spawn: () => {
       throw new Error("spawn should not be called");
     },
-    cwd: "/home/arya/projects/sable/apps/signal-bridge",
-    projectDir: "/home/arya/projects/sable/apps/signal-bridge",
+    cwd: BRIDGE_DIR,
+    projectDir: BRIDGE_DIR,
     signalReplyToEnv: "SIGNAL_REPLY_TO",
     signalBridgeDirEnv: "SIGNAL_BRIDGE_DIR",
     appServerClientVersion: "test",
@@ -32,7 +34,7 @@ test("codex child env inherits bridge CODEX_HOME", () => {
 
   assert.equal(env.CODEX_HOME, "/home/arya/.codex-bridge");
   assert.equal(env.PATH, "/usr/bin");
-  assert.equal(env.SIGNAL_BRIDGE_DIR, "/home/arya/projects/sable/apps/signal-bridge");
+  assert.equal(env.SIGNAL_BRIDGE_DIR, BRIDGE_DIR);
   assert.equal(env.SIGNAL_REPLY_TO, "+12025550123");
 });
 
@@ -43,7 +45,7 @@ test("codex app-server launches with full-access bridge flags", () => {
     "--search",
     "--dangerously-bypass-approvals-and-sandbox",
     "-C",
-    "/home/arya/projects/sable/apps/signal-bridge",
+    BRIDGE_DIR,
     "-c",
     "shell_environment_policy.inherit=all",
     "app-server",
