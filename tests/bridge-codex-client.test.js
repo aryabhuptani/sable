@@ -36,6 +36,22 @@ test("codex child env inherits bridge CODEX_HOME", () => {
   assert.equal(env.SIGNAL_REPLY_TO, "+12025550123");
 });
 
+test("codex app-server launches with full-access bridge flags", () => {
+  const client = createClient();
+
+  assert.deepEqual(client.buildCodexAppServerArgs(), [
+    "--search",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "-C",
+    "/home/arya/projects/sable/apps/signal-bridge",
+    "-c",
+    "shell_environment_policy.inherit=all",
+    "app-server",
+    "--listen",
+    "stdio://",
+  ]);
+});
+
 test("codex child env clears blank reply recipient", () => {
   const client = createClient({
     SIGNAL_REPLY_TO: "+12025550123",
