@@ -62,6 +62,9 @@ PROMO_DIRECT_KEYWORDS = (
     "promo",
     "token trading smoothly",
 )
+ALWAYS_IGNORED_TITLE_KEYWORDS = (
+    "central lisbon plug",
+)
 CLOSURE_PREFIXES = (
     "great to be at the finish line",
     "hope this is useful",
@@ -170,6 +173,9 @@ def classify_dialog(
     if is_telegram_system_chat(dialog):
         return "ignored"
 
+    if is_always_ignored_title(dialog):
+        return "ignored"
+
     if dialog.last_message_outgoing:
         return "ignored"
 
@@ -232,6 +238,11 @@ def looks_like_spam(dialog: DialogSnapshot) -> bool:
 
 def is_telegram_system_chat(dialog: DialogSnapshot) -> bool:
     return dialog.title.strip().lower() == "telegram"
+
+
+def is_always_ignored_title(dialog: DialogSnapshot) -> bool:
+    title = dialog.title.strip().lower()
+    return any(keyword in title for keyword in ALWAYS_IGNORED_TITLE_KEYWORDS)
 
 
 def looks_like_closure(dialog: DialogSnapshot) -> bool:

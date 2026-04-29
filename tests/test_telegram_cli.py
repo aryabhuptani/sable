@@ -71,6 +71,16 @@ class TelegramCliTests(unittest.TestCase):
         dialog = self.build_dialog(title="Telegram", is_user=True, is_group=False)
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
+    def test_classify_central_lisbon_plug_as_ignored(self):
+        dialog = self.build_dialog(
+            title="Central Lisbon Plug ( OFFICIAL )",
+            is_channel=True,
+            is_group=False,
+            unread_count=1,
+            snippet="Wednesday special",
+        )
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
     def test_classify_direct_promo_as_ignored(self):
         dialog = self.build_dialog(
             is_user=True,
