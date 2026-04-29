@@ -1571,13 +1571,16 @@ function countRunnableAutoresearchRuns(runs) {
 }
 
 function isRunnableAutoresearchRun(run) {
-  const isBudgetExhausted =
+  return run.status === "active" && run.pendingCount > 0 && !isBudgetExhaustedAutoresearchRun(run);
+}
+
+function isBudgetExhaustedAutoresearchRun(run) {
+  return (
     run.status === "active" &&
     run.maxTotalQuestions > 0 &&
     run.processedCount >= run.maxTotalQuestions &&
-    run.pendingCount > 0;
-
-  return run.status === "active" && run.pendingCount > 0 && !isBudgetExhausted;
+    run.pendingCount > 0
+  );
 }
 
 function summarizeAutoresearchRuns(runs, now = new Date()) {
@@ -1595,11 +1598,7 @@ function summarizeAutoresearchRuns(runs, now = new Date()) {
 
   for (const run of runs.values()) {
     summary.total += 1;
-    const isBudgetExhausted =
-      run.status === "active" &&
-      run.maxTotalQuestions > 0 &&
-      run.processedCount >= run.maxTotalQuestions &&
-      run.pendingCount > 0;
+    const isBudgetExhausted = isBudgetExhaustedAutoresearchRun(run);
 
     if (run.status === "active") {
       summary.active += 1;

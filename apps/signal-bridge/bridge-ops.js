@@ -170,11 +170,7 @@ function createBridgeOpsManager({
 
     for (const run of runs.values()) {
       summary.total += 1;
-      const isBudgetExhausted =
-        run.status === "active" &&
-        run.maxTotalQuestions > 0 &&
-        run.processedCount >= run.maxTotalQuestions &&
-        run.pendingCount > 0;
+      const isBudgetExhausted = isBudgetExhaustedAutoresearchRun(run);
 
       if (run.status === "active") {
         summary.active += 1;
@@ -233,12 +229,18 @@ function createBridgeOpsManager({
     const budgetExhausted =
       typeof isBudgetExhausted === "boolean"
         ? isBudgetExhausted
-        : run.status === "active" &&
-          run.maxTotalQuestions > 0 &&
-          run.processedCount >= run.maxTotalQuestions &&
-          run.pendingCount > 0;
+        : isBudgetExhaustedAutoresearchRun(run);
 
     return run.status === "active" && run.pendingCount > 0 && !budgetExhausted;
+  }
+
+  function isBudgetExhaustedAutoresearchRun(run) {
+    return (
+      run.status === "active" &&
+      run.maxTotalQuestions > 0 &&
+      run.processedCount >= run.maxTotalQuestions &&
+      run.pendingCount > 0
+    );
   }
 
   function summarizeSchedulerHealth(now = new Date()) {
