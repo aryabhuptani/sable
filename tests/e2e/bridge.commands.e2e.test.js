@@ -108,6 +108,8 @@ test("/ops reports bridge, scheduler, and research health without starting a Cod
         request.method === "send" &&
         typeof request.params?.message === "string" &&
         request.params.message.includes("research: active=1") &&
+        request.params.message.includes("runnable=0") &&
+        request.params.message.includes("budget-exhausted=1") &&
         request.params.message.includes("usage: not surfaced by Codex yet"),
       "ops report reply"
     );

@@ -170,10 +170,15 @@ function createBridgeOpsManager({
 
     for (const run of runs.values()) {
       summary.total += 1;
+      const isBudgetExhausted =
+        run.status === "active" &&
+        run.maxTotalQuestions > 0 &&
+        run.processedCount >= run.maxTotalQuestions &&
+        run.pendingCount > 0;
 
       if (run.status === "active") {
         summary.active += 1;
-        if (run.pendingCount > 0) {
+        if (isRunnableAutoresearchRun(run, { isBudgetExhausted })) {
           summary.runnable += 1;
         }
       }
@@ -183,11 +188,6 @@ function createBridgeOpsManager({
       }
 
       const lastUpdatedAgeMs = ageMsFromIso(run.lastUpdatedAt, now);
-      const isBudgetExhausted =
-        run.status === "active" &&
-        run.maxTotalQuestions > 0 &&
-        run.processedCount >= run.maxTotalQuestions &&
-        run.pendingCount > 0;
       const isStalled =
         run.status === "active" &&
         (isBudgetExhausted ||
@@ -227,6 +227,18 @@ function createBridgeOpsManager({
     }
 
     return summary;
+  }
+
+  function isRunnableAutoresearchRun(run, { isBudgetExhausted } = {}) {
+    const budgetExhausted =
+      typeof isBudgetExhausted === "boolean"
+        ? isBudgetExhausted
+        : run.status === "active" &&
+          run.maxTotalQuestions > 0 &&
+          run.processedCount >= run.maxTotalQuestions &&
+          run.pendingCount > 0;
+
+    return run.status === "active" && run.pendingCount > 0 && !budgetExhausted;
   }
 
   function summarizeSchedulerHealth(now = new Date()) {
