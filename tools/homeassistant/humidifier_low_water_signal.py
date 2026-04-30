@@ -9,6 +9,7 @@ import subprocess
 import time
 import urllib.request
 import uuid
+from datetime import datetime, time as clock_time
 from pathlib import Path
 
 
@@ -20,6 +21,8 @@ STATE_PATH = Path("/home/arya/projects/sable/.state/humidifier_low_water_signal.
 HUMIDITY_ENTITY = "sensor.levoit_humidifier_humidity"
 LOW_WATER_ENTITY = "binary_sensor.levoit_humidifier_low_water"
 COOLDOWN_SECONDS = 6 * 60 * 60
+SLEEP_START = clock_time(1, 0)
+SLEEP_END = clock_time(9, 0)
 
 
 TOKEN_SCRIPT = r"""
@@ -90,6 +93,13 @@ def save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
 
+def is_sleep_window(now: datetime | None = None) -> bool:
+    current = (now or datetime.now()).time()
+    if SLEEP_START < SLEEP_END:
+        return SLEEP_START <= current < SLEEP_END
+    return current >= SLEEP_START or current < SLEEP_END
+
+
 def queue_signal(message: str, recipient: str) -> Path:
     QUEUE_PENDING.mkdir(parents=True, exist_ok=True)
     request_id = f"humidifier-low-water-{int(time.time())}-{uuid.uuid4().hex[:8]}"
@@ -122,6 +132,13 @@ def main() -> int:
 
     state = load_state()
     now = time.time()
+
+    if not is_sleep_window():
+        if state.get("active"):
+            state = {"active": False, "last_clear_at": now, "reason": "outside_sleep_window"}
+            save_state(state)
+        print(f"no alert outside sleep window: humidity={humidity:g}, low_water={low_water}")
+        return 0
 
     if humidity >= 30 or not low_water:
         if state.get("active"):
