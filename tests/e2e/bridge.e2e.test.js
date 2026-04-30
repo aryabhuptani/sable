@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   assert,
+  extractSentMessages,
   fsp,
   path,
   startBridgeScenario,
@@ -135,6 +136,90 @@ test("due scheduled workflows run in the background without blocking live chat t
     assert.equal(typeof state.backgroundSessionId, "string");
     assert.equal(typeof state.interactiveSessionId, "string");
     assert.notEqual(state.backgroundSessionId, state.interactiveSessionId);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("scheduled workflows suppress live progress chatter while still sending the final result", async () => {
+  const pastDue = new Date(Date.now() - 60_000).toISOString();
+  const harness = await startBridgeScenario({
+    signalScenario: { receive: [] },
+    codexScenario: {
+      turns: [
+        {
+          notifications: [
+            {
+              delayMs: 40,
+              message: {
+                jsonrpc: "2.0",
+                method: "turn/started",
+                params: {},
+              },
+            },
+            {
+              delayMs: 80,
+              message: {
+                jsonrpc: "2.0",
+                method: "item/mcpToolCall/progress",
+                params: {
+                  message: "Reading repo state...",
+                },
+              },
+            },
+            {
+              delayMs: 120,
+              message: {
+                jsonrpc: "2.0",
+                method: "item/completed",
+                params: {
+                  item: {
+                    type: "agentMessage",
+                    status: "completed",
+                    text: "scheduled maintenance finished",
+                  },
+                },
+              },
+            },
+            {
+              delayMs: 160,
+              message: {
+                jsonrpc: "2.0",
+                method: "turn/completed",
+                params: {},
+              },
+            },
+          ],
+        },
+      ],
+    },
+    initialSchedulerJobs: [
+      {
+        id: "sched-maintenance",
+        sender: "+15551112222",
+        createdAt: "2026-04-30T00:00:00.000Z",
+        updatedAt: "2026-04-30T00:00:00.000Z",
+        active: true,
+        recurrence: { type: "daily" },
+        time: { hour: 8, minute: 0, text: "8:00 AM" },
+        workflowPrompt: "Run passive background maintenance.",
+        nextRunAt: pastDue,
+        lastRunAt: "",
+      },
+    ],
+    extraEnv: EMPTY_TURN_SCENARIO_ENV,
+  });
+
+  try {
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        request.params?.message === "scheduled maintenance finished",
+      "scheduled workflow final result"
+    );
+
+    const sentMessages = extractSentMessages(await harness.getSignalRequests());
+    assert.deepEqual(sentMessages, ["scheduled maintenance finished"]);
   } finally {
     await harness.shutdown();
   }
