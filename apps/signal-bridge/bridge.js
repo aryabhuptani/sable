@@ -1570,8 +1570,13 @@ function countRunnableAutoresearchRuns(runs) {
   return count;
 }
 
-function isRunnableAutoresearchRun(run) {
-  return run.status === "active" && run.pendingCount > 0 && !isBudgetExhaustedAutoresearchRun(run);
+function isRunnableAutoresearchRun(run, { isBudgetExhausted } = {}) {
+  const budgetExhausted =
+    typeof isBudgetExhausted === "boolean"
+      ? isBudgetExhausted
+      : isBudgetExhaustedAutoresearchRun(run);
+
+  return run.status === "active" && run.pendingCount > 0 && !budgetExhausted;
 }
 
 function isBudgetExhaustedAutoresearchRun(run) {
@@ -1602,7 +1607,7 @@ function summarizeAutoresearchRuns(runs, now = new Date()) {
 
     if (run.status === "active") {
       summary.active += 1;
-      if (isRunnableAutoresearchRun(run)) {
+      if (isRunnableAutoresearchRun(run, { isBudgetExhausted })) {
         summary.runnable += 1;
       }
     }
