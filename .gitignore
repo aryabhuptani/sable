@@ -16,4 +16,5 @@ apps/signal-bridge/.bridge-state.json
 apps/signal-bridge/.attachment-queue/
 apps/signal-bridge/.ops/
 apps/signal-bridge/.restart-requested
+.state/
 tools/telegram/.env

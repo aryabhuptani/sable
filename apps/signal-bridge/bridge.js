@@ -5069,11 +5069,16 @@ async function processNextAttachmentCommand() {
     if (!recipient) {
       throw new Error("Attachment request did not include a recipient.");
     }
-    if (files.length === 0) {
-      throw new Error("Attachment request did not include any valid files.");
+    if (files.length === 0 && !message) {
+      throw new Error("Message request did not include text or any valid files.");
     }
 
-    await sendSignalAttachmentMessage(recipient, message, files);
+    if (files.length > 0) {
+      await sendSignalAttachmentMessage(recipient, message, files);
+    } else {
+      await sendSignalMessage(recipient, message);
+    }
+
     await writeAttachmentCommandResult(requestId, {
       ok: true,
       recipient,
