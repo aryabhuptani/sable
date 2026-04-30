@@ -21,7 +21,7 @@ STATE_PATH = Path("/home/arya/projects/sable/.state/humidifier_low_water_signal.
 HUMIDITY_ENTITY = "sensor.levoit_humidifier_humidity"
 LOW_WATER_ENTITY = "binary_sensor.levoit_humidifier_low_water"
 COOLDOWN_SECONDS = 6 * 60 * 60
-SLEEP_START = clock_time(1, 0)
+SLEEP_START = clock_time(0, 15)
 SLEEP_END = clock_time(9, 0)
 
 
