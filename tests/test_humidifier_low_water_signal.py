@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -37,7 +39,8 @@ class HumidifierLowWaterSignalTests(unittest.TestCase):
                 ),
                 mock.patch.object(sys, "argv", ["humidifier_low_water_signal.py"]),
             ):
-                self.assertEqual(humidifier_low_water_signal.main(), 0)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(humidifier_low_water_signal.main(), 0)
 
             self.assertIn('"active": false', state_path.read_text(encoding="utf-8"))
 
