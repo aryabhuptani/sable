@@ -45,6 +45,18 @@ test("/schedules lists persisted recurring workflows", async () => {
         nextRunAt: "2026-04-18T07:00:00.000Z",
         lastRunAt: "",
       },
+      {
+        id: "sched-background-maintenance",
+        sender: "+15551112222",
+        createdAt: "2026-04-16T00:00:00.000Z",
+        updatedAt: "2026-04-16T00:00:00.000Z",
+        active: true,
+        recurrence: { type: "interval", intervalMinutes: 5 },
+        replyMode: "silent",
+        workflowPrompt: "Run passive background maintenance",
+        nextRunAt: "2026-04-18T07:05:00.000Z",
+        lastRunAt: "",
+      },
     ],
   });
 
@@ -58,6 +70,12 @@ test("/schedules lists persisted recurring workflows", async () => {
     );
 
     assert.match(listing.params.message, /Give me a daily briefing of my day/);
+    assert.match(
+      listing.params.message,
+      /sched-background-maintenance: every 5 minutes \[silent\]/
+    );
+    assert.match(listing.params.message, /reply mode: silent/);
+    assert.match(listing.params.message, /Run passive background maintenance/);
 
     await assertNoCodexTurnStarted(harness);
   } finally {
