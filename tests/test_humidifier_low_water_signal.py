@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -42,7 +43,9 @@ class HumidifierLowWaterSignalTests(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     self.assertEqual(humidifier_low_water_signal.main(), 0)
 
-            self.assertIn('"active": false', state_path.read_text(encoding="utf-8"))
+            stored_state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertFalse(stored_state["active"])
+            self.assertEqual(stored_state["reason"], "outside_sleep_window")
 
 
 if __name__ == "__main__":
