@@ -90,6 +90,15 @@ class TelegramCliTests(unittest.TestCase):
         )
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
+    def test_classify_exchange_delisting_as_ignored_even_in_group(self):
+        dialog = self.build_dialog(
+            is_user=False,
+            is_group=True,
+            unread_count=1,
+            snippet="Heads up on upcoming exchange de-listings and listing changes.",
+        )
+        self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
+
     def test_classify_direct_market_making_pitch_as_ignored(self):
         dialog = self.build_dialog(
             is_user=True,

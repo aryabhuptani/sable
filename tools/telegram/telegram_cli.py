@@ -53,6 +53,7 @@ PROMO_DIRECT_KEYWORDS = (
     "campaign service",
     "caught our attention",
     "exchange listing",
+    "exchange listings",
     "free trial",
     "kol",
     "market making",
@@ -61,6 +62,18 @@ PROMO_DIRECT_KEYWORDS = (
     "partnership opportunity",
     "promo",
     "token trading smoothly",
+)
+ALWAYS_IGNORED_CONTENT_KEYWORDS = (
+    "exchange delisting",
+    "exchange delistings",
+    "exchange de-listing",
+    "exchange de-listings",
+    "exchange listing",
+    "exchange listings",
+    "listing/delisting",
+    "listings/delistings",
+    "listing/de-listing",
+    "listings/de-listings",
 )
 ALWAYS_IGNORED_TITLE_KEYWORDS = (
     "central lisbon plug",
@@ -176,6 +189,9 @@ def classify_dialog(
     if is_always_ignored_title(dialog):
         return "ignored"
 
+    if is_always_ignored_content(dialog):
+        return "ignored"
+
     if dialog.last_message_outgoing:
         return "ignored"
 
@@ -243,6 +259,11 @@ def is_telegram_system_chat(dialog: DialogSnapshot) -> bool:
 def is_always_ignored_title(dialog: DialogSnapshot) -> bool:
     title = dialog.title.strip().lower()
     return any(keyword in title for keyword in ALWAYS_IGNORED_TITLE_KEYWORDS)
+
+
+def is_always_ignored_content(dialog: DialogSnapshot) -> bool:
+    text = " ".join([dialog.title, dialog.snippet]).lower()
+    return any(keyword in text for keyword in ALWAYS_IGNORED_CONTENT_KEYWORDS)
 
 
 def looks_like_closure(dialog: DialogSnapshot) -> bool:
@@ -579,6 +600,49 @@ async def command_triage(args: argparse.Namespace) -> int:
     return 0
 
 
+async def command_mark_read(args: argparse.Namespace) -> int:
+    config = load_config()
+    if not has_required_config(config):
+        raise SystemExit(
+            "Missing Telegram config. Set SABLE_TELEGRAM_API_ID, "
+            "SABLE_TELEGRAM_API_HASH, and SABLE_TELEGRAM_PHONE first."
+        )
+
+    client = await build_client(config)
+    await client.connect()
+    marked = []
+    try:
+        if not await client.is_user_authorized():
+            raise SystemExit(
+                "Telegram session is not authorized yet. Run:\n"
+                "python3 tools/telegram/telegram_cli.py login"
+            )
+
+        async for dialog in client.iter_dialogs(limit=args.limit, ignore_pinned=False):
+            unread_count = int(dialog.unread_count or 0)
+            if unread_count <= 0:
+                continue
+            await client.send_read_acknowledge(dialog.entity)
+            title = (
+                dialog.name
+                or getattr(dialog.entity, "title", None)
+                or getattr(dialog.entity, "first_name", None)
+                or "Untitled chat"
+            )
+            marked.append({"title": truncate_text(title, 80), "unread_count": unread_count})
+    finally:
+        await client.disconnect()
+
+    payload = {
+        "ok": True,
+        "limit": args.limit,
+        "marked_count": len(marked),
+        "marked": marked,
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 async def command_send(args: argparse.Namespace) -> int:
     config = load_config()
     if not has_required_config(config):
@@ -648,6 +712,11 @@ def build_parser() -> argparse.ArgumentParser:
     triage_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
     triage_parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS)
 
+    mark_read_parser = subparsers.add_parser(
+        "mark-read", help="Mark unread dialogs in the recent Telegram queue as read."
+    )
+    mark_read_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
+
     send_parser = subparsers.add_parser(
         "send", help="Send a message and optional attachments to a Telegram dialog."
     )
@@ -680,6 +749,8 @@ async def async_main(argv: list[str] | None = None) -> int:
         return await command_list_dialogs(args)
     if args.command == "triage":
         return await command_triage(args)
+    if args.command == "mark-read":
+        return await command_mark_read(args)
     if args.command == "send":
         return await command_send(args)
     parser.error(f"Unknown command {args.command}")
