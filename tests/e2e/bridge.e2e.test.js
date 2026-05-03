@@ -1407,3 +1407,39 @@ test("/setavatar uses the live signal session instead of spawning a second signa
     await harness.shutdown();
   }
 });
+
+test("/removeavatar uses the live signal session without starting a Codex turn", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/removeavatar",
+        },
+      ],
+    },
+    codexScenario: {
+      turns: [],
+    },
+  });
+
+  try {
+    const updateRequest = await harness.waitForSignalRequest(
+      (request) => request.method === "updateProfile" && request.params?.removeAvatar === true,
+      "avatar removal request"
+    );
+    assert.deepStrictEqual(updateRequest.params, { removeAvatar: true });
+
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        request.params?.message === "Removed Sable's Signal profile picture.",
+      "avatar removal success reply"
+    );
+
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
