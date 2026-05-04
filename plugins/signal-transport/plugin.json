@@ -9,6 +9,7 @@
   "runtime": {
     "type": "node-service",
     "currentEntryPoints": [
+      "apps/signal-bridge/signal-attachment-plugin.js",
       "apps/signal-bridge/bridge.js",
       "apps/signal-bridge/bridge-commands.js",
       "tools/signal/send_attachment.js"

@@ -15,6 +15,7 @@ const suites = [
       "tests/bridge-codex-client.test.js",
       "tests/obsidian-link-plugin.test.js",
       "tests/runner-adapter.test.js",
+      "tests/signal-attachment-plugin.test.js",
       "tests/telegram-review-plugin.test.js",
       "tests/test_bridge_commands.js",
       "tests/test_signal_attachment_cli.js",
