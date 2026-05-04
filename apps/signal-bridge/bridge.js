@@ -33,6 +33,7 @@ const { createScheduledAttachmentDiscovery } = require("./scheduled-attachment-d
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
 const { createSignalInboundPlugin } = require("./signal-inbound-plugin");
 const { createSignalProfilePlugin } = require("./signal-profile-plugin");
+const { createSignalRpcSession } = require("./signal-rpc-session");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
 const { createVoiceNotePlugin } = require("./voice-note-plugin");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
@@ -251,10 +252,7 @@ const testSupport = createBridgeTestSupport({
 
 validateConfig();
 
-let signalProcess;
-let signalStdoutBuffer = "";
-let nextSignalRequestId = 1;
-const pendingSignalRequests = new Map();
+let signalRpc;
 
 const interactiveQueue = [];
 const backgroundQueue = [];
@@ -301,6 +299,18 @@ const ops = createBridgeOpsManager({
     console.error(`[${timestamp()}] ${message}`);
   },
 });
+signalRpc = createSignalRpcSession({
+  logger: console,
+  onExit: (code) => process.exit(code ?? 1),
+  onReceive: handleReceiveEvent,
+  onStderr: (text) => ops.noteSignalCliStderr(text),
+  phoneNumber,
+  projectDir: PROJECT_DIR,
+  spawn,
+  testSignalLogPath: TEST_SIGNAL_LOG_PATH,
+  testSupport,
+  timestamp,
+});
 const runner = createCodexCliRunnerAdapter({
   spawn,
   cwd: CODEX_CWD,
@@ -336,7 +346,7 @@ const pluginAuth = createPluginAuthManager({
   timestamp,
 });
 
-startSignalRpc();
+signalRpc.start();
 obsidianLinks.startServer();
 ensureAttachmentQueueDirs();
 ops.ensureOpsDirs();
@@ -503,95 +513,6 @@ function setInFlightTurn(sender, prompt) {
 function clearInFlightTurn() {
   state = stateStore.clearInFlightTurn(state);
   saveState();
-}
-
-function startSignalRpc() {
-  signalProcess = spawn(
-    "signal-cli",
-    ["-a", phoneNumber, "jsonRpc", "--receive-mode=on-start"],
-    {
-      cwd: PROJECT_DIR,
-      stdio: ["pipe", "pipe", "pipe"],
-    }
-  );
-
-  signalProcess.stdout.setEncoding("utf8");
-  signalProcess.stdout.on("data", handleSignalStdout);
-
-  signalProcess.stderr.setEncoding("utf8");
-  signalProcess.stderr.on("data", (chunk) => {
-    const text = chunk.trim();
-    if (text) {
-      ops.noteSignalCliStderr(text);
-      console.error(`[${timestamp()}] signal-cli stderr: ${text}`);
-    }
-  });
-
-  signalProcess.on("error", (error) => {
-    console.error(`[${timestamp()}] Failed to start signal-cli: ${error.message}`);
-    process.exit(1);
-  });
-
-  signalProcess.on("exit", (code, signal) => {
-    rejectAllPendingSignalRequests(
-      new Error(`signal-cli exited (code=${code}, signal=${signal || "none"})`)
-    );
-    console.error(
-      `[${timestamp()}] signal-cli exited (code=${code}, signal=${signal || "none"})`
-    );
-    process.exit(code ?? 1);
-  });
-
-  console.log(`[${timestamp()}] Started signal-cli JSON-RPC listener for ${phoneNumber}`);
-}
-
-function handleSignalStdout(chunk) {
-  signalStdoutBuffer += chunk;
-
-  while (true) {
-    const newlineIndex = signalStdoutBuffer.indexOf("\n");
-    if (newlineIndex === -1) {
-      return;
-    }
-
-    const line = signalStdoutBuffer.slice(0, newlineIndex).trim();
-    signalStdoutBuffer = signalStdoutBuffer.slice(newlineIndex + 1);
-
-    if (!line) {
-      continue;
-    }
-
-    let message;
-
-    try {
-      message = JSON.parse(line);
-    } catch (error) {
-      console.error(`[${timestamp()}] Ignoring non-JSON signal-cli output: ${line}`);
-      continue;
-    }
-
-    if (message.method === "receive") {
-      void handleReceiveEvent(message);
-      continue;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(message, "id")) {
-      const pending = pendingSignalRequests.get(message.id);
-      if (pending) {
-        pendingSignalRequests.delete(message.id);
-        if (message.error) {
-          pending.reject(
-            new Error(message.error.message || "signal-cli returned an unknown error")
-          );
-        } else {
-          pending.resolve(message.result);
-        }
-      }
-      continue;
-    }
-
-    console.log(`[${timestamp()}] signal-cli event: ${line}`);
-  }
 }
 
 async function handleReceiveEvent(message) {
@@ -1632,9 +1553,7 @@ async function restartIfRequested() {
   }
 
   console.log(`[${timestamp()}] Restart requested after completing current work`);
-  if (signalProcess && !signalProcess.killed) {
-    signalProcess.kill("SIGTERM");
-  }
+  signalRpc.kill("SIGTERM");
   process.exit(0);
 }
 
@@ -1869,55 +1788,7 @@ async function processNextAttachmentCommand() {
 }
 
 function sendSignalRequest(method, params) {
-  if (TEST_SIGNAL_LOG_PATH) {
-    testSupport.appendSignalLog({
-      direction: "request",
-      message: {
-        jsonrpc: "2.0",
-        method,
-        params,
-      },
-    });
-
-    if (method === "getAttachment") {
-      const attachment = testSupport.getAttachmentMap()[params?.id];
-      return Promise.resolve(attachment ? { data: attachment.dataBase64 } : { data: "" });
-    }
-
-    if (method === "send") {
-      return Promise.resolve({ timestamp: Date.now() });
-    }
-
-    if (method === "updateProfile") {
-      return Promise.resolve({ ok: true });
-    }
-  }
-
-  return new Promise((resolve, reject) => {
-    const id = nextSignalRequestId++;
-    const payload = JSON.stringify({
-      jsonrpc: "2.0",
-      method,
-      params,
-      id,
-    });
-
-    pendingSignalRequests.set(id, { resolve, reject });
-
-    signalProcess.stdin.write(`${payload}\n`, (error) => {
-      if (error) {
-        pendingSignalRequests.delete(id);
-        reject(error);
-      }
-    });
-  });
-}
-
-function rejectAllPendingSignalRequests(error) {
-  for (const [id, pending] of pendingSignalRequests.entries()) {
-    pendingSignalRequests.delete(id);
-    pending.reject(error);
-  }
+  return signalRpc.sendRequest(method, params);
 }
 
 function logIncoming(sender, message, imageCount = 0) {
@@ -1973,9 +1844,7 @@ function shutdown() {
 
   console.log(`[${timestamp()}] Shutting down bridge`);
   obsidianLinks.closeServer();
-  rejectAllPendingSignalRequests(new Error("Bridge shutting down"));
-  if (signalProcess && !signalProcess.killed) {
-    signalProcess.kill("SIGTERM");
-  }
+  signalRpc.rejectAllPendingRequests(new Error("Bridge shutting down"));
+  signalRpc.kill("SIGTERM");
   process.exit(0);
 }

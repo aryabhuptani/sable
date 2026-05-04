@@ -27,6 +27,7 @@ const suites = [
       "tests/signal-attachment-plugin.test.js",
       "tests/signal-inbound-plugin.test.js",
       "tests/signal-profile-plugin.test.js",
+      "tests/signal-rpc-session.test.js",
       "tests/telegram-review-plugin.test.js",
       "tests/voice-note-plugin.test.js",
       "tests/test_bridge_commands.js",
