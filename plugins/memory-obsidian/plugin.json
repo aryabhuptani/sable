@@ -1,0 +1,44 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "memory-obsidian",
+  "name": "Memory and Obsidian",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "memory",
+  "description": "Local markdown memory conventions and Obsidian/Tailscale note-link rewriting for Signal replies.",
+  "runtime": {
+    "type": "node-service",
+    "currentEntryPoints": [
+      "apps/signal-bridge/bridge.js",
+      "apps/signal-bridge/bridge-ops.js"
+    ]
+  },
+  "capabilities": [
+    "memory.resolve_paths",
+    "memory.rewrite_note_links",
+    "memory.maintenance_hooks",
+    "obsidian.redirect_links"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "SABLE_OBSIDIAN_BASE_URL",
+      "required": false,
+      "description": "Tailnet URL used to rewrite local markdown links into phone-openable Obsidian redirects."
+    },
+    {
+      "name": "SABLE_MEMORY_ROOT",
+      "required": false,
+      "description": "Local memory root; must be instance-owned."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "bridge status note-link check",
+      "type": "signal-command",
+      "command": "/bridgestatus"
+    }
+  ],
+  "privateDataPolicy": "Do not store memory contents, task contents, vault paths tied to one user, or private note names in the plugin manifest."
+}

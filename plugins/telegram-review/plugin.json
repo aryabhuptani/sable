@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "telegram-review",
+  "name": "Telegram Review",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "communications",
+  "description": "Telegram triage, drafting support, send support, and bounded mark-read workflows.",
+  "runtime": {
+    "type": "python-cli",
+    "currentEntryPoints": [
+      "tools/telegram/telegram_cli.py",
+      "apps/signal-bridge/bridge-commands.js"
+    ]
+  },
+  "capabilities": [
+    "commands.telegram.triage",
+    "actions.telegram.send",
+    "actions.telegram.mark_read",
+    "triage.ignore_rules"
+  ],
+  "commands": [
+    {
+      "name": "/telegram",
+      "description": "Surface the Telegram triage queue into Signal without starting a Codex turn."
+    }
+  ],
+  "requiredConfig": [
+    {
+      "name": "SABLE_TELEGRAM_PYTHON_BIN",
+      "required": false,
+      "description": "Optional Python executable override for Telegram CLI calls."
+    }
+  ],
+  "requiredSecrets": [
+    {
+      "name": "TELEGRAM_API_ID",
+      "required": true,
+      "description": "Telegram API application ID."
+    },
+    {
+      "name": "TELEGRAM_API_HASH",
+      "required": true,
+      "description": "Telegram API application hash."
+    }
+  ],
+  "diagnostics": [
+    {
+      "name": "triage dry run",
+      "type": "cli",
+      "command": "python3 tools/telegram/telegram_cli.py triage --limit 5"
+    }
+  ],
+  "privateDataPolicy": "Do not store session files, dialog snapshots, phone numbers, drafts, or message text in the plugin manifest."
+}

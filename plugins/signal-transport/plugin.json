@@ -1,0 +1,60 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "signal-transport",
+  "name": "Signal Transport",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "transport",
+  "description": "Signal message transport for Sable's local bridge runtime.",
+  "runtime": {
+    "type": "node-service",
+    "currentEntryPoints": [
+      "apps/signal-bridge/bridge.js",
+      "apps/signal-bridge/bridge-commands.js",
+      "tools/signal/send_attachment.js"
+    ]
+  },
+  "capabilities": [
+    "transport.receive",
+    "transport.send_text",
+    "transport.send_attachments",
+    "commands.bridge_status",
+    "commands.ops",
+    "commands.avatar"
+  ],
+  "commands": [
+    {
+      "name": "/bridgestatus",
+      "description": "Report bridge configuration and link-server state."
+    },
+    {
+      "name": "/ops",
+      "description": "Report bridge, scheduler, and research health."
+    },
+    {
+      "name": "/setavatar",
+      "description": "Update the Signal profile avatar through the live Signal session."
+    }
+  ],
+  "requiredConfig": [
+    {
+      "name": "ALLOWED_NUMBERS",
+      "required": true,
+      "description": "Comma-separated Signal senders allowed to use the bridge."
+    },
+    {
+      "name": "SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR",
+      "required": false,
+      "description": "Queue directory for out-of-band attachment sends."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "bridge status command",
+      "type": "signal-command",
+      "command": "/bridgestatus"
+    }
+  ],
+  "privateDataPolicy": "Do not store phone numbers, Signal sessions, message history, or attachment contents in the plugin manifest."
+}

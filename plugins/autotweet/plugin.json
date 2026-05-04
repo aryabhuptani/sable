@@ -1,0 +1,48 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "autotweet",
+  "name": "Autotweet",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "publishing",
+  "description": "Memory-backed editorial suggestions, Typefully draft generation, style-guide bootstrapping, and draft queue management.",
+  "runtime": {
+    "type": "node-cli",
+    "currentEntryPoints": [
+      "tools/autotweet/run-draft-cycle.js",
+      "tools/autotweet/typefully-cli.js",
+      "tools/autotweet/suggestions.js",
+      "tools/autotweet/bootstrap-style-guide.js"
+    ]
+  },
+  "capabilities": [
+    "publishing.collect_context",
+    "publishing.generate_drafts",
+    "publishing.queue_typefully",
+    "publishing.manage_suggestions",
+    "publishing.bootstrap_style_guide"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "SABLE_AUTOTWEET_CONFIG",
+      "required": false,
+      "description": "Path to the local autotweet config markdown file."
+    }
+  ],
+  "requiredSecrets": [
+    {
+      "name": "TYPEFULLY_API_KEY",
+      "required": true,
+      "description": "Typefully API key for creating drafts."
+    }
+  ],
+  "diagnostics": [
+    {
+      "name": "suggestions list",
+      "type": "cli",
+      "command": "node tools/autotweet/suggestions.js list"
+    }
+  ],
+  "privateDataPolicy": "Do not store Typefully credentials, unpublished draft contents, private KB paths, or account-specific social IDs in the plugin manifest."
+}

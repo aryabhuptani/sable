@@ -1,0 +1,39 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "google-calendar",
+  "name": "Google Calendar",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "calendar",
+  "description": "Calendar scheduling, availability, daily brief, and event-management integration through connector tools.",
+  "runtime": {
+    "type": "connector",
+    "currentEntryPoints": [
+      "mcp__codex_apps__google_calendar"
+    ]
+  },
+  "capabilities": [
+    "calendar.search",
+    "calendar.create_event",
+    "calendar.update_event",
+    "calendar.availability",
+    "calendar.daily_brief"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "GOOGLE_CALENDAR_CONNECTOR",
+      "required": true,
+      "description": "Authenticated Google Calendar connector availability."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "profile check",
+      "type": "connector",
+      "command": "get_profile"
+    }
+  ],
+  "privateDataPolicy": "Do not store calendar event data, OAuth tokens, attendee emails, or schedule preferences in the plugin manifest."
+}

@@ -29,6 +29,11 @@ const suites = [
     args: ["run", "test:scheduler"],
   },
   {
+    name: "plugin manifests",
+    command: "npm",
+    args: ["run", "test:plugins"],
+  },
+  {
     name: "knowledge base and autoresearch",
     command: "npm",
     args: ["run", "test:kb"],

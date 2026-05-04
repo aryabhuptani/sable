@@ -1,0 +1,87 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const {
+  loadPluginManifests,
+  validatePluginManifest,
+  validatePluginRegistry,
+} = require("../tools/plugins/plugin-manifest");
+
+test("current plugin manifests are valid and have stable IDs", () => {
+  const entries = loadPluginManifests();
+  const ids = entries.map((entry) => entry.manifest.id).sort();
+
+  assert.deepEqual(ids, [
+    "autoresearch",
+    "autotweet",
+    "google-calendar",
+    "home-assistant",
+    "memory-obsidian",
+    "signal-transport",
+    "telegram-review",
+  ]);
+
+  assert.deepEqual(validatePluginRegistry(entries), []);
+});
+
+test("plugin validator rejects missing capabilities and private Arya paths", () => {
+  const errors = validatePluginManifest(
+    {
+      id: "bad-plugin",
+      name: "Bad Plugin",
+      version: "0.1.0",
+      status: "descriptive",
+      category: "test",
+      description: "Invalid on purpose.",
+      runtime: {
+        type: "node-cli",
+        currentEntryPoints: ["/home/arya/private/tool.js"],
+      },
+      capabilities: [],
+      commands: [],
+      requiredConfig: [],
+      requiredSecrets: [],
+      diagnostics: [],
+    },
+    { manifestPath: "bad/plugin.json" }
+  );
+
+  assert.ok(errors.some((error) => error.includes("capabilities must be a non-empty array")));
+  assert.ok(errors.some((error) => error.includes("private Arya path leaked")));
+});
+
+test("plugin registry validator rejects duplicate IDs", () => {
+  const entries = [
+    {
+      manifestPath: "a/plugin.json",
+      manifest: validManifest("duplicate-plugin"),
+    },
+    {
+      manifestPath: "b/plugin.json",
+      manifest: validManifest("duplicate-plugin"),
+    },
+  ];
+
+  const errors = validatePluginRegistry(entries);
+  assert.ok(errors.some((error) => error.includes("duplicate plugin id duplicate-plugin")));
+});
+
+function validManifest(id) {
+  return {
+    id,
+    name: "Valid Plugin",
+    version: "0.1.0",
+    status: "descriptive",
+    category: "test",
+    description: "Valid manifest for a test.",
+    runtime: {
+      type: "node-cli",
+      currentEntryPoints: ["tools/test.js"],
+    },
+    capabilities: ["test.capability"],
+    commands: [],
+    requiredConfig: [],
+    requiredSecrets: [],
+    diagnostics: [],
+  };
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "home-assistant",
+  "name": "Home Assistant",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "smart-home",
+  "description": "Local Home Assistant inspection, device control, managed automations, and humidifier watcher workflows.",
+  "runtime": {
+    "type": "python-cli",
+    "currentEntryPoints": [
+      "tools/homeassistant/homeassistant_cli.py",
+      "tools/homeassistant/humidifier_low_water_signal.py"
+    ]
+  },
+  "capabilities": [
+    "smart_home.inspect",
+    "smart_home.control_lights",
+    "smart_home.control_humidifier",
+    "smart_home.manage_automations",
+    "notifications.signal.low_water"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "HOME_ASSISTANT_URL",
+      "required": false,
+      "description": "Home Assistant API URL; defaults should be local-instance specific."
+    },
+    {
+      "name": "HOME_ASSISTANT_CONFIG_DIR",
+      "required": false,
+      "description": "Home Assistant config directory for local automation management."
+    }
+  ],
+  "requiredSecrets": [
+    {
+      "name": "HOME_ASSISTANT_TOKEN",
+      "required": true,
+      "description": "Long-lived Home Assistant API token."
+    }
+  ],
+  "diagnostics": [
+    {
+      "name": "entity list",
+      "type": "cli",
+      "command": "python3 tools/homeassistant/homeassistant_cli.py entities"
+    }
+  ],
+  "privateDataPolicy": "Do not store home layout details, entity IDs, location data, tokens, or automation preferences in the plugin manifest."
+}

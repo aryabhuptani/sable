@@ -9,6 +9,7 @@
   "scripts": {
     "test:smoke": "node tools/smoke/run-smoke-tests.js",
     "test:e2e": "node --test tests/e2e/*.test.js",
+    "test:plugins": "node --test tests/plugin-manifest.test.js",
     "test:scheduler": "node --test tests/scheduler-cli.test.js",
     "test:kb": "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js",
     "test:autotweet": "node --test tests/autotweet.test.js",

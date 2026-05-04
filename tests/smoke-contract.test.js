@@ -19,6 +19,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
 
   assert.equal(pkg.scripts["test:smoke"], "node tools/smoke/run-smoke-tests.js");
   assert.equal(pkg.scripts["test:e2e"], "node --test tests/e2e/*.test.js");
+  assert.equal(pkg.scripts["test:plugins"], "node --test tests/plugin-manifest.test.js");
   assert.equal(pkg.scripts["test:scheduler"], "node --test tests/scheduler-cli.test.js");
   assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js");
   assert.equal(pkg.scripts["test:autotweet"], "node --test tests/autotweet.test.js");
@@ -43,8 +44,10 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/autotweet/typefully-cli.js",
     "tools/knowledge-base/init-autoresearch-run.js",
     "tools/knowledge-base/init-topic.js",
+    "tools/plugins/plugin-manifest.js",
     "tools/signal/send_attachment.js",
     "docs/sable-architecture-migration-checklist.md",
+    "plugins/schema/plugin-manifest.schema.json",
   ].forEach(assertFile);
 });
 

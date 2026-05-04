@@ -1,0 +1,40 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "autoresearch",
+  "name": "Autoresearch",
+  "version": "0.1.0",
+  "status": "descriptive",
+  "category": "research",
+  "description": "Knowledge-base topic scaffolding and bounded autonomous research run setup.",
+  "runtime": {
+    "type": "node-cli",
+    "currentEntryPoints": [
+      "tools/knowledge-base/init-topic.js",
+      "tools/knowledge-base/init-autoresearch-run.js",
+      "apps/signal-bridge/bridge-ops.js"
+    ]
+  },
+  "capabilities": [
+    "knowledge.create_topic",
+    "research.create_run",
+    "research.track_runs",
+    "research.report_completion"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "SABLE_RESEARCH_ROOT",
+      "required": false,
+      "description": "Root directory for local research knowledge bases."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "topic init help",
+      "type": "cli",
+      "command": "node tools/knowledge-base/init-topic.js --help"
+    }
+  ],
+  "privateDataPolicy": "Do not store private research notes, source PDFs, run state contents, or instance-specific research roots in the plugin manifest."
+}
