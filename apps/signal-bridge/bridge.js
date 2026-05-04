@@ -13,6 +13,8 @@ const { parseCommand } = require("./bridge-commands");
 const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeOpsManager } = require("./bridge-ops");
+const { createBridgeStateStore } = require("./bridge-state-store");
+const { createBridgeTestSupport } = require("./bridge-test-support");
 const { createCodexSessionReader } = require("./codex-session-reader");
 const { createObsidianLinkPlugin } = require("./obsidian-link-plugin");
 const {
@@ -224,6 +226,28 @@ const codexSessionReader = createCodexSessionReader({
   normalizeText,
   sessionsDir: CODEX_SESSIONS_DIR,
 });
+const stateStore = createBridgeStateStore({
+  logger: console,
+  normalizePendingPluginAuth,
+  normalizeText,
+  statePath: STATE_PATH,
+  timestamp,
+  truncateText,
+});
+const testSupport = createBridgeTestSupport({
+  appendTimestamp: timestamp,
+  buildAppServerThreadParams,
+  buildAppServerTurnParams,
+  handleReceiveEvent,
+  logger: console,
+  normalizeText,
+  registerCancellationHandler,
+  testAppServerLogPath: TEST_APP_SERVER_LOG_PATH,
+  testReceiveScenarioPath: TEST_RECEIVE_SCENARIO_PATH,
+  testSignalLogPath: TEST_SIGNAL_LOG_PATH,
+  testTurnCursorPath: TEST_TURN_CURSOR_PATH,
+  testTurnScenarioPath: TEST_TURN_SCENARIO_PATH,
+});
 
 validateConfig();
 
@@ -236,7 +260,7 @@ const interactiveQueue = [];
 const backgroundQueue = [];
 let isProcessingInteractive = false;
 let isProcessingBackground = false;
-let state = loadState();
+let state = stateStore.loadState();
 let schedulerJobs = loadSchedulerJobs(SCHEDULER_JOBS_PATH);
 let restartRequested = false;
 let shutdownRequested = false;
@@ -287,7 +311,7 @@ const runner = createCodexCliRunnerAdapter({
   appServerRequestTimeoutMs: APP_SERVER_REQUEST_TIMEOUT_MS,
   normalizeText,
   timestamp,
-  appendTestAppServerLog,
+  appendTestAppServerLog: testSupport.appendAppServerLog,
   onStderr(text) {
     ops.noteCodexAppServerStderr(text);
     console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
@@ -317,7 +341,7 @@ obsidianLinks.startServer();
 ensureAttachmentQueueDirs();
 ops.ensureOpsDirs();
 if (TEST_RECEIVE_SCENARIO_PATH) {
-  void startTestReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
+  void testSupport.startReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
 }
 setTimeout(() => {
   void maybeSendRestartReconnectNotice();
@@ -385,93 +409,6 @@ function parseAllowedNumbers(rawValue) {
       .map((value) => value.trim())
       .filter(Boolean)
   );
-}
-
-async function startTestReceiveScenario(filePath) {
-  try {
-    const payload = await fs.promises.readFile(filePath, "utf8");
-    const scenario = JSON.parse(payload);
-    const events = Array.isArray(scenario?.receive) ? scenario.receive : [];
-
-    for (const event of events) {
-      const delayMs = Number.isFinite(event?.delayMs) ? event.delayMs : 0;
-      setTimeout(() => {
-        void handleReceiveEvent({
-          params: {
-            envelope: buildTestReceiveEnvelope(event),
-          },
-        });
-      }, delayMs);
-    }
-  } catch (error) {
-    console.error(
-      `[${timestamp()}] Failed loading Sable e2e receive scenario: ${error.stack || error.message}`
-    );
-  }
-}
-
-function buildTestReceiveEnvelope(event) {
-  const sender = normalizeText(event?.sender) || "+15550000001";
-  const attachments = Array.isArray(event?.attachments) ? event.attachments : [];
-  const message = typeof event?.message === "string" ? event.message : "";
-
-  return {
-    sourceNumber: sender,
-    source: sender,
-    dataMessage: {
-      message,
-      attachments,
-    },
-  };
-}
-
-function appendTestAppServerLog(entry) {
-  if (!TEST_APP_SERVER_LOG_PATH) {
-    return;
-  }
-
-  try {
-    fs.appendFileSync(
-      TEST_APP_SERVER_LOG_PATH,
-      `${JSON.stringify({ at: timestamp(), ...entry })}\n`,
-      "utf8"
-    );
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed writing Sable e2e app-server log: ${error.message}`);
-  }
-}
-
-function appendTestSignalLog(entry) {
-  if (!TEST_SIGNAL_LOG_PATH) {
-    return;
-  }
-
-  try {
-    fs.appendFileSync(
-      TEST_SIGNAL_LOG_PATH,
-      `${JSON.stringify({ at: timestamp(), ...entry })}\n`,
-      "utf8"
-    );
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed writing Sable e2e signal log: ${error.message}`);
-  }
-}
-
-function getTestAttachmentMap() {
-  if (!TEST_RECEIVE_SCENARIO_PATH) {
-    return {};
-  }
-
-  try {
-    const payload = fs.readFileSync(TEST_RECEIVE_SCENARIO_PATH, "utf8");
-    const scenario = JSON.parse(payload);
-    return scenario?.attachments && typeof scenario.attachments === "object"
-      ? scenario.attachments
-      : {};
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed reading Sable e2e attachment map: ${error.message}`);
-    return {};
-  }
 }
 
 function normalizeBooleanEnv(value, defaultValue) {
@@ -544,104 +481,28 @@ function selectPdfExtractPythonBin() {
   return "python3";
 }
 
-function loadState() {
-  try {
-    const raw = fs.readFileSync(STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    const legacyLastSessionId =
-      typeof parsed.lastSessionId === "string" && parsed.lastSessionId.trim()
-        ? parsed.lastSessionId.trim()
-        : null;
-    return {
-      interactiveSessionId:
-        typeof parsed.interactiveSessionId === "string" && parsed.interactiveSessionId.trim()
-          ? parsed.interactiveSessionId.trim()
-          : legacyLastSessionId,
-      backgroundSessionId:
-        typeof parsed.backgroundSessionId === "string" && parsed.backgroundSessionId.trim()
-          ? parsed.backgroundSessionId.trim()
-          : null,
-      pendingPluginAuth: normalizePendingPluginAuth(parsed.pendingPluginAuth),
-      inFlightTurn: normalizeInFlightTurn(parsed.inFlightTurn),
-    };
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.error(`[${timestamp()}] Failed to read state file: ${error.message}`);
-    }
-
-    return {
-      interactiveSessionId: null,
-      backgroundSessionId: null,
-      pendingPluginAuth: null,
-      inFlightTurn: null,
-    };
-  }
-}
-
 function saveState() {
-  fs.writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  stateStore.saveState(state);
 }
 
 function clearState() {
-  state = {
-    ...state,
-    interactiveSessionId: null,
-    backgroundSessionId: null,
-  };
+  state = stateStore.clearState(state);
   saveState();
 }
 
 function clearSessionState(kind) {
-  const key = kind === "background" ? "backgroundSessionId" : "interactiveSessionId";
-  state = {
-    ...state,
-    [key]: null,
-  };
+  state = stateStore.clearSessionState(state, kind);
   saveState();
 }
 
 function setInFlightTurn(sender, prompt) {
-  state = {
-    ...state,
-    inFlightTurn: {
-      sender,
-      startedAt: timestamp(),
-      promptPreview: truncateText(normalizeText(prompt) || "", 160),
-    },
-  };
+  state = stateStore.setInFlightTurn(state, sender, prompt);
   saveState();
 }
 
 function clearInFlightTurn() {
-  if (!state.inFlightTurn) {
-    return;
-  }
-
-  state = {
-    ...state,
-    inFlightTurn: null,
-  };
+  state = stateStore.clearInFlightTurn(state);
   saveState();
-}
-
-function normalizeInFlightTurn(value) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const sender = normalizeText(value.sender);
-  const startedAt = normalizeText(value.startedAt);
-  const promptPreview = normalizeText(value.promptPreview);
-
-  if (!sender || !startedAt) {
-    return null;
-  }
-
-  return {
-    sender,
-    startedAt,
-    promptPreview,
-  };
 }
 
 function startSignalRpc() {
@@ -1329,13 +1190,11 @@ async function runCodex(
   recordTestAppServerSpawnArgs();
 
   if (TEST_TURN_SCENARIO_PATH && TEST_TURN_CURSOR_PATH) {
-    return runCodexViaTestScenario(
+    return testSupport.runCodexViaTestScenario(
       prompt,
       sessionId,
       imagePaths,
-      jobControl,
-      suppressLiveUpdates,
-      onInvalidSession
+      jobControl
     );
   }
   return runCodexViaAppServer(
@@ -1346,78 +1205,6 @@ async function runCodex(
     suppressLiveUpdates,
     onInvalidSession
   );
-}
-
-async function runCodexViaTestScenario(
-  prompt,
-  sessionId,
-  imagePaths = [],
-  jobControl = null,
-  suppressLiveUpdates = false
-) {
-  const threadMethod = sessionId ? "thread/resume" : "thread/start";
-  const threadParams = buildAppServerThreadParams(sessionId || undefined);
-  appendTestAppServerLog({
-    method: threadMethod,
-    params: threadParams,
-  });
-
-  const scenario = await loadTestTurnScenario();
-  const index = takeNextTestTurnIndex();
-  const turnConfig = scenario[index] || {};
-  const resolvedSessionId = sessionId || turnConfig.threadId || `thread-${index + 1}`;
-  const turnParams = {
-    ...buildAppServerTurnParams(resolvedSessionId, prompt, imagePaths),
-  };
-  appendTestAppServerLog({
-    method: "turn/start",
-    params: turnParams,
-  });
-
-  const delayMs = Number.isFinite(turnConfig.messageDelayMs) ? turnConfig.messageDelayMs : 120;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      unregister();
-      resolve();
-    }, delayMs);
-    const unregister = registerCancellationHandler(jobControl, (error) => {
-      clearTimeout(timer);
-      unregister();
-      reject(error);
-    });
-  });
-
-  return {
-    sessionId: resolvedSessionId,
-    message:
-      typeof turnConfig.message === "string" ? turnConfig.message : `fake reply ${index + 1}`,
-    toolSuggestion: null,
-    startedFreshBecauseResumeFailed: false,
-  };
-}
-
-async function loadTestTurnScenario() {
-  const payload = await fs.promises.readFile(TEST_TURN_SCENARIO_PATH, "utf8");
-  const parsed = JSON.parse(payload);
-  return Array.isArray(parsed?.turns) ? parsed.turns : [];
-}
-
-function takeNextTestTurnIndex() {
-  let index = 0;
-
-  try {
-    index = Number.parseInt(fs.readFileSync(TEST_TURN_CURSOR_PATH, "utf8"), 10) || 0;
-  } catch (error) {
-    index = 0;
-  }
-
-  try {
-    fs.writeFileSync(TEST_TURN_CURSOR_PATH, String(index + 1), "utf8");
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed advancing Sable e2e turn cursor: ${error.message}`);
-  }
-
-  return index;
 }
 
 function runCodexViaAppServer(
@@ -1655,7 +1442,7 @@ function runCodexViaAppServer(
 
         const threadMethod = sessionId ? "thread/resume" : "thread/start";
         const threadParams = buildAppServerThreadParams(sessionId);
-        appendTestAppServerLog({
+        testSupport.appendAppServerLog({
           method: threadMethod,
           params: threadParams,
         });
@@ -1669,7 +1456,7 @@ function runCodexViaAppServer(
         const turnParams = {
           ...buildAppServerTurnParams(parsedSessionId, prompt, imagePaths),
         };
-        appendTestAppServerLog({
+        testSupport.appendAppServerLog({
           method: "turn/start",
           params: turnParams,
         });
@@ -2083,7 +1870,7 @@ async function processNextAttachmentCommand() {
 
 function sendSignalRequest(method, params) {
   if (TEST_SIGNAL_LOG_PATH) {
-    appendTestSignalLog({
+    testSupport.appendSignalLog({
       direction: "request",
       message: {
         jsonrpc: "2.0",
@@ -2093,7 +1880,7 @@ function sendSignalRequest(method, params) {
     });
 
     if (method === "getAttachment") {
-      const attachment = getTestAttachmentMap()[params?.id];
+      const attachment = testSupport.getAttachmentMap()[params?.id];
       return Promise.resolve(attachment ? { data: attachment.dataBase64 } : { data: "" });
     }
 
