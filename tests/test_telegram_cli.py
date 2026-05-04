@@ -1,5 +1,5 @@
-import importlib.util
 import asyncio
+import importlib.util
 import pathlib
 import sys
 import unittest
