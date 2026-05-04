@@ -204,3 +204,60 @@ test("/telegram with an explicit limit forwards the parsed limit to the local tr
     await harness.shutdown();
   }
 });
+
+test("/telegram uses instance repo defaults for the Telegram CLI cwd", async () => {
+  let telegramLogPath = "";
+  let repoRoot = "";
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/telegram 7",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+    extraEnv: ({ tempRoot }) => {
+      repoRoot = path.join(tempRoot, "sable-core");
+      const binDir = path.join(tempRoot, "telegram-bin");
+      telegramLogPath = path.join(tempRoot, "telegram-invocation.txt");
+      fs.mkdirSync(path.join(repoRoot, "tools", "telegram"), { recursive: true });
+      fs.mkdirSync(binDir, { recursive: true });
+      const fakePython = path.join(binDir, "fake-python");
+      fs.writeFileSync(
+        fakePython,
+        [
+          "#!/bin/sh",
+          `printf '%s\\n' "$PWD" "$1" "$2" "$3" "$4" "$5" "$6" > ${JSON.stringify(telegramLogPath)}`,
+          "printf '%s\\n' 'Telegram queue review: 0 dialogs'",
+        ].join("\n"),
+        "utf8"
+      );
+      fs.chmodSync(fakePython, 0o755);
+      return {
+        SABLE_REPO_ROOT: repoRoot,
+        SABLE_TELEGRAM_PYTHON_BIN: fakePython,
+      };
+    },
+  });
+
+  try {
+    await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("Telegram queue review: 0 dialogs"),
+      "telegram triage reply from fake python"
+    );
+
+    const invocation = fs.readFileSync(telegramLogPath, "utf8").trim().split("\n");
+    assert.equal(invocation[0], repoRoot);
+    assert.equal(invocation[1], path.join(repoRoot, "tools", "telegram", "telegram_cli.py"));
+    assert.deepEqual(invocation.slice(2), ["triage", "--limit", "7", "--stale-days", "21"]);
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});

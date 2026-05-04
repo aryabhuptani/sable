@@ -934,6 +934,7 @@ test("an interrupted in-flight turn is explained on the next startup", async () 
 });
 
 test("bridge launches codex app-server with the bypass flags we proved work", async () => {
+  let codexCwd = "";
   const harness = await startBridgeScenario({
     signalScenario: {
       receive: [
@@ -943,6 +944,13 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
           message: "hello",
         },
       ],
+    },
+    extraEnv: ({ tempRoot }) => {
+      codexCwd = path.join(tempRoot, "codex-cwd");
+      fs.mkdirSync(codexCwd, { recursive: true });
+      return {
+        SABLE_CODEX_CWD: codexCwd,
+      };
     },
     codexScenario: {
       turns: [
@@ -969,7 +977,7 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
       "--search",
       "--dangerously-bypass-approvals-and-sandbox",
       "-C",
-      "/home/arya",
+      codexCwd,
       "-c",
       "shell_environment_policy.inherit=all",
       "app-server",
@@ -977,6 +985,7 @@ test("bridge launches codex app-server with the bypass flags we proved work", as
       "stdio://",
     ]);
     assert.equal(threadEntry.params.sandbox, "danger-full-access");
+    assert.equal(threadEntry.params.cwd, codexCwd);
   } finally {
     await harness.shutdown();
   }

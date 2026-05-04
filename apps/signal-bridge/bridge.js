@@ -14,11 +14,13 @@ const {
 const { parseCommand } = require("./bridge-commands");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
+const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
 require("dotenv").config();
 
 const PROJECT_DIR = __dirname;
-const CODEX_CWD = "/home/arya";
+const INSTANCE_CONFIG = createInstanceConfig();
+const CODEX_CWD = normalizeText(process.env.SABLE_CODEX_CWD) || INSTANCE_CONFIG.homeDir;
 const STATE_PATH =
   normalizeText(process.env.SABLE_BRIDGE_STATE_PATH) ||
   path.join(PROJECT_DIR, ".bridge-state.json");
@@ -30,10 +32,10 @@ const RESTART_NOTICE_PATH =
   path.join(PROJECT_DIR, ".restart-notice-pending");
 const SCHEDULER_JOBS_PATH =
   normalizeText(process.env.SABLE_SCHEDULER_JOBS_PATH) ||
-  "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json";
+  INSTANCE_CONFIG.schedulerJobsPath;
 const RESEARCH_ROOT =
   normalizeText(process.env.SABLE_RESEARCH_ROOT) ||
-  "/home/arya/memory/knowledge/research";
+  INSTANCE_CONFIG.researchRoot;
 const MAX_SIGNAL_MESSAGE_LENGTH = 1500;
 const CHUNK_DELAY_MS = 500;
 const LIVE_UPDATE_BATCH_WINDOW_MS = 750;
@@ -52,7 +54,7 @@ const VOICE_NOTES_ENABLED = normalizeBooleanEnv(process.env.VOICE_NOTES_ENABLED,
 const VOICE_NOTES_MODEL = normalizeText(process.env.VOICE_NOTES_MODEL) || "base.en";
 const VOICE_NOTES_MODEL_PATH =
   normalizeText(process.env.VOICE_NOTES_MODEL_PATH) ||
-  "/home/arya/models/faster-whisper-base.en";
+  path.join(INSTANCE_CONFIG.homeDir, "models", "faster-whisper-base.en");
 const VOICE_NOTES_LANGUAGE = normalizeText(process.env.VOICE_NOTES_LANGUAGE) || "en";
 const VOICE_NOTES_BEAM_SIZE = normalizeIntegerEnv(process.env.VOICE_NOTES_BEAM_SIZE, 5);
 const VOICE_NOTES_COMPUTE_TYPE =
@@ -65,7 +67,8 @@ const VOICE_NOTES_ECHO_TRANSCRIPT = normalizeBooleanEnv(
   process.env.VOICE_NOTES_ECHO_TRANSCRIPT,
   true
 );
-const CODEX_HOME_ROOT = normalizeText(process.env.CODEX_HOME) || "/home/arya/.codex";
+const CODEX_HOME_ROOT =
+  normalizeText(process.env.CODEX_HOME) || path.join(INSTANCE_CONFIG.homeDir, ".codex");
 const CODEX_SESSIONS_DIR = path.join(CODEX_HOME_ROOT, "sessions");
 const APP_SERVER_REQUEST_TIMEOUT_MS = normalizeIntegerEnv(
   process.env.APP_SERVER_REQUEST_TIMEOUT_MS,
@@ -98,7 +101,9 @@ const VENV_PYTHON_PATH = path.join(PROJECT_DIR, ".venv", "bin", "python");
 const VENV_PDF_PYTHON_PATH = path.join(PROJECT_DIR, ".venv-pdf", "bin", "python");
 const TRANSCRIBE_PYTHON_BIN = selectTranscribePythonBin();
 const PDF_EXTRACT_PYTHON_BIN = selectPdfExtractPythonBin();
-const TELEGRAM_CLI_PATH = path.join("/home/arya/projects/sable", "tools", "telegram", "telegram_cli.py");
+const TELEGRAM_CLI_PATH =
+  normalizeText(process.env.SABLE_TELEGRAM_CLI_PATH) ||
+  path.join(INSTANCE_CONFIG.repoRoot, "tools", "telegram", "telegram_cli.py");
 const TELEGRAM_PYTHON_BIN = normalizeText(process.env.SABLE_TELEGRAM_PYTHON_BIN) || "python3";
 const TELEGRAM_TRIAGE_LIMIT = normalizeIntegerEnv(process.env.SABLE_TELEGRAM_TRIAGE_LIMIT, 25);
 const TELEGRAM_TRIAGE_STALE_DAYS = normalizeIntegerEnv(
@@ -112,7 +117,7 @@ const TEST_TURN_CURSOR_PATH = normalizeText(process.env.SABLE_E2E_TURN_CURSOR_PA
 const TEST_SIGNAL_LOG_PATH = normalizeText(process.env.SABLE_E2E_SIGNAL_LOG_PATH);
 const TEST_TELEGRAM_TRIAGE_OUTPUT = normalizeText(process.env.SABLE_E2E_TELEGRAM_TRIAGE_OUTPUT);
 const OBSIDIAN_VAULT_ROOT = path.resolve(
-  normalizeText(process.env.SABLE_OBSIDIAN_VAULT_ROOT) || "/home/arya/memory"
+  normalizeText(process.env.SABLE_OBSIDIAN_VAULT_ROOT) || INSTANCE_CONFIG.memoryRoot
 );
 const OBSIDIAN_VAULT_NAME =
   normalizeText(process.env.SABLE_OBSIDIAN_VAULT_NAME) ||
@@ -4893,7 +4898,7 @@ function getTelegramTriageReport(limit = TELEGRAM_TRIAGE_LIMIT) {
         String(TELEGRAM_TRIAGE_STALE_DAYS),
       ],
       {
-        cwd: "/home/arya/projects/sable",
+        cwd: INSTANCE_CONFIG.repoRoot,
         encoding: "utf8",
         env: process.env,
         timeout: 30_000,
