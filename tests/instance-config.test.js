@@ -13,6 +13,7 @@ test("instance config defaults to Arya's current local layout", () => {
   assert.equal(config.homeDir, "/home/arya");
   assert.equal(config.memoryRoot, "/home/arya/memory");
   assert.equal(config.knowledgeRoot, "/home/arya/memory/knowledge");
+  assert.equal(config.researchRoot, "/home/arya/memory/knowledge/research");
   assert.equal(config.tasksRoot, "/home/arya/memory/tasks");
   assert.equal(config.skillsRoot, "/home/arya/skills");
   assert.equal(config.agentsPath, "/home/arya/AGENTS.md");
@@ -25,6 +26,7 @@ test("instance config supports future non-Arya install paths through env overrid
     env: {
       SABLE_INSTANCE_HOME: "/srv/alex",
       SABLE_MEMORY_ROOT: "/data/alex/memory",
+      SABLE_RESEARCH_ROOT: "/data/alex/research",
       SABLE_SKILLS_ROOT: "/data/alex/skills",
       SABLE_REPO_ROOT: "/srv/sable-core",
     },
@@ -34,6 +36,7 @@ test("instance config supports future non-Arya install paths through env overrid
   assert.equal(config.repoRoot, "/srv/sable-core");
   assert.equal(config.memoryRoot, "/data/alex/memory");
   assert.equal(config.knowledgeRoot, "/data/alex/memory/knowledge");
+  assert.equal(config.researchRoot, "/data/alex/research");
   assert.equal(config.tasksRoot, "/data/alex/memory/tasks");
   assert.equal(config.skillsRoot, "/data/alex/skills");
 });

@@ -7,12 +7,33 @@ const path = require("node:path");
 const {
   createTopicSkeleton,
   ensureResearchRootReadme,
+  getDefaultResearchRoot,
   slugify,
 } = require("../tools/knowledge-base/init-topic");
 
 test("slugify normalizes topic titles into stable slugs", () => {
   assert.equal(slugify(" Agent Harness Evaluation "), "agent-harness-evaluation");
   assert.equal(slugify("ETH / Interop + Research"), "eth-interop-research");
+});
+
+test("knowledge-base default research root follows instance config", () => {
+  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/memory/knowledge/research");
+  assert.equal(
+    getDefaultResearchRoot({
+      env: {
+        SABLE_INSTANCE_HOME: "/srv/alex",
+      },
+    }),
+    "/srv/alex/memory/knowledge/research"
+  );
+  assert.equal(
+    getDefaultResearchRoot({
+      env: {
+        SABLE_RESEARCH_ROOT: "/data/research",
+      },
+    }),
+    "/data/research"
+  );
 });
 
 test("topic skeleton creates the minimal knowledge-base layout with outputs", async () => {

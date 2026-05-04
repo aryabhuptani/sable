@@ -5,7 +5,9 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 
-const DEFAULT_RESEARCH_ROOT = "/home/arya/memory/knowledge/research";
+const { createInstanceConfig } = require("../instance/instance-config");
+
+const DEFAULT_RESEARCH_ROOT = createInstanceConfig({ env: {} }).researchRoot;
 const DEFAULT_RUN_MODE = "deep_audit";
 const DEFAULT_MAX_DEPTH = 5;
 const DEFAULT_MAX_TOTAL_QUESTIONS = 15;
@@ -31,7 +33,7 @@ async function main() {
     throw new Error("Research question cannot be empty.");
   }
 
-  const researchRoot = path.resolve(options.root || DEFAULT_RESEARCH_ROOT);
+  const researchRoot = path.resolve(options.root || getDefaultResearchRoot());
   const topicRoot = path.join(researchRoot, topicSlug);
   if (!fs.existsSync(topicRoot)) {
     throw new Error(`Topic does not exist: ${topicRoot}`);
@@ -467,6 +469,10 @@ function normalizeWhitespace(value) {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
 }
 
+function getDefaultResearchRoot({ env = process.env, homeDir = "" } = {}) {
+  return createInstanceConfig({ env, homeDir }).researchRoot;
+}
+
 if (require.main === module) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`);
@@ -475,6 +481,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  DEFAULT_RESEARCH_ROOT,
   createAutoresearchRun,
+  getDefaultResearchRoot,
   slugify,
 };

@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const {
   createAutoresearchRun,
+  getDefaultResearchRoot,
   slugify,
 } = require("../tools/knowledge-base/init-autoresearch-run");
 
@@ -13,6 +14,26 @@ test("autoresearch slugify produces stable slugs", () => {
   assert.equal(
     slugify("What is the core technical architecture of Darkbloom?"),
     "what-is-the-core-technical-architecture-of-darkbloom"
+  );
+});
+
+test("autoresearch default research root follows instance config", () => {
+  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/memory/knowledge/research");
+  assert.equal(
+    getDefaultResearchRoot({
+      env: {
+        SABLE_MEMORY_ROOT: "/data/alex/memory",
+      },
+    }),
+    "/data/alex/memory/knowledge/research"
+  );
+  assert.equal(
+    getDefaultResearchRoot({
+      env: {
+        SABLE_RESEARCH_ROOT: "/data/research",
+      },
+    }),
+    "/data/research"
   );
 });
 
