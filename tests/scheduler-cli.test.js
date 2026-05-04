@@ -5,7 +5,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 
-const CLI_PATH = "/home/arya/projects/sable/apps/signal-bridge/scheduler_cli.js";
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const CLI_PATH = path.join(PROJECT_ROOT, "apps", "signal-bridge", "scheduler_cli.js");
 
 function runCli(args, env = {}) {
   return new Promise((resolve, reject) => {

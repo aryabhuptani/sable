@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest import mock
 
 
-MODULE_PATH = "/home/arya/projects/sable/tools/homeassistant/homeassistant_cli.py"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = REPO_ROOT / "tools" / "homeassistant" / "homeassistant_cli.py"
 SPEC = importlib.util.spec_from_file_location("homeassistant_cli", MODULE_PATH)
 homeassistant_cli = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

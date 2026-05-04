@@ -1,9 +1,11 @@
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const test = require("node:test");
 
 const { createBridgeCodexClient } = require("../apps/signal-bridge/bridge-codex-client");
 
-const BRIDGE_DIR = "/home/arya/projects/sable/apps/signal-bridge";
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const BRIDGE_DIR = path.join(PROJECT_ROOT, "apps", "signal-bridge");
 
 function createClient(envSource = {}) {
   return createBridgeCodexClient({

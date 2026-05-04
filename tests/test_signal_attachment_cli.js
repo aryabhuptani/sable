@@ -5,7 +5,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 
-const TOOL_PATH = "/home/arya/projects/sable/tools/signal/send_attachment.js";
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const TOOL_PATH = path.join(PROJECT_ROOT, "tools", "signal", "send_attachment.js");
 
 test("send_attachment helper writes a queue request and waits for the bridge result file", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-signal-attach-"));

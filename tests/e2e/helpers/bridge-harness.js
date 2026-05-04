@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const PROJECT_ROOT = "/home/arya/projects/sable";
+const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 const APP_DIR = path.join(PROJECT_ROOT, "apps", "signal-bridge");
 const BRIDGE_PATH = path.join(APP_DIR, "bridge.js");
 const FAKE_SIGNAL_PATH = path.join(PROJECT_ROOT, "tests", "e2e", "fakes", "fake-signal-cli.js");

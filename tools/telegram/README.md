@@ -54,6 +54,6 @@ npm run telegram:cli -- send --target "@mitchella" --message "sending this over 
 
 ## Notes
 
-- Session state defaults to `/home/arya/.local/state/sable-telegram/telethon.session`.
+- Session state defaults to `<SABLE_INSTANCE_HOME>/.local/state/sable-telegram/telethon.session` (`/home/arya/.local/state/sable-telegram/telethon.session` for Arya's current instance). Set `SABLE_TELEGRAM_SESSION_PATH` to override it directly.
 - Target matching currently accepts dialog title, username, or numeric dialog id from recent dialogs.
 - The next layer should be integrating thread-level draft assistance and then a Signal-facing approval/send flow so Arya can review proposed replies from Signal before they are sent.

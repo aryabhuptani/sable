@@ -2,6 +2,8 @@
 
 Sable is Arya's local-first automation and messaging stack on the minipc.
 
+Runtime paths are centralized through `tools/instance/instance-config.js` and can be overridden with environment variables. The `/home/arya/...` paths below document Arya's current minipc layout; they are examples, not assumptions every install must inherit.
+
 ## Layout
 
 - `apps/signal-bridge/`: the live Signal bridge service
@@ -41,6 +43,19 @@ That separation is deliberate. Knowledge is not the same thing as a queue.
 
 The scheduler is also not a reminder system. It is for recurring workflows like daily briefs, weekly planning, and other agentic jobs that Sable should run on a schedule.
 
+## Instance Config
+
+Current Arya defaults come from instance config and can be overridden per deployment:
+
+- `SABLE_INSTANCE_HOME` / `SABLE_HOME`: instance home, default `/home/arya`
+- `SABLE_REPO_ROOT`: repo root, default `/home/arya/projects/sable`
+- `SABLE_CODEX_CWD`: bridge Codex working directory, default `/home/arya`
+- `SABLE_SCHEDULER_JOBS_PATH`: scheduler jobs file, default `/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
+- `SABLE_RESEARCH_ROOT`: research KB root, default `/home/arya/memory/knowledge/research`
+- `SABLE_TELEGRAM_CLI_PATH`: Telegram CLI, default `/home/arya/projects/sable/tools/telegram/telegram_cli.py`
+- `SABLE_OBSIDIAN_VAULT_ROOT` / `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian vault link target, default root `/home/arya/memory`
+- `VOICE_NOTES_MODEL_PATH`: local faster-whisper model path, default `/home/arya/models/faster-whisper-base.en`
+
 ## Knowledge Base V0
 
 Sable now includes a minimal research knowledge-base scaffold utility:
@@ -50,7 +65,7 @@ Sable now includes a minimal research knowledge-base scaffold utility:
 - Optional slug override:
   `npm run kb:init -- "<topic title>" --slug <topic-slug>`
 
-This creates a topic-local knowledge base under `/home/arya/memory/knowledge/research/` with:
+This creates a topic-local knowledge base under `SABLE_RESEARCH_ROOT`, which defaults to `/home/arya/memory/knowledge/research/` for Arya's current instance, with:
 
 - `KB.md`
 - `raw/inbox/`

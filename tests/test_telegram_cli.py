@@ -8,7 +8,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 
-MODULE_PATH = pathlib.Path("/home/arya/projects/sable/tools/telegram/telegram_cli.py")
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+MODULE_PATH = REPO_ROOT / "tools" / "telegram" / "telegram_cli.py"
 SPEC = importlib.util.spec_from_file_location("telegram_cli", MODULE_PATH)
 telegram_cli = importlib.util.module_from_spec(SPEC)
 sys.modules["telegram_cli"] = telegram_cli

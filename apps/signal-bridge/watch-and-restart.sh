@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="/home/arya/projects/sable/apps/signal-bridge"
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SLEEP_SECONDS=2
-RESTART_REQUEST_PATH="$REPO_DIR/.restart-requested"
+RESTART_REQUEST_PATH="$APP_DIR/.restart-requested"
 
 compute_hash() {
-  find "$REPO_DIR" \
-    \( -path "$REPO_DIR/node_modules" -o \
-       -path "$REPO_DIR/.git" -o \
-       -path "$REPO_DIR/.attachment-queue" -o \
-       -path "$REPO_DIR/.ops" -o \
-       -path "$REPO_DIR/.venv" -o \
-       -path "$REPO_DIR/.venv-pdf" -o \
-       -path "$REPO_DIR/__pycache__" -o \
-       -path "$REPO_DIR/.bridge-state.json" -o \
-       -path "$REPO_DIR/.restart-requested" -o \
-       -path "$REPO_DIR/.restart-notice-pending" -o \
-       -path "$REPO_DIR/bridge.log" \) -prune -o \
+  find "$APP_DIR" \
+    \( -path "$APP_DIR/node_modules" -o \
+       -path "$APP_DIR/.git" -o \
+       -path "$APP_DIR/.attachment-queue" -o \
+       -path "$APP_DIR/.ops" -o \
+       -path "$APP_DIR/.venv" -o \
+       -path "$APP_DIR/.venv-pdf" -o \
+       -path "$APP_DIR/__pycache__" -o \
+       -path "$APP_DIR/.bridge-state.json" -o \
+       -path "$APP_DIR/.restart-requested" -o \
+       -path "$APP_DIR/.restart-notice-pending" -o \
+       -path "$APP_DIR/bridge.log" \) -prune -o \
     -type f -print0 |
     sort -z |
     xargs -0 sha256sum |
