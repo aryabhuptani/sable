@@ -10,6 +10,7 @@
     "type": "node-service",
     "currentEntryPoints": [
       "apps/signal-bridge/signal-attachment-plugin.js",
+      "apps/signal-bridge/plugin-auth-manager.js",
       "apps/signal-bridge/bridge.js",
       "apps/signal-bridge/bridge-commands.js",
       "tools/signal/send_attachment.js"
@@ -19,6 +20,8 @@
     "transport.receive",
     "transport.send_text",
     "transport.send_attachments",
+    "plugins.auth_prompt",
+    "plugins.auth_resume",
     "commands.bridge_status",
     "commands.ops",
     "commands.avatar"
@@ -35,6 +38,18 @@
     {
       "name": "/setavatar",
       "description": "Update the Signal profile avatar through the live Signal session."
+    },
+    {
+      "name": "/authstatus",
+      "description": "Report pending connector/plugin browser-auth state and resend the install URL."
+    },
+    {
+      "name": "/authcancel",
+      "description": "Clear a pending connector/plugin browser-auth flow."
+    },
+    {
+      "name": "/authresume",
+      "description": "Retry the prompt that originally triggered a completed connector/plugin auth flow."
     }
   ],
   "requiredConfig": [
