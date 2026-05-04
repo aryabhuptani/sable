@@ -13,6 +13,7 @@ function createBridgeOpsManager({
   alertInFlightTurnThresholdMs,
   stalledRunThresholdMs,
   snapshotAutoresearchRuns,
+  summarizeAutoresearchRuns,
   getSchedulerJobs,
   getLiveState,
   getSystemdUnitSummary,
@@ -153,94 +154,6 @@ function createBridgeOpsManager({
     }
 
     return `${scaled >= 10 || index === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[index]}`;
-  }
-
-  function summarizeAutoresearchRuns(runs, now = new Date()) {
-    const summary = {
-      total: 0,
-      active: 0,
-      runnable: 0,
-      completed: 0,
-      stalled: 0,
-      budgetExhausted: 0,
-      oldestActiveAgeMs: null,
-      oldestActiveRun: null,
-      examples: [],
-    };
-
-    for (const run of runs.values()) {
-      summary.total += 1;
-      const isBudgetExhausted = isBudgetExhaustedAutoresearchRun(run);
-
-      if (run.status === "active") {
-        summary.active += 1;
-        if (isRunnableAutoresearchRun(run, { isBudgetExhausted })) {
-          summary.runnable += 1;
-        }
-      }
-
-      if (run.status === "completed") {
-        summary.completed += 1;
-      }
-
-      const lastUpdatedAgeMs = ageMsFromIso(run.lastUpdatedAt, now);
-      const isStalled =
-        run.status === "active" &&
-        (isBudgetExhausted ||
-          (lastUpdatedAgeMs !== null && lastUpdatedAgeMs >= stalledRunThresholdMs));
-
-      if (isBudgetExhausted) {
-        summary.budgetExhausted += 1;
-      }
-
-      if (isStalled) {
-        summary.stalled += 1;
-      }
-
-      const startedAgeMs = ageMsFromIso(run.startedAt, now);
-      if (
-        run.status === "active" &&
-        startedAgeMs !== null &&
-        (summary.oldestActiveAgeMs === null || startedAgeMs > summary.oldestActiveAgeMs)
-      ) {
-        summary.oldestActiveAgeMs = startedAgeMs;
-        summary.oldestActiveRun = `${run.topicSlug}/${run.runSlug}`;
-      }
-
-      if (summary.examples.length < 3 && (isStalled || isBudgetExhausted || run.status === "active")) {
-        summary.examples.push({
-          slug: `${run.topicSlug}/${run.runSlug}`,
-          status: run.status,
-          pendingCount: run.pendingCount,
-          processedCount: run.processedCount,
-          maxTotalQuestions: run.maxTotalQuestions,
-          lastUpdatedAt: run.lastUpdatedAt,
-          startedAt: run.startedAt,
-          stalled: isStalled,
-          budgetExhausted: isBudgetExhausted,
-        });
-      }
-    }
-
-    return summary;
-  }
-
-  function isRunnableAutoresearchRun(run, { isBudgetExhausted } = {}) {
-    const budgetExhausted =
-      typeof isBudgetExhausted === "boolean"
-        ? isBudgetExhausted
-        : isBudgetExhaustedAutoresearchRun(run);
-
-    return run.status === "active" && run.pendingCount > 0 && !budgetExhausted;
-  }
-
-  function isBudgetExhaustedAutoresearchRun(run) {
-    return (
-      run.status === "active" &&
-      run.maxTotalQuestions > 0 &&
-      run.processedCount >= run.maxTotalQuestions &&
-      run.pendingCount > 0
-    );
   }
 
   function summarizeSchedulerHealth(now = new Date()) {

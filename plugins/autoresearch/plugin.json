@@ -11,6 +11,7 @@
     "currentEntryPoints": [
       "tools/knowledge-base/init-topic.js",
       "tools/knowledge-base/init-autoresearch-run.js",
+      "apps/signal-bridge/autoresearch-monitor.js",
       "apps/signal-bridge/bridge-ops.js"
     ]
   },
