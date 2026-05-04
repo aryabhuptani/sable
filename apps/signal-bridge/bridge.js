@@ -16,6 +16,7 @@ const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeLifecycle } = require("./bridge-lifecycle");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createBridgeJobRuntime } = require("./bridge-job-runtime");
+const { createBridgeQueueRuntime } = require("./bridge-queue-runtime");
 const { createBridgeSchedulerRuntime } = require("./bridge-scheduler-runtime");
 const { createBridgeStateStore } = require("./bridge-state-store");
 const { createBridgeTestSupport } = require("./bridge-test-support");
@@ -288,17 +289,15 @@ const testSupport = createBridgeTestSupport({
 validateConfig();
 
 let appServerTurnRunner;
+let jobRuntime;
+let lifecycle;
+let queueRuntime;
 let signalReplyChannel;
 let signalRpc;
 
-const interactiveQueue = [];
-const backgroundQueue = [];
-let isProcessingInteractive = false;
-let isProcessingBackground = false;
 let state = stateStore.loadState();
 let restartRequested = false;
 let shutdownRequested = false;
-let activeJobControl = null;
 let isProcessingAttachmentQueue = false;
 const autoresearchMonitor = createAutoresearchMonitor({
   logger: console,
@@ -317,14 +316,11 @@ const ops = createBridgeOpsManager({
   snapshotAutoresearchRuns: () => autoresearchMonitor.snapshotRuns(),
   summarizeAutoresearchRuns: (runs, now) => autoresearchMonitor.summarizeRuns(runs, now),
   getSchedulerJobs: () => schedulerRuntime.getJobs(),
-  getLiveState: () => ({
-    interactiveQueueDepth: interactiveQueue.length,
-    interactiveProcessing: isProcessingInteractive,
-    backgroundQueueDepth: backgroundQueue.length,
-    backgroundProcessing: isProcessingBackground,
-    attachmentQueueProcessing: isProcessingAttachmentQueue,
-    inFlightTurn: state.inFlightTurn,
-  }),
+  getLiveState: () =>
+    queueRuntime.getLiveState({
+      attachmentQueueProcessing: isProcessingAttachmentQueue,
+      inFlightTurn: state.inFlightTurn,
+    }),
   getSystemdUnitSummary,
   formatUnitSummary,
   normalizeText,
@@ -359,6 +355,39 @@ signalReplyChannel = createSignalReplyChannel({
   sendSignalRequest,
   splitIntoChunks,
   timestamp,
+});
+queueRuntime = createBridgeQueueRuntime({
+  cancelJobControl,
+  cleanupPaths,
+  defaultFilePrompt: DEFAULT_FILE_PROMPT,
+  defaultImagePrompt: DEFAULT_IMAGE_PROMPT,
+  getBridgeStatusReport: () =>
+    ops.getBridgeStatusReport({
+      interactiveSessionId: state.interactiveSessionId,
+      backgroundSessionId: state.backgroundSessionId,
+      obsidianLinkServerAddress: obsidianLinks.getServerAddress(),
+      obsidianLinkServerHost: obsidianLinks.host,
+      obsidianLinksEnabled: obsidianLinks.enabled,
+      obsidianBaseUrl: obsidianLinks.baseUrl,
+      pendingPluginAuthSummary: pluginAuth.summarize(state.pendingPluginAuth),
+    }),
+  getJobRuntime: () => jobRuntime,
+  getRestartRequested: () => restartRequested,
+  getShutdownRequested: () => shutdownRequested,
+  isCancellationError,
+  logIncoming,
+  logger: console,
+  onQueueDrained: async () => {
+    await lifecycle?.restartIfRequested();
+  },
+  parseCommand,
+  schedulerRuntime,
+  sendReply,
+  signalAttachments,
+  signalInbound,
+  telegramTriageLimit: TELEGRAM_TRIAGE_LIMIT,
+  timestamp,
+  voiceNotes,
 });
 const runner = createCodexCliRunnerAdapter({
   spawn,
@@ -398,7 +427,7 @@ appServerTurnRunner = createAppServerTurnRunner({
   createAppServerClient,
   createLiveUpdateChannel,
   formatProgressMessage,
-  getActiveSender: () => activeSender,
+  getActiveSender: () => queueRuntime.getActiveSender(),
   isInvalidSessionError,
   logger: console,
   normalizeText,
@@ -412,7 +441,7 @@ const pluginAuth = createPluginAuthManager({
   callCodexAppServer,
   codexCwd: CODEX_CWD,
   getPending: () => state.pendingPluginAuth,
-  isInteractiveProcessing: () => isProcessingInteractive,
+  isInteractiveProcessing: () => queueRuntime.isInteractiveProcessing(),
   savePending: (pendingPluginAuth) => {
     state.pendingPluginAuth = pendingPluginAuth;
     saveState();
@@ -420,16 +449,11 @@ const pluginAuth = createPluginAuthManager({
   sendReply,
   timestamp,
 });
-const jobRuntime = createBridgeJobRuntime({
+jobRuntime = createBridgeJobRuntime({
   appServerMessages,
   autoresearchMonitor,
   cleanupPaths,
-  clearActiveJob: (jobControl) => {
-    activeSender = null;
-    if (activeJobControl === jobControl) {
-      activeJobControl = null;
-    }
-  },
+  clearActiveJob: queueRuntime.clearActiveJob,
   clearInFlightTurn,
   clearSessionState,
   createJobControl,
@@ -458,10 +482,7 @@ const jobRuntime = createBridgeJobRuntime({
   schedulerRuntime,
   scheduledNoReplyMarker: SCHEDULED_NO_REPLY_MARKER,
   sendReply,
-  setActiveJob: (sender, jobControl) => {
-    activeSender = sender;
-    activeJobControl = jobControl;
-  },
+  setActiveJob: queueRuntime.setActiveJob,
   setInFlightTurn,
   signalAttachments,
   signalProfile,
@@ -469,8 +490,8 @@ const jobRuntime = createBridgeJobRuntime({
   voiceNotes,
   voiceNotesEchoTranscript: VOICE_NOTES_ECHO_TRANSCRIPT,
 });
-const lifecycle = createBridgeLifecycle({
-  backgroundQueue,
+lifecycle = createBridgeLifecycle({
+  backgroundQueue: queueRuntime.backgroundQueue,
   broadcastAllowedMessage,
   clearInFlightTurn,
   closeServer: () => obsidianLinks.closeServer(),
@@ -478,12 +499,8 @@ const lifecycle = createBridgeLifecycle({
   getInFlightTurn: () => state.inFlightTurn,
   getRestartRequested: () => restartRequested,
   getShutdownRequested: () => shutdownRequested,
-  hasActiveWork: () =>
-    isProcessingInteractive ||
-    isProcessingBackground ||
-    interactiveQueue.length > 0 ||
-    backgroundQueue.length > 0,
-  interactiveQueue,
+  hasActiveWork: () => queueRuntime.hasActiveWork(),
+  interactiveQueue: queueRuntime.interactiveQueue,
   logger: console,
   processBackgroundQueue,
   processExit: (code) => process.exit(code),
@@ -516,13 +533,13 @@ setTimeout(() => {
 }, 1_900);
 setInterval(() => lifecycle.checkForRestartRequest(), 2_000);
 setInterval(checkForPendingPluginAuth, PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS);
-setInterval(checkForDueScheduledJobs, SCHEDULER_POLL_INTERVAL_MS);
+setInterval(() => queueRuntime.checkForDueScheduledJobs(), SCHEDULER_POLL_INTERVAL_MS);
 setInterval(checkForPendingAttachmentCommands, 1_000);
 setInterval(() => {
   void ops.writeOpsSnapshot();
 }, OPS_SNAPSHOT_INTERVAL_MS);
 setTimeout(() => {
-  void checkForDueScheduledJobs();
+  void queueRuntime.checkForDueScheduledJobs();
 }, 5_000);
 setTimeout(() => {
   void ops.writeOpsSnapshot();
@@ -640,219 +657,23 @@ function clearInFlightTurn() {
 }
 
 async function handleReceiveEvent(message) {
-  const envelope = message.params?.envelope;
-  const senderCandidates = signalInbound.extractSenderCandidates(envelope);
-  const sender = senderCandidates[0] || null;
-  const text = signalInbound.extractIncomingText(envelope);
-  const imageAttachments = signalAttachments.extractIncomingImageAttachments(envelope);
-  const audioAttachments = signalAttachments.extractIncomingAudioAttachments(envelope);
-  const fileAttachments = signalAttachments.extractIncomingFileAttachments(envelope);
-
-  if (
-    !sender ||
-    (!text &&
-      imageAttachments.length === 0 &&
-      audioAttachments.length === 0 &&
-      fileAttachments.length === 0)
-  ) {
-    return;
-  }
-
-  if (!signalInbound.isAllowedSender(senderCandidates)) {
-    console.log(
-      `[${timestamp()}] Ignored message from disallowed sender ${senderCandidates.join(", ")}`
-    );
-    return;
-  }
-
-  const fallbackPreview = audioAttachments.length > 0
-    ? "Voice note"
-    : imageAttachments.length > 0
-      ? DEFAULT_IMAGE_PROMPT
-      : DEFAULT_FILE_PROMPT;
-  logIncoming(
-    sender,
-    text || fallbackPreview,
-    imageAttachments.length + audioAttachments.length + fileAttachments.length
-  );
-
-  const command = parseCommand(
-    text ||
-      (imageAttachments.length > 0
-        ? DEFAULT_IMAGE_PROMPT
-        : fileAttachments.length > 0
-          ? DEFAULT_FILE_PROMPT
-          : ""),
-    {
-      hasImages: imageAttachments.length > 0,
-      hasAudio: audioAttachments.length > 0,
-      hasFiles: fileAttachments.length > 0,
-      telegramTriageLimit: TELEGRAM_TRIAGE_LIMIT,
-    }
-  );
-
-  if (command.type === "cancel") {
-    await handleCancelCommand(sender);
-    return;
-  }
-
-  if (shutdownRequested || restartRequested) {
-    if (command.type === "status") {
-      await sendReply(
-        sender,
-        await ops.getBridgeStatusReport({
-          interactiveSessionId: state.interactiveSessionId,
-          backgroundSessionId: state.backgroundSessionId,
-          obsidianLinkServerAddress: obsidianLinks.getServerAddress(),
-          obsidianLinkServerHost: obsidianLinks.host,
-          obsidianLinksEnabled: obsidianLinks.enabled,
-          obsidianBaseUrl: obsidianLinks.baseUrl,
-          pendingPluginAuthSummary: pluginAuth.summarize(state.pendingPluginAuth),
-        })
-      );
-      return;
-    }
-
-    await sendReply(
-      sender,
-      "Restart in progress. I'm finishing the current task before reconnecting, so please resend after Sable is back."
-    );
-    return;
-  }
-
-  const job = {
-    sender,
-    command,
-    context: signalAttachments.buildAttachmentContext(
-      envelope,
-      sender,
-      imageAttachments,
-      audioAttachments,
-      fileAttachments
-    ),
-    queuedVoicePreparation: null,
-  };
-
-  if (audioAttachments.length > 0 && voiceNotes.isEnabled() && isProcessingInteractive) {
-    job.queuedVoicePreparation = voiceNotes.startQueuedPreparation(job, {
-      cleanupPaths,
-      materializeIncomingAudio: (context) => signalAttachments.materializeIncomingAudio(context),
-    });
-  }
-
-  interactiveQueue.push(job);
-
-  if (isProcessingInteractive) {
-    try {
-      const queueMessage =
-        audioAttachments.length > 0 && voiceNotes.isEnabled()
-          ? "Queued, will process after current task. Transcribing the voice note in the background."
-          : "Queued, will process after current task.";
-      await sendReply(sender, queueMessage);
-    } catch (error) {
-      console.error(`[${timestamp()}] Failed sending queue acknowledgment: ${error.message}`);
-    }
-    return;
-  }
-
-  void processInteractiveQueue();
+  await queueRuntime.handleReceiveEvent(message);
 }
 
 async function handleCancelCommand(sender) {
-  if (!isProcessingInteractive || !activeJobControl) {
-    await sendReply(sender, "No active task to cancel.");
-    return;
-  }
-
-  const cancelled = cancelJobControl(activeJobControl, undefined, {
-    logger: console,
-    timestamp,
-  });
-  if (!cancelled) {
-    await sendReply(sender, "The active task is already stopping.");
-    return;
-  }
-
-  const pendingCount = interactiveQueue.length;
-  const suffix =
-    pendingCount > 0
-      ? ` ${pendingCount} queued message${pendingCount === 1 ? "" : "s"} will stay queued.`
-      : "";
-  await sendReply(sender, `Cancelling current task.${suffix}`);
+  await queueRuntime.handleCancelCommand(sender);
 }
 
 async function processInteractiveQueue() {
-  if (isProcessingInteractive) {
-    return;
-  }
-
-  isProcessingInteractive = true;
-
-  while (interactiveQueue.length > 0) {
-    const job = interactiveQueue.shift();
-
-    try {
-      await processJob(job);
-    } catch (error) {
-      if (isCancellationError(error)) {
-        console.log(`[${timestamp()}] Cancelled task for ${job.sender}: ${error.message}`);
-        continue;
-      }
-
-      console.error(
-        `[${timestamp()}] Failed processing message from ${job.sender}: ${error.stack || error.message}`
-      );
-      await jobRuntime.sendJobReply(job, "Request failed before Sable could complete.");
-    }
-  }
-
-  isProcessingInteractive = false;
-    await lifecycle.restartIfRequested();
+  await queueRuntime.processInteractiveQueue();
 }
 
 async function processBackgroundQueue() {
-  if (isProcessingBackground) {
-    return;
-  }
-
-  isProcessingBackground = true;
-
-  while (backgroundQueue.length > 0) {
-    const job = backgroundQueue.shift();
-
-    try {
-      await processJob(job);
-    } catch (error) {
-      if (isCancellationError(error)) {
-        console.log(`[${timestamp()}] Cancelled background task for ${job.sender}: ${error.message}`);
-        continue;
-      }
-
-      console.error(
-        `[${timestamp()}] Failed processing background message from ${job.sender}: ${error.stack || error.message}`
-      );
-      await jobRuntime.sendJobReply(job, "Background workflow failed before Sable could complete.");
-    }
-  }
-
-  isProcessingBackground = false;
-    await lifecycle.restartIfRequested();
+  await queueRuntime.processBackgroundQueue();
 }
 
 async function checkForDueScheduledJobs() {
-  await schedulerRuntime.checkForDueScheduledJobs({
-    enqueueBackgroundJob: (job) => backgroundQueue.push(job),
-    ensureBackgroundProcessing: () => {
-      if (!isProcessingBackground) {
-        void processBackgroundQueue();
-      }
-    },
-    isPaused: () => shutdownRequested || restartRequested,
-  });
-}
-
-async function processJob(job) {
-  await jobRuntime.processJob(job);
+  await queueRuntime.checkForDueScheduledJobs();
 }
 
 async function runCodex(
@@ -916,8 +737,6 @@ async function checkForPendingPluginAuth() {
     console.error(`[${timestamp()}] ${error.message}`);
   }
 }
-
-let activeSender = null;
 
 async function cleanupPaths(paths) {
   if (!Array.isArray(paths) || paths.length === 0) {
