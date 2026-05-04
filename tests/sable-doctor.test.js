@@ -6,10 +6,12 @@ const test = require("node:test");
 
 const {
   buildDoctorReport,
+  checkBridgeRuntimePaths,
   formatDoctorReport,
   parseArgs,
   readEnvSummary,
 } = require("../tools/doctor/sable-doctor");
+const { createInstanceConfig } = require("../tools/instance/instance-config");
 
 test("doctor reports the current repo as healthy enough for migration work", () => {
   const report = buildDoctorReport({
@@ -20,6 +22,8 @@ test("doctor reports the current repo as healthy enough for migration work", () 
   assert.ok(report.checks.some((check) => check.name === "command:codex" && check.status === "pass"));
   assert.ok(report.checks.some((check) => check.name === "plugins" && check.status === "pass"));
   assert.ok(report.checks.some((check) => check.name === "runner:codex-cli" && check.status === "pass"));
+  assert.ok(report.checks.some((check) => check.name === "bridge:runtime-paths" && check.status === "pass"));
+  assert.ok(report.checks.some((check) => check.name === "instance:python-config" && check.status === "pass"));
 });
 
 test("doctor redacts env contents and reports only key presence", async () => {
@@ -86,6 +90,35 @@ test("doctor output is plain text and does not print secret values", () => {
   assert.doesNotMatch(text, /ALLOWED_NUMBERS=/);
   assert.doesNotMatch(text, /\/home\/arya\/\.codex-bridge/);
   assert.match(text, /~\/\.codex-bridge/);
+});
+
+test("doctor reports bridge runtime paths through active instance config", () => {
+  const instance = createInstanceConfig({
+    repoRoot: "/srv/sable-core",
+    env: {
+      SABLE_INSTANCE_HOME: "/srv/alex",
+      SABLE_MEMORY_ROOT: "/data/alex/memory",
+      SABLE_TASKS_ROOT: "/data/alex/tasks",
+    },
+  });
+
+  const check = checkBridgeRuntimePaths(
+    {
+      SABLE_CODEX_CWD: "/srv/alex/workspace",
+      SABLE_TELEGRAM_CLI_PATH: "/srv/alex/custom/telegram.py",
+      VOICE_NOTES_MODEL_PATH: "/srv/alex/models/whisper",
+    },
+    instance
+  );
+
+  assert.equal(check.status, "pass");
+  assert.equal(check.name, "bridge:runtime-paths");
+  assert.match(check.detail, /codexCwd=~\/workspace/);
+  assert.match(check.detail, /telegramCliPath=~\/custom\/telegram.py/);
+  assert.match(check.detail, /voiceModelPath=~\/models\/whisper/);
+  assert.match(check.detail, /schedulerJobsPath=\/data\/alex\/tasks\/projects\/sable\/scheduler-jobs.json/);
+  assert.match(check.detail, /researchRoot=\/data\/alex\/memory\/knowledge\/research/);
+  assert.doesNotMatch(check.detail, /\/srv\/alex\/workspace/);
 });
 
 test("doctor argument parser supports json and path overrides", () => {

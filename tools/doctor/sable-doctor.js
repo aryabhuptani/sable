@@ -31,9 +31,11 @@ function buildDoctorReport({
   checks.push(checkPath("smoke runner", path.join(resolvedRepoRoot, "tools", "smoke", "run-smoke-tests.js"), "file"));
   checks.push(checkPath("runner adapter", path.join(resolvedRepoRoot, "apps", "signal-bridge", "runner-adapter.js"), "file"));
   checks.push(checkPath("Signal bridge", path.join(resolvedRepoRoot, "apps", "signal-bridge", "bridge.js"), "file"));
+  checks.push(checkPath("instance:python-config", path.join(resolvedRepoRoot, "tools", "instance", "instance_config.py"), "file"));
 
   checks.push(checkCommand("codex", commandExists));
   checks.push(checkRunnerConfig(resolvedRepoRoot, env, instance));
+  checks.push(checkBridgeRuntimePaths(env, instance));
   checks.push(...checkPluginRegistry(resolvedRepoRoot));
   checks.push(...checkLocalInstance(instance));
   checks.push(...checkConfigPresence(resolvedRepoRoot));
@@ -82,6 +84,30 @@ function checkRunnerConfig(repoRoot, env, instance) {
       homeDir: instance.homeDir,
     })}`
   );
+}
+
+function checkBridgeRuntimePaths(env, instance) {
+  const runtimePaths = {
+    codexCwd: normalizeText(env.SABLE_CODEX_CWD) || instance.homeDir,
+    schedulerJobsPath: normalizeText(env.SABLE_SCHEDULER_JOBS_PATH) || instance.schedulerJobsPath,
+    researchRoot: normalizeText(env.SABLE_RESEARCH_ROOT) || instance.researchRoot,
+    telegramCliPath:
+      normalizeText(env.SABLE_TELEGRAM_CLI_PATH) ||
+      path.join(instance.repoRoot, "tools", "telegram", "telegram_cli.py"),
+    obsidianVaultRoot: normalizeText(env.SABLE_OBSIDIAN_VAULT_ROOT) || instance.memoryRoot,
+    voiceModelPath:
+      normalizeText(env.VOICE_NOTES_MODEL_PATH) ||
+      path.join(instance.homeDir, "models", "faster-whisper-base.en"),
+  };
+  const detail = Object.entries(runtimePaths)
+    .map(
+      ([key, value]) =>
+        `${key}=${redactInstancePath(value, {
+          homeDir: instance.homeDir,
+        })}`
+    )
+    .join(", ");
+  return pass("bridge:runtime-paths", detail);
 }
 
 function checkPluginRegistry(repoRoot) {
@@ -190,6 +216,10 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
 function pass(name, detail) {
   return { status: "pass", name, detail };
 }
@@ -288,4 +318,5 @@ module.exports = {
   formatDoctorReport,
   parseArgs,
   readEnvSummary,
+  checkBridgeRuntimePaths,
 };
