@@ -12,8 +12,10 @@ const suites = [
     args: [
       "--test",
       "tests/smoke-contract.test.js",
+      "tests/app-server-message-helpers.test.js",
       "tests/autoresearch-monitor.test.js",
       "tests/bridge-codex-client.test.js",
+      "tests/codex-session-reader.test.js",
       "tests/job-control.test.js",
       "tests/live-update-channel.test.js",
       "tests/obsidian-link-plugin.test.js",

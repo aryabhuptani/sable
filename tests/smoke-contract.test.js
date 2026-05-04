@@ -37,8 +37,10 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
 test("current Sable core candidates are present before architecture extraction", () => {
   [
     "apps/signal-bridge/bridge.js",
+    "apps/signal-bridge/app-server-message-helpers.js",
     "apps/signal-bridge/bridge-codex-client.js",
     "apps/signal-bridge/bridge-commands.js",
+    "apps/signal-bridge/codex-session-reader.js",
     "apps/signal-bridge/autoresearch-monitor.js",
     "apps/signal-bridge/job-control.js",
     "apps/signal-bridge/live-update-channel.js",

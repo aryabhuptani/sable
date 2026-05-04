@@ -10,8 +10,10 @@ const {
   saveSchedulerJobs,
 } = require("./scheduler");
 const { parseCommand } = require("./bridge-commands");
+const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeOpsManager } = require("./bridge-ops");
+const { createCodexSessionReader } = require("./codex-session-reader");
 const { createObsidianLinkPlugin } = require("./obsidian-link-plugin");
 const {
   createPluginAuthManager,
@@ -208,6 +210,19 @@ const scheduledAttachmentDiscovery = createScheduledAttachmentDiscovery({
   maxImages: MAX_SCHEDULED_LOCAL_IMAGES,
   maxImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
   maxTotalImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES,
+});
+const appServerMessages = createAppServerMessageHelpers({
+  formatProgressMessage,
+  logger: console,
+  maxCommandTextLength: MAX_COMMAND_TEXT_LENGTH,
+  maxFailureOutputLength: MAX_FAILURE_OUTPUT_LENGTH,
+  normalizeText,
+  timestamp,
+  truncateText,
+});
+const codexSessionReader = createCodexSessionReader({
+  normalizeText,
+  sessionsDir: CODEX_SESSIONS_DIR,
 });
 
 validateConfig();
@@ -1242,7 +1257,10 @@ async function processJob(job) {
     if (result.toolSuggestion) {
       const handled = await pluginAuth.maybeStart(job.sender, prompt, result.toolSuggestion);
       if (handled) {
-        if (result.message && shouldForwardAgentMessageAlongsideToolSuggestion(result.message)) {
+        if (
+          result.message &&
+          appServerMessages.shouldForwardAgentMessageAlongsideToolSuggestion(result.message)
+        ) {
           await sendJobReply(job, result.message);
         }
         return;
@@ -1424,7 +1442,7 @@ function runCodexViaAppServer(
     let parsedSessionId = sessionId || null;
     let pendingAgentMessage = null;
     let finalMessage = "";
-    const subagentState = createSubagentProgressState();
+    const subagentState = appServerMessages.createSubagentProgressState();
     let turnId = null;
     let toolSuggestion = null;
     let didFinish = false;
@@ -1482,7 +1500,10 @@ function runCodexViaAppServer(
 
       if (!toolSuggestion && parsedSessionId) {
         try {
-          toolSuggestion = await findToolSuggestionForTurn(parsedSessionId, startedAt);
+          toolSuggestion = await codexSessionReader.findToolSuggestionForTurn(
+            parsedSessionId,
+            startedAt
+          );
         } catch (error) {
           console.error(
             `[${timestamp()}] Failed reading structured tool suggestions: ${error.message}`
@@ -1492,7 +1513,10 @@ function runCodexViaAppServer(
 
       if (!normalizeText(finalMessage) && parsedSessionId) {
         try {
-          finalMessage = await findSessionErrorMessageForTurn(parsedSessionId, startedAt);
+          finalMessage = await codexSessionReader.findSessionErrorMessageForTurn(
+            parsedSessionId,
+            startedAt
+          );
         } catch (error) {
           console.error(
             `[${timestamp()}] Failed reading structured session error: ${error.message}`
@@ -1521,15 +1545,18 @@ function runCodexViaAppServer(
         return;
       }
 
-      const rawSuggestion = captureToolSuggestionFromNotification(message, toolSuggestionCalls);
+      const rawSuggestion = appServerMessages.captureToolSuggestionFromNotification(
+        message,
+        toolSuggestionCalls
+      );
       if (rawSuggestion) {
         toolSuggestion = rawSuggestion;
         return;
       }
 
       if (message.method === "item/started" || message.method === "item/completed") {
-        handleSubagentToolCallNotification(message, subagentState, liveUpdates);
-        const parsed = handleCodexAppServerItem(message.params?.item, {
+        appServerMessages.handleSubagentToolCallNotification(message, subagentState, liveUpdates);
+        const parsed = appServerMessages.handleCodexAppServerItem(message.params?.item, {
           pendingAgentMessage,
           finalMessage,
           liveUpdates,
@@ -1590,7 +1617,7 @@ function runCodexViaAppServer(
       }
 
       if (message.method === "item/tool/requestUserInput") {
-        const promptText = formatToolUserInputRequest(message.params);
+        const promptText = appServerMessages.formatToolUserInputRequest(message.params);
         if (promptText && activeSender) {
           await sendReply(activeSender, promptText);
         }
@@ -1605,12 +1632,14 @@ function runCodexViaAppServer(
           )}`
         );
 
-        const autoResponse = buildAutoAcceptedMcpElicitationResponse(message.params);
+        const autoResponse = appServerMessages.buildAutoAcceptedMcpElicitationResponse(
+          message.params
+        );
         if (autoResponse) {
           return autoResponse;
         }
 
-        const promptText = formatMcpElicitationRequest(message.params);
+        const promptText = appServerMessages.formatMcpElicitationRequest(message.params);
         if (promptText && activeSender) {
           await sendReply(activeSender, promptText);
         }
@@ -1679,192 +1708,6 @@ function runCodexViaAppServer(
   });
 }
 
-function captureToolSuggestionFromNotification(message, callsById) {
-  const item = message?.params?.item;
-  if (!item || typeof item !== "object") {
-    return null;
-  }
-
-  if (item.type === "function_call" && item.name === "tool_suggest") {
-    callsById.set(item.call_id, {
-      arguments: safeJsonParse(item.arguments),
-      output: null,
-    });
-    return null;
-  }
-
-  if (item.type !== "function_call_output" || !item.call_id) {
-    return null;
-  }
-
-  const existing = callsById.get(item.call_id) || {
-    arguments: null,
-    output: null,
-  };
-  existing.output = safeJsonParse(item.output);
-  callsById.set(item.call_id, existing);
-
-  const toolId =
-    normalizeText(existing.output?.tool_id) || normalizeText(existing.arguments?.tool_id);
-  const toolType =
-    normalizeText(existing.output?.tool_type) || normalizeText(existing.arguments?.tool_type);
-
-  if (!toolId || !toolType) {
-    return null;
-  }
-
-  return {
-    actionType:
-      normalizeText(existing.output?.action_type) ||
-      normalizeText(existing.arguments?.action_type),
-    suggestReason:
-      normalizeText(existing.output?.suggest_reason) ||
-      normalizeText(existing.arguments?.suggest_reason),
-    toolId,
-    toolName:
-      normalizeText(existing.output?.tool_name) || normalizeText(toolId.split("@")[0]),
-    toolType,
-    completed: Boolean(existing.output?.completed),
-    userConfirmed: Boolean(existing.output?.user_confirmed),
-  };
-}
-
-function handleCodexAppServerItem(item, stateSnapshot) {
-  let { pendingAgentMessage, finalMessage, liveUpdates, subagentState } = stateSnapshot;
-
-  if (!item || typeof item !== "object") {
-    return { pendingAgentMessage, finalMessage };
-  }
-
-  if (item.type === "agentMessage") {
-    if (subagentState?.activeCount) {
-      pendingAgentMessage = null;
-      return { pendingAgentMessage, finalMessage };
-    }
-
-    const text = normalizeText(item.text);
-    if (text) {
-      if (pendingAgentMessage) {
-        liveUpdates.queue(formatProgressMessage(pendingAgentMessage));
-      }
-      pendingAgentMessage = text;
-      finalMessage = text;
-    }
-    return { pendingAgentMessage, finalMessage };
-  }
-
-  if (item.type === "commandExecution") {
-    if (pendingAgentMessage && !subagentState?.activeCount) {
-      liveUpdates.queue(formatProgressMessage(pendingAgentMessage));
-      pendingAgentMessage = null;
-    } else if (subagentState?.activeCount) {
-      pendingAgentMessage = null;
-    }
-
-    if (item.status !== "completed" || item.exitCode !== 0) {
-      const command = truncateText(item.command || "", MAX_COMMAND_TEXT_LENGTH) || "(empty command)";
-      const snippet = normalizeText(item.aggregatedOutput).slice(0, MAX_FAILURE_OUTPUT_LENGTH);
-      console.error(
-        `[${timestamp()}] Suppressed command failure relay: exitCode=${
-          item.exitCode ?? "unknown"
-        } command=${JSON.stringify(command)} output=${JSON.stringify(snippet)}`
-      );
-    }
-
-    return { pendingAgentMessage, finalMessage };
-  }
-
-  if (item.type === "mcpToolCall" && item.status === "failed") {
-    const errorText = normalizeText(item.error?.message);
-    if (errorText) {
-      liveUpdates.queue(formatProgressMessage(errorText));
-    }
-  }
-
-  return { pendingAgentMessage, finalMessage };
-}
-
-function createSubagentProgressState() {
-  return {
-    activeToolCalls: new Set(),
-    activeCount: 0,
-    announcedInTurn: false,
-  };
-}
-
-function handleSubagentToolCallNotification(message, subagentState, liveUpdates) {
-  if (!subagentState || !liveUpdates) {
-    return;
-  }
-
-  const item = message?.params?.item;
-  if (!item || item.type !== "mcpToolCall") {
-    return;
-  }
-
-  const toolName = extractMcpToolCallName(item);
-  if (!isSubagentToolName(toolName)) {
-    return;
-  }
-
-  const toolCallKey = extractMcpToolCallKey(item, toolName);
-  if (!toolCallKey) {
-    return;
-  }
-
-  if (message.method === "item/started") {
-    const wasIdle = subagentState.activeCount === 0;
-    if (!subagentState.activeToolCalls.has(toolCallKey)) {
-      subagentState.activeToolCalls.add(toolCallKey);
-      subagentState.activeCount = subagentState.activeToolCalls.size;
-    }
-
-    if (wasIdle && !subagentState.announcedInTurn) {
-      liveUpdates.queue("• Kicking off a subagent for a bounded task...");
-      subagentState.announcedInTurn = true;
-    }
-    return;
-  }
-
-  if (message.method === "item/completed") {
-    subagentState.activeToolCalls.delete(toolCallKey);
-    subagentState.activeCount = subagentState.activeToolCalls.size;
-  }
-}
-
-function extractMcpToolCallName(item) {
-  return normalizeText(
-    item.toolName ||
-      item.name ||
-      item.tool?.name ||
-      item.call?.toolName ||
-      item.call?.name ||
-      item.metadata?.toolName
-  ).toLowerCase();
-}
-
-function extractMcpToolCallKey(item, toolName) {
-  return normalizeText(
-    item.id ||
-      item.callId ||
-      item.toolCallId ||
-      item.invocationId ||
-      item.call?.id ||
-      item.call?.callId ||
-      toolName
-  );
-}
-
-function isSubagentToolName(toolName) {
-  return (
-    toolName === "spawn_agent" ||
-    toolName === "wait_agent" ||
-    toolName === "send_input" ||
-    toolName === "resume_agent" ||
-    toolName === "close_agent"
-  );
-}
-
 function buildAppServerThreadParams(threadId = null) {
   const params = {
     cwd: CODEX_CWD,
@@ -1894,293 +1737,6 @@ function buildAppServerTurnParams(threadId, prompt, imagePaths = []) {
       ...imagePaths.map((imagePath) => ({ type: "localImage", path: imagePath })),
     ],
   };
-}
-
-function formatToolUserInputRequest(params) {
-  const questions = Array.isArray(params?.questions) ? params.questions : [];
-  if (questions.length === 0) {
-    return "Sable requested user input for a tool, but the bridge cannot answer it yet.";
-  }
-
-  const lines = ["Sable requested tool input that this bridge cannot answer yet:"];
-  for (const question of questions.slice(0, 3)) {
-    const prompt = normalizeText(question?.question);
-    const header = normalizeText(question?.header);
-    if (header && prompt) {
-      lines.push(`${header}: ${prompt}`);
-    } else if (prompt) {
-      lines.push(prompt);
-    }
-  }
-  return lines.join("\n");
-}
-
-function formatMcpElicitationRequest(params) {
-  const message = normalizeText(params?.message);
-  const url = normalizeText(params?.url);
-  if (!message && !url) {
-    return "Sable requested MCP input that this bridge cannot answer yet.";
-  }
-
-  return [message, url].filter(Boolean).join("\n");
-}
-
-function buildAutoAcceptedMcpElicitationResponse(params) {
-  const promptText = normalizeText(params?.message);
-  const schema = params?.requestedSchema;
-
-  const optimisticContent = buildAutoAcceptedMcpElicitationContent(schema);
-  if (promptText && /^allow\b.+\?$/i.test(promptText) && optimisticContent) {
-    return {
-      action: "accept",
-      content: optimisticContent,
-    };
-  }
-
-  if (normalizeText(params?.mode) !== "form" || !optimisticContent) {
-    return null;
-  }
-
-  return {
-    action: "accept",
-    content: optimisticContent,
-  };
-}
-
-function buildAutoAcceptedMcpElicitationContent(schema) {
-  if (!schema) {
-    return {};
-  }
-
-  if (schema.type !== "object" || !schema.properties || typeof schema.properties !== "object") {
-    return null;
-  }
-
-  const content = {};
-
-  for (const [key, definition] of Object.entries(schema.properties)) {
-    const value = buildAutoAcceptedMcpElicitationValue(definition);
-    if (typeof value === "undefined") {
-      return null;
-    }
-    content[key] = value;
-  }
-
-  return content;
-}
-
-function buildAutoAcceptedMcpElicitationValue(definition) {
-  if (!definition || typeof definition !== "object") {
-    return undefined;
-  }
-
-  if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-    return definition.enum[0];
-  }
-
-  if (definition.type === "boolean") {
-    return true;
-  }
-
-  if (definition.type === "string") {
-    return typeof definition.default === "string" ? definition.default : "";
-  }
-
-  if (definition.type === "number" || definition.type === "integer") {
-    return Number.isFinite(definition.default) ? definition.default : 0;
-  }
-
-  return undefined;
-}
-
-async function findToolSuggestionForTurn(threadId, startedAtIso) {
-  const sessionPath = await findSessionFileForThread(threadId);
-  if (!sessionPath) {
-    return null;
-  }
-
-  const raw = await fs.promises.readFile(sessionPath, "utf8");
-  const callsById = new Map();
-
-  for (const line of String(raw).split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    let entry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch (error) {
-      continue;
-    }
-
-    if (!isTimestampOnOrAfter(entry.timestamp, startedAtIso)) {
-      continue;
-    }
-
-    if (entry.type !== "response_item" || !entry.payload) {
-      continue;
-    }
-
-    if (entry.payload.type === "function_call" && entry.payload.name === "tool_suggest") {
-      const record = {
-        callId: entry.payload.call_id,
-        arguments: safeJsonParse(entry.payload.arguments),
-        output: null,
-      };
-      callsById.set(record.callId, record);
-    }
-
-    if (entry.payload.type === "function_call_output" && entry.payload.call_id) {
-      const existing = callsById.get(entry.payload.call_id) || {
-        callId: entry.payload.call_id,
-        arguments: null,
-        output: null,
-      };
-      existing.output = safeJsonParse(entry.payload.output);
-      callsById.set(existing.callId, existing);
-    }
-  }
-
-  for (const record of callsById.values()) {
-    const toolId =
-      normalizeText(record.output?.tool_id) || normalizeText(record.arguments?.tool_id);
-    const toolType =
-      normalizeText(record.output?.tool_type) || normalizeText(record.arguments?.tool_type);
-
-    if (!toolId || !toolType) {
-      continue;
-    }
-
-    return {
-      actionType:
-        normalizeText(record.output?.action_type) ||
-        normalizeText(record.arguments?.action_type),
-      suggestReason:
-        normalizeText(record.output?.suggest_reason) ||
-        normalizeText(record.arguments?.suggest_reason),
-      toolId,
-      toolName:
-        normalizeText(record.output?.tool_name) || normalizeText(toolId.split("@")[0]),
-      toolType,
-      completed: Boolean(record.output?.completed),
-      userConfirmed: Boolean(record.output?.user_confirmed),
-    };
-  }
-
-  return null;
-}
-
-async function findSessionFileForThread(threadId) {
-  const segments = await fs.promises.readdir(CODEX_SESSIONS_DIR, { withFileTypes: true });
-
-  for (const yearEntry of segments) {
-    if (!yearEntry.isDirectory()) {
-      continue;
-    }
-
-    const yearPath = path.join(CODEX_SESSIONS_DIR, yearEntry.name);
-    const monthEntries = await fs.promises.readdir(yearPath, { withFileTypes: true });
-
-    for (const monthEntry of monthEntries) {
-      if (!monthEntry.isDirectory()) {
-        continue;
-      }
-
-      const monthPath = path.join(yearPath, monthEntry.name);
-      const dayEntries = await fs.promises.readdir(monthPath, { withFileTypes: true });
-
-      for (const dayEntry of dayEntries) {
-        if (!dayEntry.isDirectory()) {
-          continue;
-        }
-
-        const dayPath = path.join(monthPath, dayEntry.name);
-        const fileEntries = await fs.promises.readdir(dayPath, { withFileTypes: true });
-
-        for (const fileEntry of fileEntries) {
-          if (!fileEntry.isFile()) {
-            continue;
-          }
-
-          if (fileEntry.name.includes(threadId) && fileEntry.name.endsWith(".jsonl")) {
-            return path.join(dayPath, fileEntry.name);
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-async function findSessionErrorMessageForTurn(threadId, startedAtIso) {
-  const sessionPath = await findSessionFileForThread(threadId);
-  if (!sessionPath) {
-    return "";
-  }
-
-  const raw = await fs.promises.readFile(sessionPath, "utf8");
-  let latestError = "";
-
-  for (const line of String(raw).split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    let entry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch (error) {
-      continue;
-    }
-
-    if (!isTimestampOnOrAfter(entry.timestamp, startedAtIso)) {
-      continue;
-    }
-
-    if (entry.type !== "event_msg" || entry.payload?.type !== "error") {
-      continue;
-    }
-
-    latestError = normalizeText(entry.payload?.message) || latestError;
-  }
-
-  return latestError;
-}
-
-function isTimestampOnOrAfter(candidate, reference) {
-  const candidateMs = Date.parse(candidate);
-  const referenceMs = Date.parse(reference);
-
-  if (Number.isNaN(candidateMs) || Number.isNaN(referenceMs)) {
-    return false;
-  }
-
-  return candidateMs >= referenceMs;
-}
-
-function safeJsonParse(value) {
-  if (typeof value !== "string" || !value.trim()) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return null;
-  }
-}
-
-function shouldForwardAgentMessageAlongsideToolSuggestion(message) {
-  const normalized = normalizeText(message).toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return !normalized.includes("install `");
 }
 
 async function checkForPendingPluginAuth() {
