@@ -15,6 +15,8 @@ const suites = [
       "tests/app-server-message-helpers.test.js",
       "tests/autoresearch-monitor.test.js",
       "tests/bridge-codex-client.test.js",
+      "tests/bridge-job-runtime.test.js",
+      "tests/bridge-scheduler-runtime.test.js",
       "tests/bridge-state-store.test.js",
       "tests/bridge-test-support.test.js",
       "tests/codex-session-reader.test.js",

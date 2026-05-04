@@ -13,6 +13,8 @@ const { parseCommand } = require("./bridge-commands");
 const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeOpsManager } = require("./bridge-ops");
+const { createBridgeJobRuntime } = require("./bridge-job-runtime");
+const { createBridgeSchedulerRuntime } = require("./bridge-scheduler-runtime");
 const { createBridgeStateStore } = require("./bridge-state-store");
 const { createBridgeTestSupport } = require("./bridge-test-support");
 const { createCodexSessionReader } = require("./codex-session-reader");
@@ -214,6 +216,20 @@ const scheduledAttachmentDiscovery = createScheduledAttachmentDiscovery({
   maxImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
   maxTotalImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES,
 });
+const schedulerRuntime = createBridgeSchedulerRuntime({
+  buildAttachmentContext: (...args) => signalAttachments.buildAttachmentContext(...args),
+  computeFollowingRunAt,
+  discoverFileAttachments: (prompt) =>
+    scheduledAttachmentDiscovery.discoverFileAttachments(prompt),
+  discoverImageAttachments: (prompt) =>
+    scheduledAttachmentDiscovery.discoverImageAttachments(prompt),
+  formatScheduleList,
+  loadSchedulerJobs,
+  normalizeText,
+  saveSchedulerJobs,
+  schedulerJobsPath: SCHEDULER_JOBS_PATH,
+  timestamp,
+});
 const appServerMessages = createAppServerMessageHelpers({
   formatProgressMessage,
   logger: console,
@@ -259,7 +275,6 @@ const backgroundQueue = [];
 let isProcessingInteractive = false;
 let isProcessingBackground = false;
 let state = stateStore.loadState();
-let schedulerJobs = loadSchedulerJobs(SCHEDULER_JOBS_PATH);
 let restartRequested = false;
 let shutdownRequested = false;
 let activeJobControl = null;
@@ -280,7 +295,7 @@ const ops = createBridgeOpsManager({
   stalledRunThresholdMs: OPS_STALLED_RUN_THRESHOLD_MS,
   snapshotAutoresearchRuns: () => autoresearchMonitor.snapshotRuns(),
   summarizeAutoresearchRuns: (runs, now) => autoresearchMonitor.summarizeRuns(runs, now),
-  getSchedulerJobs: () => schedulerJobs,
+  getSchedulerJobs: () => schedulerRuntime.getJobs(),
   getLiveState: () => ({
     interactiveQueueDepth: interactiveQueue.length,
     interactiveProcessing: isProcessingInteractive,
@@ -344,6 +359,55 @@ const pluginAuth = createPluginAuthManager({
   },
   sendReply,
   timestamp,
+});
+const jobRuntime = createBridgeJobRuntime({
+  appServerMessages,
+  autoresearchMonitor,
+  cleanupPaths,
+  clearActiveJob: (jobControl) => {
+    activeSender = null;
+    if (activeJobControl === jobControl) {
+      activeJobControl = null;
+    }
+  },
+  clearInFlightTurn,
+  clearSessionState,
+  createJobControl,
+  getBridgeStatusReport: () =>
+    ops.getBridgeStatusReport({
+      interactiveSessionId: state.interactiveSessionId,
+      backgroundSessionId: state.backgroundSessionId,
+      obsidianLinkServerAddress: obsidianLinks.getServerAddress(),
+      obsidianLinkServerHost: obsidianLinks.host,
+      obsidianLinksEnabled: obsidianLinks.enabled,
+      obsidianBaseUrl: obsidianLinks.baseUrl,
+      pendingPluginAuthSummary: pluginAuth.summarize(state.pendingPluginAuth),
+    }),
+  getOpsReport: () => ops.getOpsReport(),
+  getPendingPluginAuth: () => state.pendingPluginAuth,
+  getSessionId: (key) => state[key],
+  getTelegramTriageReport,
+  mergePromptSegments,
+  normalizeText,
+  pluginAuth,
+  runCodex,
+  saveSessionId: (key, sessionId) => {
+    state[key] = sessionId;
+    saveState();
+  },
+  schedulerRuntime,
+  scheduledNoReplyMarker: SCHEDULED_NO_REPLY_MARKER,
+  sendReply,
+  setActiveJob: (sender, jobControl) => {
+    activeSender = sender;
+    activeJobControl = jobControl;
+  },
+  setInFlightTurn,
+  signalAttachments,
+  signalProfile,
+  timestamp,
+  voiceNotes,
+  voiceNotesEchoTranscript: VOICE_NOTES_ECHO_TRANSCRIPT,
 });
 
 signalRpc.start();
@@ -678,7 +742,7 @@ async function processInteractiveQueue() {
       console.error(
         `[${timestamp()}] Failed processing message from ${job.sender}: ${error.stack || error.message}`
       );
-      await sendJobReply(job, "Request failed before Sable could complete.");
+      await jobRuntime.sendJobReply(job, "Request failed before Sable could complete.");
     }
   }
 
@@ -707,7 +771,7 @@ async function processBackgroundQueue() {
       console.error(
         `[${timestamp()}] Failed processing background message from ${job.sender}: ${error.stack || error.message}`
       );
-      await sendJobReply(job, "Background workflow failed before Sable could complete.");
+      await jobRuntime.sendJobReply(job, "Background workflow failed before Sable could complete.");
     }
   }
 
@@ -715,389 +779,20 @@ async function processBackgroundQueue() {
   await restartIfRequested();
 }
 
-function persistSchedulerJobs() {
-  saveSchedulerJobs(SCHEDULER_JOBS_PATH, schedulerJobs);
-}
-
-function refreshSchedulerJobs() {
-  schedulerJobs = loadSchedulerJobs(SCHEDULER_JOBS_PATH);
-}
-
-function removeScheduledJob(scheduleId) {
-  refreshSchedulerJobs();
-  const normalizedId = normalizeText(scheduleId);
-  if (!normalizedId) {
-    return false;
-  }
-
-  const originalLength = schedulerJobs.length;
-  schedulerJobs = schedulerJobs.filter((job) => job.id !== normalizedId);
-  if (schedulerJobs.length === originalLength) {
-    return false;
-  }
-
-  persistSchedulerJobs();
-  return true;
-}
-
 async function checkForDueScheduledJobs() {
-  if (shutdownRequested || restartRequested) {
-    return;
-  }
-
-  refreshSchedulerJobs();
-
-  if (!Array.isArray(schedulerJobs) || schedulerJobs.length === 0) {
-    return;
-  }
-
-  const now = new Date();
-  let changed = false;
-
-  for (const scheduledJob of schedulerJobs) {
-    if (!scheduledJob || scheduledJob.active === false) {
-      continue;
-    }
-
-    const nextRunMs = Date.parse(scheduledJob.nextRunAt);
-    if (Number.isNaN(nextRunMs) || nextRunMs > now.getTime()) {
-      continue;
-    }
-
-    queueScheduledWorkflowRun(scheduledJob);
-    scheduledJob.lastRunAt = now.toISOString();
-    scheduledJob.nextRunAt = computeFollowingRunAt(scheduledJob, now);
-    scheduledJob.updatedAt = timestamp();
-    changed = true;
-  }
-
-  if (changed) {
-    persistSchedulerJobs();
-  }
-}
-
-function queueScheduledWorkflowRun(scheduledJob) {
-  const executionPrompt = [
-    scheduledJob.workflowPrompt,
-    "",
-    "This is a scheduled recurring workflow triggered automatically by Sable.",
-  ].join("\n");
-  const localImageAttachments = scheduledAttachmentDiscovery.discoverImageAttachments(
-    scheduledJob.workflowPrompt
-  );
-  const localFileAttachments = scheduledAttachmentDiscovery.discoverFileAttachments(
-    scheduledJob.workflowPrompt
-  );
-
-  backgroundQueue.push({
-    sender: scheduledJob.sender,
-    command: { type: "prompt", prompt: executionPrompt },
-    context: signalAttachments.buildAttachmentContext(
-      {},
-      scheduledJob.sender,
-      localImageAttachments,
-      [],
-      localFileAttachments
-    ),
-    queuedVoicePreparation: null,
-    allowSilentNoReply: true,
-    replyMode: scheduledJob.replyMode === "silent" ? "silent" : "default",
-    origin: "scheduled",
+  await schedulerRuntime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: (job) => backgroundQueue.push(job),
+    ensureBackgroundProcessing: () => {
+      if (!isProcessingBackground) {
+        void processBackgroundQueue();
+      }
+    },
+    isPaused: () => shutdownRequested || restartRequested,
   });
-
-  if (!isProcessingBackground) {
-    void processBackgroundQueue();
-  }
-}
-
-function isBackgroundJob(job) {
-  return job?.origin === "scheduled";
-}
-
-function getSessionStateKeyForJob(job) {
-  return isBackgroundJob(job) ? "backgroundSessionId" : "interactiveSessionId";
-}
-
-function isAutoresearchTickJob(job) {
-  const prompt = normalizeText(job?.command?.prompt);
-  return prompt.includes("Run the bounded autoresearch tick for Sable.");
 }
 
 async function processJob(job) {
-  if (job.command.type === "status") {
-    await sendJobReply(
-      job,
-      await ops.getBridgeStatusReport({
-        interactiveSessionId: state.interactiveSessionId,
-        backgroundSessionId: state.backgroundSessionId,
-        obsidianLinkServerAddress: obsidianLinks.getServerAddress(),
-        obsidianLinkServerHost: obsidianLinks.host,
-        obsidianLinksEnabled: obsidianLinks.enabled,
-        obsidianBaseUrl: obsidianLinks.baseUrl,
-        pendingPluginAuthSummary: pluginAuth.summarize(state.pendingPluginAuth),
-      })
-    );
-    return;
-  }
-
-  if (job.command.type === "ops") {
-    await sendJobReply(job, await ops.getOpsReport());
-    return;
-  }
-
-  if (job.command.type === "list-schedules") {
-    refreshSchedulerJobs();
-    await sendJobReply(job, formatScheduleList(schedulerJobs));
-    return;
-  }
-
-  if (job.command.type === "unschedule") {
-    const removed = removeScheduledJob(job.command.scheduleId);
-    await sendReply(
-      job.sender,
-      removed
-        ? `Removed scheduled workflow ${job.command.scheduleId}.`
-        : `No scheduled workflow matched ${job.command.scheduleId || "that id"}.`
-    );
-    return;
-  }
-
-  if (job.command.type === "remove-avatar") {
-    await signalProfile.updateAvatar({ remove: true });
-    await sendJobReply(job, "Removed Sable's Signal profile picture.");
-    return;
-  }
-
-  if (job.command.type === "auth-status") {
-    await sendJobReply(job, pluginAuth.formatStatus(state.pendingPluginAuth));
-    return;
-  }
-
-  if (job.command.type === "auth-cancel") {
-    if (!state.pendingPluginAuth) {
-      await sendJobReply(job, "No plugin auth flow is currently pending.");
-      return;
-    }
-
-    pluginAuth.clear();
-    await sendJobReply(job, "Cleared the pending plugin auth flow.");
-    return;
-  }
-
-  if (job.command.type === "auth-resume") {
-    if (!state.pendingPluginAuth) {
-      await sendJobReply(job, "No plugin auth flow is ready to resume.");
-      return;
-    }
-
-    if (state.pendingPluginAuth.status !== "completed") {
-      await sendJobReply(job, pluginAuth.formatStatus(state.pendingPluginAuth));
-      return;
-    }
-
-    if (!state.pendingPluginAuth.sourcePrompt) {
-      pluginAuth.clear();
-      await sendJobReply(job, "The plugin connected, but there is no saved prompt to retry. Ask again normally.");
-      return;
-    }
-
-    const resumePrompt = state.pendingPluginAuth.sourcePrompt;
-    pluginAuth.clear();
-    job.command = { type: "prompt", prompt: resumePrompt };
-  }
-
-  if (job.command.type === "telegram-triage") {
-    await sendJobReply(job, await getTelegramTriageReport(job.command.limit));
-    return;
-  }
-
-  if (job.command.type === "new" && !job.command.prompt) {
-    clearSessionState("interactive");
-    await sendJobReply(job, "Started a new Sable session. Your next message will use fresh context.");
-    return;
-  }
-
-  const backgroundJob = isBackgroundJob(job);
-  const sessionStateKey = getSessionStateKeyForJob(job);
-  const sessionKind = backgroundJob ? "background" : "interactive";
-  const shouldResume = Boolean(state[sessionStateKey]) && job.command.type !== "new";
-  const imagePaths = await signalAttachments.materializeIncomingImages(job.context);
-  const filePaths = await signalAttachments.materializeIncomingFiles(job.context);
-  let audioPaths = [];
-  let preparedVoiceNote = null;
-  if (job.queuedVoicePreparation) {
-    try {
-      preparedVoiceNote = await job.queuedVoicePreparation;
-      audioPaths = preparedVoiceNote.audioPaths;
-    } catch (error) {
-      console.error(
-        `[${timestamp()}] Background voice-note preparation failed for ${job.sender}: ${error.message}`
-      );
-    }
-  }
-
-  if (audioPaths.length === 0) {
-    audioPaths = await signalAttachments.materializeIncomingAudio(job.context);
-  }
-  const jobControl = createJobControl(job.sender);
-  const autoresearchBefore =
-    backgroundJob && isAutoresearchTickJob(job) ? autoresearchMonitor.snapshotRuns() : null;
-  if (!backgroundJob) {
-    activeSender = job.sender;
-    activeJobControl = jobControl;
-  }
-
-  try {
-    let prompt = job.command.prompt;
-
-    if (job.command.type === "set-avatar") {
-      if (imagePaths.length === 0) {
-        await sendJobReply(job, "Attach an image with `/setavatar` and I'll use the first image as Sable's profile picture.");
-        return;
-      }
-
-      await signalProfile.updateAvatar({ avatarPath: imagePaths[0] });
-      const suffix =
-        imagePaths.length > 1 ? ` Used the first attached image and ignored ${imagePaths.length - 1} extra image${imagePaths.length === 2 ? "" : "s"}.` : "";
-      await sendJobReply(job, `Updated Sable's Signal profile picture.${suffix}`);
-      return;
-    }
-
-    if (audioPaths.length > 0) {
-      if (!voiceNotes.isEnabled()) {
-        await sendJobReply(job, "Voice note transcription is disabled.");
-        return;
-      }
-
-      let transcription = preparedVoiceNote?.transcription || null;
-      if (!transcription) {
-        await sendJobProgressReply(job, "Transcribing voice note...");
-        transcription = await voiceNotes.transcribe(audioPaths[0], jobControl);
-      }
-
-      if (!normalizeText(transcription?.transcript)) {
-        await sendJobReply(job, "Voice note transcription returned no text.");
-        return;
-      }
-
-      if (VOICE_NOTES_ECHO_TRANSCRIPT) {
-        await sendJobProgressReply(job, voiceNotes.formatTranscriptMessage(transcription));
-      }
-
-      prompt = transcription.transcript;
-    }
-
-    if (filePaths.length > 0) {
-      await sendJobProgressReply(job, "Reading attached files...");
-      const fileContext = await signalAttachments.buildFileAttachmentPromptContext(job.context, filePaths);
-      if (!fileContext.ok) {
-        await sendJobProgressReply(
-          job,
-          `${fileContext.message} I still exposed the local attachment path for this turn in case a tool can use the file directly.`
-        );
-      } else {
-        prompt = mergePromptSegments(prompt, fileContext.promptText);
-      }
-    }
-
-    const localAttachmentContext = signalAttachments.buildLocalAttachmentPathPromptContext(job.context, {
-      imagePaths,
-      audioPaths,
-      filePaths,
-    });
-    prompt = mergePromptSegments(prompt, localAttachmentContext);
-
-    if (!normalizeText(prompt)) {
-      await sendJobReply(job, "There was no usable text prompt to send to Sable.");
-      return;
-    }
-
-    if (!backgroundJob) {
-      setInFlightTurn(job.sender, prompt);
-    }
-    const result = await runCodex(
-      prompt,
-      shouldResume ? state[sessionStateKey] : null,
-      imagePaths,
-      jobControl,
-      backgroundJob || shouldSuppressJobReplies(job),
-      () => clearSessionState(sessionKind)
-    );
-
-    if (result.sessionId) {
-      state[sessionStateKey] = result.sessionId;
-      saveState();
-    }
-
-    if (result.startedFreshBecauseResumeFailed) {
-      await sendJobProgressReply(
-        job,
-        "Previous Sable session was unavailable, so I started a fresh session before answering."
-      );
-    }
-
-    if (result.toolSuggestion) {
-      const handled = await pluginAuth.maybeStart(job.sender, prompt, result.toolSuggestion);
-      if (handled) {
-        if (
-          result.message &&
-          appServerMessages.shouldForwardAgentMessageAlongsideToolSuggestion(result.message)
-        ) {
-          await sendJobReply(job, result.message);
-        }
-        return;
-      }
-    }
-
-    if (
-      job.allowSilentNoReply &&
-      normalizeText(result.message) === SCHEDULED_NO_REPLY_MARKER
-    ) {
-      if (autoresearchBefore) {
-        await autoresearchMonitor.sendCompletionNotices(autoresearchBefore, job.sender, sendReply);
-      }
-      return;
-    }
-
-    if (result.message) {
-      await sendJobReply(job, result.message);
-    } else if (!shouldSuppressJobReplies(job)) {
-      await sendReply(job.sender, "Sable completed without a final message.");
-    }
-
-    if (autoresearchBefore) {
-      await autoresearchMonitor.sendCompletionNotices(autoresearchBefore, job.sender, sendReply);
-    }
-  } finally {
-    if (!backgroundJob) {
-      clearInFlightTurn();
-      activeSender = null;
-      if (activeJobControl === jobControl) {
-        activeJobControl = null;
-      }
-    }
-    await cleanupPaths(imagePaths);
-    await cleanupPaths(audioPaths);
-    await cleanupPaths(filePaths);
-  }
-}
-
-function shouldSuppressJobReplies(job) {
-  return job?.replyMode === "silent";
-}
-
-async function sendJobReply(job, message) {
-  if (shouldSuppressJobReplies(job)) {
-    return;
-  }
-  await sendReply(job.sender, message);
-}
-
-async function sendJobProgressReply(job, message) {
-  if (isBackgroundJob(job)) {
-    return;
-  }
-  await sendJobReply(job, message);
+  await jobRuntime.processJob(job);
 }
 
 async function runCodex(
@@ -1606,13 +1301,16 @@ async function getBridgeStatusReport() {
   const obsidianBaseUrlLine = obsidianLinks.baseUrl
     ? `obsidian base url: ${obsidianLinks.baseUrl}`
     : "obsidian base url: none";
+  const activeSchedulerJobs = schedulerRuntime
+    .getJobs()
+    .filter((job) => job?.active !== false);
 
   return [
     `bridge: ${formatUnitSummary(bridgeService)}`,
     `watcher: ${formatUnitSummary(watcherService)}`,
     `interactive queue: ${interactiveQueue.length} pending, processing=${isProcessingInteractive ? "yes" : "no"}`,
     `background queue: ${backgroundQueue.length} pending, processing=${isProcessingBackground ? "yes" : "no"}`,
-    `scheduler: ${schedulerJobs.filter((job) => job?.active !== false).length} active workflow${schedulerJobs.filter((job) => job?.active !== false).length === 1 ? "" : "s"}`,
+    `scheduler: ${activeSchedulerJobs.length} active workflow${activeSchedulerJobs.length === 1 ? "" : "s"}`,
     interactiveSessionLine,
     backgroundSessionLine,
     obsidianServerLine,

@@ -84,11 +84,13 @@ test("scheduled attachment discovery finds local KB inbox files and skips images
     const attachments = discovery.discoverFileAttachments(`Read ${path.join(tempRoot, "topic")}`);
 
     assert.deepEqual(
-      attachments.map((attachment) => ({
-        filename: attachment.filename,
-        contentType: attachment.contentType,
-        localPath: attachment.localPath,
-      })),
+      attachments
+        .map((attachment) => ({
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          localPath: attachment.localPath,
+        }))
+        .sort((left, right) => left.filename.localeCompare(right.filename)),
       [
         { filename: "brief.md", contentType: "text/markdown", localPath: markdown },
         { filename: "data.json", contentType: "application/json", localPath: data },
