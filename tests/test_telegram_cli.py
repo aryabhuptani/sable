@@ -1,4 +1,5 @@
 import importlib.util
+import asyncio
 import pathlib
 import sys
 import unittest
@@ -145,6 +146,24 @@ class TelegramCliTests(unittest.TestCase):
     def test_validate_attachment_paths_rejects_missing_file(self):
         with self.assertRaises(SystemExit):
             telegram_cli.validate_attachment_paths(["/tmp/definitely-missing-telegram-attachment.pdf"])
+
+    def test_mark_read_command_dispatches_with_limit(self):
+        captured = {}
+        original = telegram_cli.command_mark_read
+
+        async def fake_mark_read(args):
+            captured["command"] = args.command
+            captured["limit"] = args.limit
+            return 0
+
+        telegram_cli.command_mark_read = fake_mark_read
+        try:
+            result = asyncio.run(telegram_cli.async_main(["mark-read", "--limit", "3"]))
+        finally:
+            telegram_cli.command_mark_read = original
+
+        self.assertEqual(result, 0)
+        self.assertEqual(captured, {"command": "mark-read", "limit": 3})
 
 
 if __name__ == "__main__":
