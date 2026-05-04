@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import urllib.error
@@ -25,10 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.instance.instance_config import create_instance_config
+from tools.homeassistant.homeassistant_plugin import create_home_assistant_plugin_config
 
-DEFAULT_CONFIG_DIR = Path(create_instance_config(env={}).home_dir) / "homeassistant"
-DEFAULT_URL = "http://127.0.0.1:8123"
 SABLE_MANAGED_DESCRIPTION = "Managed by Sable homeassistant-cli"
 
 
@@ -297,41 +294,20 @@ class HomeAssistantCli:
 
     @classmethod
     def from_env(cls) -> "HomeAssistantCli":
-        instance_config = create_instance_config()
-        config_dir = Path(
-            os.environ.get("SABLE_HOME_ASSISTANT_CONFIG_DIR")
-            or os.environ.get("HOME_ASSISTANT_CONFIG_DIR")
-            or Path(instance_config.home_dir) / "homeassistant"
-        )
-        automations_file = Path(
-            os.environ.get("SABLE_HOME_ASSISTANT_AUTOMATIONS_FILE")
-            or config_dir / "automations.yaml"
-        )
-        scenes_file = Path(
-            os.environ.get("SABLE_HOME_ASSISTANT_SCENES_FILE") or config_dir / "scenes.yaml"
-        )
+        plugin_config = create_home_assistant_plugin_config()
+        config_dir = plugin_config.config_dir
         storage_dir = config_dir / ".storage"
         paths = HomeAssistantPaths(
             config_dir=config_dir,
-            automations_file=automations_file,
-            scenes_file=scenes_file,
+            automations_file=plugin_config.automations_file,
+            scenes_file=plugin_config.scenes_file,
             area_registry=storage_dir / "core.area_registry",
             device_registry=storage_dir / "core.device_registry",
             entity_registry=storage_dir / "core.entity_registry",
             restore_state=storage_dir / "core.restore_state",
             person_registry=storage_dir / "person",
         )
-        url = (
-            os.environ.get("SABLE_HOME_ASSISTANT_URL")
-            or os.environ.get("HOME_ASSISTANT_URL")
-            or DEFAULT_URL
-        )
-        token = (
-            os.environ.get("SABLE_HOME_ASSISTANT_TOKEN")
-            or os.environ.get("HOME_ASSISTANT_TOKEN")
-            or ""
-        ).strip()
-        return cls(paths=paths, url=url, token=token)
+        return cls(paths=paths, url=plugin_config.url, token=plugin_config.token)
 
     def summary(self) -> dict[str, Any]:
         areas = self.list_areas()

@@ -9,6 +9,7 @@
   "runtime": {
     "type": "python-cli",
     "currentEntryPoints": [
+      "tools/homeassistant/homeassistant_plugin.py",
       "tools/homeassistant/homeassistant_cli.py",
       "tools/homeassistant/humidifier_low_water_signal.py"
     ]

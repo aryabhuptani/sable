@@ -16,7 +16,7 @@
     "test:scheduler": "node --test tests/scheduler-cli.test.js",
     "test:kb": "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js",
     "test:autotweet": "node --test tests/autotweet.test.js",
-    "test:homeassistant": "python3 -m unittest tests/test_homeassistant_cli.py",
+    "test:homeassistant": "python3 -m unittest tests/test_homeassistant_plugin.py tests/test_homeassistant_cli.py",
     "test:humidifier": "python3 -m unittest tests/test_humidifier_low_water_signal.py",
     "test:telegram": "python3 -m unittest tests/test_telegram_cli.py",
     "test:signal-attachment": "node --test tests/test_signal_attachment_cli.js",

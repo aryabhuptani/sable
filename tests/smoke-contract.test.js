@@ -28,7 +28,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:scheduler"], "node --test tests/scheduler-cli.test.js");
   assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js");
   assert.equal(pkg.scripts["test:autotweet"], "node --test tests/autotweet.test.js");
-  assert.equal(pkg.scripts["test:homeassistant"], "python3 -m unittest tests/test_homeassistant_cli.py");
+  assert.equal(pkg.scripts["test:homeassistant"], "python3 -m unittest tests/test_homeassistant_plugin.py tests/test_homeassistant_cli.py");
   assert.equal(pkg.scripts["test:humidifier"], "python3 -m unittest tests/test_humidifier_low_water_signal.py");
   assert.equal(pkg.scripts["test:telegram"], "python3 -m unittest tests/test_telegram_cli.py");
   assert.equal(pkg.scripts["test:signal-attachment"], "node --test tests/test_signal_attachment_cli.js");
@@ -43,6 +43,7 @@ test("current Sable core candidates are present before architecture extraction",
     "apps/signal-bridge/telegram-review-plugin.js",
     "apps/signal-bridge/scheduler.js",
     "apps/signal-bridge/scheduler_cli.js",
+    "tools/homeassistant/homeassistant_plugin.py",
     "tools/homeassistant/homeassistant_cli.py",
     "tools/homeassistant/humidifier_low_water_signal.py",
     "tools/telegram/telegram_cli.py",

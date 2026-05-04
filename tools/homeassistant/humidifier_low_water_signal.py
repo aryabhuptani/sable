@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
@@ -18,17 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.instance.instance_config import create_instance_config
+from tools.homeassistant.homeassistant_plugin import create_home_assistant_plugin_config
 
-HA_URL = "http://127.0.0.1:8123"
-BRIDGE_DIR = Path(create_instance_config(env={}).signal_bridge_dir)
-BRIDGE_ENV = BRIDGE_DIR / ".env"
-QUEUE_PENDING = BRIDGE_DIR / ".attachment-queue" / "pending"
-STATE_PATH = (
-    Path(create_instance_config(env={}).repo_root)
-    / ".state"
-    / "humidifier_low_water_signal.json"
-)
 HUMIDITY_ENTITY = "sensor.levoit_humidifier_humidity"
 LOW_WATER_ENTITY = "binary_sensor.levoit_humidifier_low_water"
 COOLDOWN_SECONDS = 6 * 60 * 60
@@ -49,7 +39,11 @@ print(jwt.encode({'iss':rt['id'],'iat':now,'exp':now+int(rt.get('access_token_ex
 
 
 def bridge_dir() -> Path:
-    return Path(create_instance_config().signal_bridge_dir)
+    return create_home_assistant_plugin_config().signal_bridge_dir
+
+
+def ha_url() -> str:
+    return create_home_assistant_plugin_config().url.rstrip("/")
 
 
 def bridge_env_path() -> Path:
@@ -61,10 +55,7 @@ def queue_pending_dir() -> Path:
 
 
 def state_path() -> Path:
-    override = os.environ.get("SABLE_HUMIDIFIER_LOW_WATER_STATE_PATH")
-    if override:
-        return Path(override)
-    return Path(create_instance_config().repo_root) / ".state" / STATE_PATH.name
+    return create_home_assistant_plugin_config().low_water_state_path
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -101,7 +92,7 @@ def get_token() -> str:
 
 def get_states(token: str) -> dict[str, dict]:
     request = urllib.request.Request(
-        f"{HA_URL}/api/states",
+        f"{ha_url()}/api/states",
         headers={"Authorization": f"Bearer {token}"},
     )
     with urllib.request.urlopen(request, timeout=10) as response:
