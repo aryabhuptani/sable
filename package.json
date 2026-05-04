@@ -9,6 +9,7 @@
   "scripts": {
     "test:smoke": "node tools/smoke/run-smoke-tests.js",
     "test:e2e": "node --test tests/e2e/*.test.js",
+    "test:doctor": "node --test tests/sable-doctor.test.js",
     "test:plugins": "node --test tests/plugin-manifest.test.js",
     "test:scheduler": "node --test tests/scheduler-cli.test.js",
     "test:kb": "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js",
@@ -26,6 +27,7 @@
     "autotweet:style-guide": "node tools/autotweet/bootstrap-style-guide.js",
     "ha:cli": "python3 tools/homeassistant/homeassistant_cli.py",
     "telegram:cli": "python3 tools/telegram/telegram_cli.py",
-    "signal:attach": "node tools/signal/send_attachment.js"
+    "signal:attach": "node tools/signal/send_attachment.js",
+    "sable:doctor": "node tools/doctor/sable-doctor.js"
   }
 }
