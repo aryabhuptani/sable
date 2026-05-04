@@ -18,7 +18,9 @@ const {
   normalizePendingPluginAuth,
 } = require("./plugin-auth-manager");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
+const { createScheduledAttachmentDiscovery } = require("./scheduled-attachment-discovery");
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
+const { createSignalInboundPlugin } = require("./signal-inbound-plugin");
 const { createSignalProfilePlugin } = require("./signal-profile-plugin");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
 const { createVoiceNotePlugin } = require("./voice-note-plugin");
@@ -174,6 +176,10 @@ const signalAttachments = createSignalAttachmentPlugin({
   truncateText,
   logger: console,
 });
+const signalInbound = createSignalInboundPlugin({
+  allowedNumbers,
+  allowedSenders,
+});
 const voiceNotes = createVoiceNotePlugin({
   beamSize: VOICE_NOTES_BEAM_SIZE,
   computeType: VOICE_NOTES_COMPUTE_TYPE,
@@ -190,6 +196,11 @@ const voiceNotes = createVoiceNotePlugin({
 });
 const signalProfile = createSignalProfilePlugin({
   sendSignalRequest,
+});
+const scheduledAttachmentDiscovery = createScheduledAttachmentDiscovery({
+  maxImages: MAX_SCHEDULED_LOCAL_IMAGES,
+  maxImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
+  maxTotalImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES,
 });
 
 validateConfig();
@@ -758,9 +769,9 @@ function handleSignalStdout(chunk) {
 
 async function handleReceiveEvent(message) {
   const envelope = message.params?.envelope;
-  const senderCandidates = extractSenderCandidates(envelope);
+  const senderCandidates = signalInbound.extractSenderCandidates(envelope);
   const sender = senderCandidates[0] || null;
-  const text = extractIncomingText(envelope);
+  const text = signalInbound.extractIncomingText(envelope);
   const imageAttachments = signalAttachments.extractIncomingImageAttachments(envelope);
   const audioAttachments = signalAttachments.extractIncomingAudioAttachments(envelope);
   const fileAttachments = signalAttachments.extractIncomingFileAttachments(envelope);
@@ -775,7 +786,7 @@ async function handleReceiveEvent(message) {
     return;
   }
 
-  if (!isAllowedSender(senderCandidates)) {
+  if (!signalInbound.isAllowedSender(senderCandidates)) {
     console.log(
       `[${timestamp()}] Ignored message from disallowed sender ${senderCandidates.join(", ")}`
     );
@@ -873,41 +884,6 @@ async function handleReceiveEvent(message) {
   }
 
   void processInteractiveQueue();
-}
-
-function extractSenderCandidates(envelope) {
-  const candidates = [
-    envelope?.sourceNumber,
-    envelope?.source,
-    envelope?.sourceUuid,
-    envelope?.sourceName,
-  ];
-
-  return candidates
-    .filter((candidate) => typeof candidate === "string" && candidate.trim())
-    .map((candidate) => candidate.trim());
-}
-
-function isAllowedSender(senderCandidates) {
-  return senderCandidates.some(
-    (candidate) => allowedNumbers.has(candidate) || allowedSenders.has(candidate)
-  );
-}
-
-function extractIncomingText(envelope) {
-  const candidates = [
-    envelope?.dataMessage?.message,
-    envelope?.message,
-    envelope?.body,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-
-  return null;
 }
 
 async function handleCancelCommand(sender) {
@@ -1055,10 +1031,10 @@ function queueScheduledWorkflowRun(scheduledJob) {
     "",
     "This is a scheduled recurring workflow triggered automatically by Sable.",
   ].join("\n");
-  const localImageAttachments = discoverScheduledWorkflowImageAttachments(
+  const localImageAttachments = scheduledAttachmentDiscovery.discoverImageAttachments(
     scheduledJob.workflowPrompt
   );
-  const localFileAttachments = discoverScheduledWorkflowFileAttachments(
+  const localFileAttachments = scheduledAttachmentDiscovery.discoverFileAttachments(
     scheduledJob.workflowPrompt
   );
 
@@ -2383,351 +2359,6 @@ function mergePromptSegments(...segments) {
   }
 
   return normalized.join("\n\n");
-}
-
-function discoverScheduledWorkflowImageAttachments(workflowPrompt) {
-  const prompt = normalizeText(workflowPrompt);
-  if (!prompt) {
-    return [];
-  }
-
-  const matchedPaths = extractExistingAbsolutePaths(prompt);
-  if (matchedPaths.length === 0) {
-    return [];
-  }
-
-  const discovered = [];
-  let totalBytes = 0;
-
-  for (const targetPath of matchedPaths) {
-    for (const imagePath of expandWorkflowImagePaths(targetPath)) {
-      if (discovered.length >= MAX_SCHEDULED_LOCAL_IMAGES) {
-        return discovered;
-      }
-
-      let stat;
-      try {
-        stat = fs.statSync(imagePath);
-      } catch (error) {
-        continue;
-      }
-
-      if (!stat.isFile()) {
-        continue;
-      }
-      if (stat.size > MAX_SCHEDULED_LOCAL_IMAGE_BYTES) {
-        continue;
-      }
-      if (totalBytes + stat.size > MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES) {
-        return discovered;
-      }
-
-      totalBytes += stat.size;
-      discovered.push({
-        id: `local:${imagePath}`,
-        filename: path.basename(imagePath),
-        contentType: guessContentTypeFromFilename(imagePath),
-        localPath: imagePath,
-      });
-    }
-  }
-
-  return discovered;
-}
-
-function discoverScheduledWorkflowFileAttachments(workflowPrompt) {
-  const prompt = normalizeText(workflowPrompt);
-  if (!prompt) {
-    return [];
-  }
-
-  const matchedPaths = extractExistingAbsolutePaths(prompt);
-  if (matchedPaths.length === 0) {
-    return [];
-  }
-
-  const discovered = [];
-
-  for (const targetPath of matchedPaths) {
-    for (const filePath of expandWorkflowFilePaths(targetPath)) {
-      discovered.push({
-        id: `local:${filePath}`,
-        filename: path.basename(filePath),
-        contentType: guessContentTypeFromFilename(filePath),
-        localPath: filePath,
-      });
-    }
-  }
-
-  return discovered;
-}
-
-function extractExistingAbsolutePaths(text) {
-  const matches = text.match(/\/[A-Za-z0-9._~\-\/]+/g) || [];
-  const uniquePaths = new Set();
-
-  for (const match of matches) {
-    const candidate = match.replace(/[.,;:)\]]+$/g, "");
-    if (candidate && fs.existsSync(candidate)) {
-      uniquePaths.add(candidate);
-    }
-  }
-
-  return [...uniquePaths];
-}
-
-function expandWorkflowImagePaths(targetPath) {
-  let stat;
-  try {
-    stat = fs.statSync(targetPath);
-  } catch (error) {
-    return [];
-  }
-
-  if (stat.isFile()) {
-    return isSupportedLocalImagePath(targetPath) ? [targetPath] : [];
-  }
-
-  if (!stat.isDirectory()) {
-    return [];
-  }
-
-  const assetDirectories = [];
-  if (path.basename(targetPath) === "assets") {
-    assetDirectories.push(targetPath);
-  }
-
-  const nestedAssetsPath = path.join(targetPath, "raw", "assets");
-  if (fs.existsSync(nestedAssetsPath)) {
-    assetDirectories.push(nestedAssetsPath);
-  }
-  const nestedInboxPath = path.join(targetPath, "raw", "inbox");
-  if (fs.existsSync(nestedInboxPath)) {
-    assetDirectories.push(nestedInboxPath);
-  }
-
-  const directChildren = fs.readdirSync(targetPath, { withFileTypes: true });
-  for (const entry of directChildren) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const childInboxPath = path.join(targetPath, entry.name, "raw", "inbox");
-    if (fs.existsSync(childInboxPath)) {
-      assetDirectories.push(childInboxPath);
-    }
-    const childAssetsPath = path.join(targetPath, entry.name, "raw", "assets");
-    if (fs.existsSync(childAssetsPath)) {
-      assetDirectories.push(childAssetsPath);
-    }
-  }
-
-  const uniqueAssetDirectories = [...new Set(assetDirectories)];
-  return uniqueAssetDirectories
-    .flatMap((directoryPath) => listLocalImageFiles(directoryPath))
-    .sort((left, right) => {
-      try {
-        return fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs;
-      } catch (error) {
-        return 0;
-      }
-    });
-}
-
-function listLocalImageFiles(rootPath) {
-  const results = [];
-  const queue = [rootPath];
-
-  while (queue.length > 0) {
-    const currentPath = queue.shift();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(currentPath, { withFileTypes: true });
-    } catch (error) {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const entryPath = path.join(currentPath, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(entryPath);
-        continue;
-      }
-      if (entry.isFile() && isSupportedLocalImagePath(entryPath)) {
-        results.push(entryPath);
-      }
-    }
-  }
-
-  return results;
-}
-
-function expandWorkflowFilePaths(targetPath) {
-  let stat;
-  try {
-    stat = fs.statSync(targetPath);
-  } catch (error) {
-    return [];
-  }
-
-  if (stat.isFile()) {
-    return isSupportedLocalFilePath(targetPath) ? [targetPath] : [];
-  }
-
-  if (!stat.isDirectory()) {
-    return [];
-  }
-
-  const inboxDirectories = [];
-  if (path.basename(targetPath) === "inbox") {
-    inboxDirectories.push(targetPath);
-  }
-
-  const nestedInboxPath = path.join(targetPath, "raw", "inbox");
-  if (fs.existsSync(nestedInboxPath)) {
-    inboxDirectories.push(nestedInboxPath);
-  }
-
-  const directChildren = fs.readdirSync(targetPath, { withFileTypes: true });
-  for (const entry of directChildren) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const childInboxPath = path.join(targetPath, entry.name, "raw", "inbox");
-    if (fs.existsSync(childInboxPath)) {
-      inboxDirectories.push(childInboxPath);
-    }
-  }
-
-  const uniqueInboxDirectories = [...new Set(inboxDirectories)];
-  return uniqueInboxDirectories
-    .flatMap((directoryPath) => listLocalFiles(directoryPath))
-    .filter((filePath) => isSupportedLocalFilePath(filePath))
-    .sort((left, right) => {
-      try {
-        return fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs;
-      } catch (error) {
-        return 0;
-      }
-    });
-}
-
-function listLocalFiles(rootPath) {
-  const results = [];
-  const queue = [rootPath];
-
-  while (queue.length > 0) {
-    const currentPath = queue.shift();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(currentPath, { withFileTypes: true });
-    } catch (error) {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const entryPath = path.join(currentPath, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(entryPath);
-        continue;
-      }
-      if (entry.isFile()) {
-        results.push(entryPath);
-      }
-    }
-  }
-
-  return results;
-}
-
-function isSupportedLocalImagePath(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  return extension === ".jpg"
-    || extension === ".jpeg"
-    || extension === ".png"
-    || extension === ".gif"
-    || extension === ".webp"
-    || extension === ".heic";
-}
-
-function isSupportedLocalFilePath(filePath) {
-  if (isSupportedLocalImagePath(filePath)) {
-    return false;
-  }
-
-  const extension = path.extname(filePath).toLowerCase();
-  const knownFileTypes = new Set([
-    ".pdf",
-    ".txt",
-    ".md",
-    ".markdown",
-    ".json",
-    ".jsonl",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".conf",
-    ".csv",
-    ".tsv",
-    ".xml",
-    ".html",
-    ".htm",
-    ".css",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".py",
-    ".sh",
-    ".log",
-    ".sql",
-  ]);
-
-  return knownFileTypes.has(extension);
-}
-
-function guessContentTypeFromFilename(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".jpg" || extension === ".jpeg") {
-    return "image/jpeg";
-  }
-  if (extension === ".png") {
-    return "image/png";
-  }
-  if (extension === ".gif") {
-    return "image/gif";
-  }
-  if (extension === ".webp") {
-    return "image/webp";
-  }
-  if (extension === ".heic") {
-    return "image/heic";
-  }
-  if (extension === ".pdf") {
-    return "application/pdf";
-  }
-  if (extension === ".md" || extension === ".markdown") {
-    return "text/markdown";
-  }
-  if (extension === ".txt" || extension === ".log") {
-    return "text/plain";
-  }
-  if (extension === ".json" || extension === ".jsonl") {
-    return "application/json";
-  }
-  if (extension === ".yaml" || extension === ".yml") {
-    return "application/yaml";
-  }
-  if (extension === ".xml") {
-    return "application/xml";
-  }
-  if (extension === ".csv" || extension === ".tsv") {
-    return "text/csv";
-  }
-  return "image/png";
 }
 
 async function cleanupPaths(paths) {

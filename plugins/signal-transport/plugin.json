@@ -10,7 +10,9 @@
     "type": "node-service",
     "currentEntryPoints": [
       "apps/signal-bridge/signal-attachment-plugin.js",
+      "apps/signal-bridge/signal-inbound-plugin.js",
       "apps/signal-bridge/signal-profile-plugin.js",
+      "apps/signal-bridge/scheduled-attachment-discovery.js",
       "apps/signal-bridge/voice-note-plugin.js",
       "apps/signal-bridge/plugin-auth-manager.js",
       "apps/signal-bridge/bridge.js",
@@ -20,6 +22,8 @@
   },
   "capabilities": [
     "transport.receive",
+    "transport.authorize_inbound",
+    "transport.discover_scheduled_attachments",
     "transport.send_text",
     "transport.send_attachments",
     "transport.transcribe_voice_notes",
