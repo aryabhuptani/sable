@@ -10,6 +10,7 @@
     "type": "python-cli",
     "currentEntryPoints": [
       "tools/telegram/telegram_cli.py",
+      "apps/signal-bridge/telegram-review-plugin.js",
       "apps/signal-bridge/bridge-commands.js"
     ]
   },

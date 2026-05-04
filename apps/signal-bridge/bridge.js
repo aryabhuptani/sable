@@ -14,6 +14,7 @@ const {
 const { parseCommand } = require("./bridge-commands");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
+const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
 require("dotenv").config();
@@ -101,21 +102,18 @@ const VENV_PYTHON_PATH = path.join(PROJECT_DIR, ".venv", "bin", "python");
 const VENV_PDF_PYTHON_PATH = path.join(PROJECT_DIR, ".venv-pdf", "bin", "python");
 const TRANSCRIBE_PYTHON_BIN = selectTranscribePythonBin();
 const PDF_EXTRACT_PYTHON_BIN = selectPdfExtractPythonBin();
-const TELEGRAM_CLI_PATH =
-  normalizeText(process.env.SABLE_TELEGRAM_CLI_PATH) ||
-  path.join(INSTANCE_CONFIG.repoRoot, "tools", "telegram", "telegram_cli.py");
-const TELEGRAM_PYTHON_BIN = normalizeText(process.env.SABLE_TELEGRAM_PYTHON_BIN) || "python3";
-const TELEGRAM_TRIAGE_LIMIT = normalizeIntegerEnv(process.env.SABLE_TELEGRAM_TRIAGE_LIMIT, 25);
-const TELEGRAM_TRIAGE_STALE_DAYS = normalizeIntegerEnv(
-  process.env.SABLE_TELEGRAM_TRIAGE_STALE_DAYS,
-  21
-);
+const telegramReview = createTelegramReviewPlugin({
+  execFile,
+  env: process.env,
+  instanceConfig: INSTANCE_CONFIG,
+  truncateText,
+});
+const TELEGRAM_TRIAGE_LIMIT = telegramReview.triageLimit;
 const TEST_RECEIVE_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_RECEIVE_SCENARIO_PATH);
 const TEST_APP_SERVER_LOG_PATH = normalizeText(process.env.SABLE_E2E_APP_SERVER_LOG_PATH);
 const TEST_TURN_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_TURN_SCENARIO_PATH);
 const TEST_TURN_CURSOR_PATH = normalizeText(process.env.SABLE_E2E_TURN_CURSOR_PATH);
 const TEST_SIGNAL_LOG_PATH = normalizeText(process.env.SABLE_E2E_SIGNAL_LOG_PATH);
-const TEST_TELEGRAM_TRIAGE_OUTPUT = normalizeText(process.env.SABLE_E2E_TELEGRAM_TRIAGE_OUTPUT);
 const OBSIDIAN_VAULT_ROOT = path.resolve(
   normalizeText(process.env.SABLE_OBSIDIAN_VAULT_ROOT) || INSTANCE_CONFIG.memoryRoot
 );
@@ -4881,43 +4879,7 @@ function getSystemdUnitSummary(unitName) {
 }
 
 function getTelegramTriageReport(limit = TELEGRAM_TRIAGE_LIMIT) {
-  if (TEST_TELEGRAM_TRIAGE_OUTPUT) {
-    return Promise.resolve(TEST_TELEGRAM_TRIAGE_OUTPUT);
-  }
-
-  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.trunc(limit) : TELEGRAM_TRIAGE_LIMIT;
-  return new Promise((resolve) => {
-    execFile(
-      TELEGRAM_PYTHON_BIN,
-      [
-        TELEGRAM_CLI_PATH,
-        "triage",
-        "--limit",
-        String(normalizedLimit),
-        "--stale-days",
-        String(TELEGRAM_TRIAGE_STALE_DAYS),
-      ],
-      {
-        cwd: INSTANCE_CONFIG.repoRoot,
-        encoding: "utf8",
-        env: process.env,
-        timeout: 30_000,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          const detail = truncateText(
-            normalizeText(stderr) || normalizeText(stdout) || error.message || "unknown failure",
-            400
-          );
-          resolve(`Telegram triage failed: ${detail}`);
-          return;
-        }
-
-        const report = normalizeText(stdout);
-        resolve(report || "Telegram triage returned no output.");
-      }
-    );
-  });
+  return telegramReview.getTriageReport(limit);
 }
 
 function parseSystemdShowOutput(stdout) {
