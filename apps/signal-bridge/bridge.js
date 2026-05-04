@@ -13,7 +13,7 @@ const {
 } = require("./scheduler");
 const { parseCommand } = require("./bridge-commands");
 const { createBridgeOpsManager } = require("./bridge-ops");
-const { createBridgeCodexClient } = require("./bridge-codex-client");
+const { createCodexCliRunnerAdapter } = require("./runner-adapter");
 
 require("dotenv").config();
 
@@ -216,7 +216,7 @@ const ops = createBridgeOpsManager({
   },
 });
 const { bridgeRuntime } = ops;
-const codexClient = createBridgeCodexClient({
+const runner = createCodexCliRunnerAdapter({
   spawn,
   cwd: CODEX_CWD,
   projectDir: PROJECT_DIR,
@@ -237,7 +237,7 @@ const {
   callCodexAppServer,
   recordTestAppServerSpawnArgs,
   probeRuntimeProfile,
-} = codexClient;
+} = runner;
 
 startSignalRpc();
 startObsidianLinkServer();

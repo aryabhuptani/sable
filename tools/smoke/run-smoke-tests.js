@@ -13,6 +13,7 @@ const suites = [
       "--test",
       "tests/smoke-contract.test.js",
       "tests/bridge-codex-client.test.js",
+      "tests/runner-adapter.test.js",
       "tests/test_bridge_commands.js",
       "tests/test_signal_attachment_cli.js",
     ],

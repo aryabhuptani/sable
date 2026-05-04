@@ -33,6 +33,7 @@ test("current Sable core candidates are present before architecture extraction",
     "apps/signal-bridge/bridge.js",
     "apps/signal-bridge/bridge-codex-client.js",
     "apps/signal-bridge/bridge-commands.js",
+    "apps/signal-bridge/runner-adapter.js",
     "apps/signal-bridge/scheduler.js",
     "apps/signal-bridge/scheduler_cli.js",
     "tools/homeassistant/homeassistant_cli.py",
@@ -43,6 +44,7 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/knowledge-base/init-autoresearch-run.js",
     "tools/knowledge-base/init-topic.js",
     "tools/signal/send_attachment.js",
+    "docs/sable-architecture-migration-checklist.md",
   ].forEach(assertFile);
 });
 
