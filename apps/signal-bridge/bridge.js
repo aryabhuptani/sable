@@ -19,7 +19,9 @@ const {
 } = require("./plugin-auth-manager");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
+const { createSignalProfilePlugin } = require("./signal-profile-plugin");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
+const { createVoiceNotePlugin } = require("./voice-note-plugin");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
 require("dotenv").config();
@@ -171,6 +173,23 @@ const signalAttachments = createSignalAttachmentPlugin({
   sendSignalRequest,
   truncateText,
   logger: console,
+});
+const voiceNotes = createVoiceNotePlugin({
+  beamSize: VOICE_NOTES_BEAM_SIZE,
+  computeType: VOICE_NOTES_COMPUTE_TYPE,
+  enabled: VOICE_NOTES_ENABLED,
+  language: VOICE_NOTES_LANGUAGE,
+  model: VOICE_NOTES_MODEL,
+  modelPath: VOICE_NOTES_MODEL_PATH,
+  projectDir: PROJECT_DIR,
+  pythonBin: TRANSCRIBE_PYTHON_BIN,
+  registerCancellationHandler,
+  scriptPath: TRANSCRIBE_SCRIPT_PATH,
+  spawn,
+  timeoutSec: VOICE_NOTES_TIMEOUT_SEC,
+});
+const signalProfile = createSignalProfilePlugin({
+  sendSignalRequest,
 });
 
 validateConfig();
@@ -831,8 +850,11 @@ async function handleReceiveEvent(message) {
     queuedVoicePreparation: null,
   };
 
-  if (audioAttachments.length > 0 && VOICE_NOTES_ENABLED && isProcessingInteractive) {
-    job.queuedVoicePreparation = startQueuedVoicePreparation(job);
+  if (audioAttachments.length > 0 && voiceNotes.isEnabled() && isProcessingInteractive) {
+    job.queuedVoicePreparation = voiceNotes.startQueuedPreparation(job, {
+      cleanupPaths,
+      materializeIncomingAudio: (context) => signalAttachments.materializeIncomingAudio(context),
+    });
   }
 
   interactiveQueue.push(job);
@@ -840,7 +862,7 @@ async function handleReceiveEvent(message) {
   if (isProcessingInteractive) {
     try {
       const queueMessage =
-        audioAttachments.length > 0 && VOICE_NOTES_ENABLED
+        audioAttachments.length > 0 && voiceNotes.isEnabled()
           ? "Queued, will process after current task. Transcribing the voice note in the background."
           : "Queued, will process after current task.";
       await sendReply(sender, queueMessage);
@@ -1114,7 +1136,7 @@ async function processJob(job) {
   }
 
   if (job.command.type === "remove-avatar") {
-    await updateSignalProfileAvatar({ remove: true });
+    await signalProfile.updateAvatar({ remove: true });
     await sendJobReply(job, "Removed Sable's Signal profile picture.");
     return;
   }
@@ -1207,7 +1229,7 @@ async function processJob(job) {
         return;
       }
 
-      await updateSignalProfileAvatar({ avatarPath: imagePaths[0] });
+      await signalProfile.updateAvatar({ avatarPath: imagePaths[0] });
       const suffix =
         imagePaths.length > 1 ? ` Used the first attached image and ignored ${imagePaths.length - 1} extra image${imagePaths.length === 2 ? "" : "s"}.` : "";
       await sendJobReply(job, `Updated Sable's Signal profile picture.${suffix}`);
@@ -1215,7 +1237,7 @@ async function processJob(job) {
     }
 
     if (audioPaths.length > 0) {
-      if (!VOICE_NOTES_ENABLED) {
+      if (!voiceNotes.isEnabled()) {
         await sendJobReply(job, "Voice note transcription is disabled.");
         return;
       }
@@ -1223,7 +1245,7 @@ async function processJob(job) {
       let transcription = preparedVoiceNote?.transcription || null;
       if (!transcription) {
         await sendJobProgressReply(job, "Transcribing voice note...");
-        transcription = await transcribeVoiceNote(audioPaths[0], jobControl);
+        transcription = await voiceNotes.transcribe(audioPaths[0], jobControl);
       }
 
       if (!normalizeText(transcription?.transcript)) {
@@ -1232,7 +1254,7 @@ async function processJob(job) {
       }
 
       if (VOICE_NOTES_ECHO_TRANSCRIPT) {
-        await sendJobProgressReply(job, formatVoiceTranscriptMessage(transcription));
+        await sendJobProgressReply(job, voiceNotes.formatTranscriptMessage(transcription));
       }
 
       prompt = transcription.transcript;
@@ -2354,19 +2376,6 @@ function dedupeStrings(values) {
 
 let activeSender = null;
 
-function startQueuedVoicePreparation(job) {
-  return (async () => {
-    const audioPaths = await signalAttachments.materializeIncomingAudio(job.context);
-    try {
-      const transcription = await transcribeVoiceNote(audioPaths[0], null);
-      return { audioPaths, transcription };
-    } catch (error) {
-      await cleanupPaths(audioPaths);
-      throw error;
-    }
-  })();
-}
-
 function mergePromptSegments(...segments) {
   const normalized = segments.map((segment) => normalizeText(segment)).filter(Boolean);
   if (normalized.length === 0) {
@@ -2721,130 +2730,6 @@ function guessContentTypeFromFilename(filePath) {
   return "image/png";
 }
 
-function transcribeVoiceNote(audioPath, jobControl = null) {
-  return new Promise((resolve, reject) => {
-    const modelArg =
-      VOICE_NOTES_MODEL_PATH && fs.existsSync(VOICE_NOTES_MODEL_PATH)
-        ? VOICE_NOTES_MODEL_PATH
-        : VOICE_NOTES_MODEL;
-    const child = spawn(
-      TRANSCRIBE_PYTHON_BIN,
-      [
-        TRANSCRIBE_SCRIPT_PATH,
-        "--input",
-        audioPath,
-        "--model",
-        modelArg,
-        "--language",
-        VOICE_NOTES_LANGUAGE,
-        "--beam-size",
-        String(VOICE_NOTES_BEAM_SIZE),
-        "--compute-type",
-        VOICE_NOTES_COMPUTE_TYPE,
-        "--local-only",
-      ],
-      {
-        cwd: PROJECT_DIR,
-        stdio: ["ignore", "pipe", "pipe"],
-      }
-    );
-
-    let stdout = "";
-    let stderr = "";
-    let didFinish = false;
-    let timeout = null;
-
-    const unregisterCancellation = registerCancellationHandler(jobControl, (error) => {
-      if (didFinish) {
-        return;
-      }
-      didFinish = true;
-      clearTimeout(timeout);
-      child.kill("SIGTERM");
-      reject(error);
-    });
-
-    function cleanup() {
-      clearTimeout(timeout);
-      unregisterCancellation();
-    }
-
-    timeout = setTimeout(() => {
-      if (didFinish) {
-        return;
-      }
-      didFinish = true;
-      child.kill("SIGTERM");
-      cleanup();
-      reject(new Error("Voice transcription timed out."));
-    }, VOICE_NOTES_TIMEOUT_SEC * 1000);
-
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-
-    child.on("error", (error) => {
-      if (didFinish) {
-        return;
-      }
-      didFinish = true;
-      cleanup();
-      reject(new Error(`Voice transcription failed: ${error.message}`));
-    });
-
-    child.on("exit", (code, signal) => {
-      if (didFinish) {
-        cleanup();
-        return;
-      }
-
-      didFinish = true;
-      cleanup();
-
-      if (signal === "SIGTERM" && jobControl?.cancelled) {
-        reject(jobControl.reason || new CancellationError());
-        return;
-      }
-
-      if (code !== 0) {
-        reject(
-          new Error(
-            `Voice transcription failed: ${
-              normalizeText(stderr) || `process exited with code ${code}`
-            }`
-          )
-        );
-        return;
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(stdout);
-      } catch (parseError) {
-        reject(new Error("Voice transcription returned invalid JSON."));
-        return;
-      }
-
-      if (!parsed?.ok) {
-        reject(new Error(normalizeText(parsed?.error) || "Voice transcription failed."));
-        return;
-      }
-
-      resolve(parsed);
-    });
-  });
-}
-
-function formatVoiceTranscriptMessage(transcription) {
-  return normalizeText(transcription?.transcript);
-}
-
 async function cleanupPaths(paths) {
   if (!Array.isArray(paths) || paths.length === 0) {
     return;
@@ -3124,23 +3009,6 @@ function checkForPendingAttachmentCommands() {
 
 async function processNextAttachmentCommand() {
   await signalAttachments.processNextQueuedCommand();
-}
-
-function updateSignalProfileAvatar({ avatarPath = "", remove = false } = {}) {
-  if (remove) {
-    return sendSignalRequest("updateProfile", {
-      removeAvatar: true,
-    });
-  }
-
-  const normalizedPath = normalizeText(avatarPath);
-  if (!normalizedPath) {
-    return Promise.reject(new Error("Missing avatar path."));
-  }
-
-  return sendSignalRequest("updateProfile", {
-    avatar: normalizedPath,
-  });
 }
 
 function sendSignalRequest(method, params) {

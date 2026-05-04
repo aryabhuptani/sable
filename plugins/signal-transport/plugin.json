@@ -10,6 +10,8 @@
     "type": "node-service",
     "currentEntryPoints": [
       "apps/signal-bridge/signal-attachment-plugin.js",
+      "apps/signal-bridge/signal-profile-plugin.js",
+      "apps/signal-bridge/voice-note-plugin.js",
       "apps/signal-bridge/plugin-auth-manager.js",
       "apps/signal-bridge/bridge.js",
       "apps/signal-bridge/bridge-commands.js",
@@ -20,6 +22,8 @@
     "transport.receive",
     "transport.send_text",
     "transport.send_attachments",
+    "transport.transcribe_voice_notes",
+    "profile.avatar_update",
     "plugins.auth_prompt",
     "plugins.auth_resume",
     "commands.bridge_status",
