@@ -34,6 +34,11 @@ const suites = [
     args: ["run", "test:doctor"],
   },
   {
+    name: "instance config",
+    command: "npm",
+    args: ["run", "test:instance"],
+  },
+  {
     name: "plugin manifests",
     command: "npm",
     args: ["run", "test:plugins"],

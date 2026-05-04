@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
+const { createInstanceConfig } = require("../tools/instance/instance-config");
+
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 function readJson(relativePath) {
@@ -20,6 +22,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:smoke"], "node tools/smoke/run-smoke-tests.js");
   assert.equal(pkg.scripts["test:e2e"], "node --test tests/e2e/*.test.js");
   assert.equal(pkg.scripts["test:doctor"], "node --test tests/sable-doctor.test.js");
+  assert.equal(pkg.scripts["test:instance"], "node --test tests/instance-config.test.js");
   assert.equal(pkg.scripts["test:plugins"], "node --test tests/plugin-manifest.test.js");
   assert.equal(pkg.scripts["test:scheduler"], "node --test tests/scheduler-cli.test.js");
   assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js");
@@ -47,6 +50,7 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/knowledge-base/init-topic.js",
     "tools/plugins/plugin-manifest.js",
     "tools/doctor/sable-doctor.js",
+    "tools/instance/instance-config.js",
     "tools/signal/send_attachment.js",
     "docs/sable-architecture-migration-checklist.md",
     "plugins/schema/plugin-manifest.schema.json",
@@ -54,13 +58,15 @@ test("current Sable core candidates are present before architecture extraction",
 });
 
 test("local durable operating docs exist outside the shareable runtime", () => {
+  const instance = createInstanceConfig();
+
   [
-    "/home/arya/AGENTS.md",
-    "/home/arya/TODO.md",
-    "/home/arya/skills/home-assistant-management/SKILL.md",
-    "/home/arya/skills/telegram-review/SKILL.md",
-    "/home/arya/skills/tweet-ideas/SKILL.md",
-    "/home/arya/memory/knowledge/projects/sable/outputs/2026-05-04-community-sable-plan.md",
+    instance.agentsPath,
+    instance.todoPath,
+    path.join(instance.skillsRoot, "home-assistant-management", "SKILL.md"),
+    path.join(instance.skillsRoot, "telegram-review", "SKILL.md"),
+    path.join(instance.skillsRoot, "tweet-ideas", "SKILL.md"),
+    path.join(instance.projectKnowledgeRoot, "outputs", "2026-05-04-community-sable-plan.md"),
   ].forEach((absolutePath) => {
     assert.equal(fs.statSync(absolutePath).isFile(), true, `${absolutePath} should exist`);
   });

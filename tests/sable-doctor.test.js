@@ -95,3 +95,9 @@ test("doctor argument parser supports json and path overrides", () => {
   assert.equal(options.repoRoot, "/tmp/repo");
   assert.equal(options.homeDir, "/tmp/home");
 });
+
+test("doctor argument parser leaves instance home discoverable by env by default", () => {
+  const options = parseArgs([]);
+
+  assert.equal(options.homeDir, "");
+});

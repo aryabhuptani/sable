@@ -8,29 +8,35 @@ const {
   loadPluginManifests,
   validatePluginRegistry,
 } = require("../plugins/plugin-manifest");
+const {
+  createInstanceConfig,
+  redactInstancePath,
+} = require("../instance/instance-config");
 
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function buildDoctorReport({
   repoRoot = DEFAULT_REPO_ROOT,
-  homeDir = "/home/arya",
+  homeDir = "",
   env = process.env,
   commandExists = defaultCommandExists,
 } = {}) {
   const checks = [];
+  const instance = createInstanceConfig({ repoRoot, homeDir, env });
+  const resolvedRepoRoot = instance.repoRoot;
 
-  checks.push(checkPath("repo", repoRoot, "dir"));
-  checks.push(checkPath("package.json", path.join(repoRoot, "package.json"), "file"));
-  checks.push(checkPath("migration checklist", path.join(repoRoot, "docs", "sable-architecture-migration-checklist.md"), "file"));
-  checks.push(checkPath("smoke runner", path.join(repoRoot, "tools", "smoke", "run-smoke-tests.js"), "file"));
-  checks.push(checkPath("runner adapter", path.join(repoRoot, "apps", "signal-bridge", "runner-adapter.js"), "file"));
-  checks.push(checkPath("Signal bridge", path.join(repoRoot, "apps", "signal-bridge", "bridge.js"), "file"));
+  checks.push(checkPath("repo", resolvedRepoRoot, "dir"));
+  checks.push(checkPath("package.json", path.join(resolvedRepoRoot, "package.json"), "file"));
+  checks.push(checkPath("migration checklist", path.join(resolvedRepoRoot, "docs", "sable-architecture-migration-checklist.md"), "file"));
+  checks.push(checkPath("smoke runner", path.join(resolvedRepoRoot, "tools", "smoke", "run-smoke-tests.js"), "file"));
+  checks.push(checkPath("runner adapter", path.join(resolvedRepoRoot, "apps", "signal-bridge", "runner-adapter.js"), "file"));
+  checks.push(checkPath("Signal bridge", path.join(resolvedRepoRoot, "apps", "signal-bridge", "bridge.js"), "file"));
 
   checks.push(checkCommand("codex", commandExists));
-  checks.push(checkRunnerConfig(repoRoot, env));
-  checks.push(...checkPluginRegistry(repoRoot));
-  checks.push(...checkLocalInstance(homeDir));
-  checks.push(...checkConfigPresence(repoRoot));
+  checks.push(checkRunnerConfig(resolvedRepoRoot, env, instance));
+  checks.push(...checkPluginRegistry(resolvedRepoRoot));
+  checks.push(...checkLocalInstance(instance));
+  checks.push(...checkConfigPresence(resolvedRepoRoot));
 
   return {
     ok: checks.every((check) => check.status !== "fail"),
@@ -61,7 +67,7 @@ function checkCommand(command, commandExists) {
   return warn(`command:${command}`, `${command} is not available on PATH`);
 }
 
-function checkRunnerConfig(repoRoot, env) {
+function checkRunnerConfig(repoRoot, env, instance) {
   const bridgeEnvPath = path.join(repoRoot, "apps", "signal-bridge", ".env");
   const envSummary = readEnvSummary(bridgeEnvPath);
   const configuredCodexHome = env.CODEX_HOME || envSummary.CODEX_HOME || "";
@@ -70,7 +76,12 @@ function checkRunnerConfig(repoRoot, env) {
     return warn("runner:codex-cli", "CODEX_HOME is not set in process env or bridge .env");
   }
 
-  return pass("runner:codex-cli", `CODEX_HOME is configured as ${redactPath(configuredCodexHome)}`);
+  return pass(
+    "runner:codex-cli",
+    `CODEX_HOME is configured as ${redactInstancePath(configuredCodexHome, {
+      homeDir: instance.homeDir,
+    })}`
+  );
 }
 
 function checkPluginRegistry(repoRoot) {
@@ -105,13 +116,13 @@ function checkPluginRegistry(repoRoot) {
   return checks;
 }
 
-function checkLocalInstance(homeDir) {
+function checkLocalInstance(instance) {
   return [
-    checkPath("instance:home", homeDir, "dir"),
-    checkPath("instance:AGENTS", path.join(homeDir, "AGENTS.md"), "file"),
-    checkPath("instance:TODO", path.join(homeDir, "TODO.md"), "file"),
-    checkPath("instance:memory", path.join(homeDir, "memory"), "dir"),
-    checkPath("instance:skills", path.join(homeDir, "skills"), "dir"),
+    checkPath("instance:home", instance.homeDir, "dir"),
+    checkPath("instance:AGENTS", instance.agentsPath, "file"),
+    checkPath("instance:TODO", instance.todoPath, "file"),
+    checkPath("instance:memory", instance.memoryRoot, "dir"),
+    checkPath("instance:skills", instance.skillsRoot, "dir"),
   ];
 }
 
@@ -168,10 +179,6 @@ function readEnvSummary(filePath) {
   return summary;
 }
 
-function redactPath(value) {
-  return String(value || "").replace(/^\/home\/[^/]+/, "~");
-}
-
 function defaultCommandExists(command) {
   const result = spawnSync("sh", ["-lc", `command -v ${shellQuote(command)}`], {
     encoding: "utf8",
@@ -214,7 +221,7 @@ function parseArgs(argv) {
   const options = {
     json: false,
     repoRoot: DEFAULT_REPO_ROOT,
-    homeDir: "/home/arya",
+    homeDir: "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
