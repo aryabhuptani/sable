@@ -11,6 +11,7 @@ const {
 } = require("./scheduler");
 const { parseCommand } = require("./bridge-commands");
 const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
+const { createAppServerTurnRunner } = require("./app-server-turn-runner");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeLifecycle } = require("./bridge-lifecycle");
 const { createBridgeOpsManager } = require("./bridge-ops");
@@ -286,6 +287,7 @@ const testSupport = createBridgeTestSupport({
 
 validateConfig();
 
+let appServerTurnRunner;
 let signalReplyChannel;
 let signalRpc;
 
@@ -380,6 +382,32 @@ const {
   recordTestAppServerSpawnArgs,
   probeRuntimeProfile,
 } = runner;
+appServerTurnRunner = createAppServerTurnRunner({
+  runtimeHooks: {
+    turnIdleTimeoutMs: APP_SERVER_IDLE_TIMEOUT_MS,
+    liveUpdateBatchWindowMs: LIVE_UPDATE_BATCH_WINDOW_MS,
+    liveUpdateDuplicateWindowMs: LIVE_UPDATE_DUPLICATE_WINDOW_MS,
+    captureUsageSnapshot: (message) => ops.captureUsageSnapshot(message),
+    captureRateLimitSnapshot: (message) => ops.captureRateLimitSnapshot(message),
+    noteTurnStarted: () => ops.noteTurnStarted(),
+    noteTurnCompleted: () => ops.noteTurnCompleted(),
+  },
+  appServerMessages,
+  codexCwd: CODEX_CWD,
+  codexSessionReader,
+  createAppServerClient,
+  createLiveUpdateChannel,
+  formatProgressMessage,
+  getActiveSender: () => activeSender,
+  isInvalidSessionError,
+  logger: console,
+  normalizeText,
+  registerCancellationHandler,
+  sendReply,
+  testSupport,
+  timestamp,
+  truncateText,
+});
 const pluginAuth = createPluginAuthManager({
   callCodexAppServer,
   codexCwd: CODEX_CWD,
@@ -863,315 +891,22 @@ function runCodexViaAppServer(
   suppressLiveUpdates = false,
   onInvalidSession = null
 ) {
-  return new Promise((resolve, reject) => {
-    const startedAt = timestamp();
-    const liveUpdates = createLiveUpdateChannel({
-      batchWindowMs: LIVE_UPDATE_BATCH_WINDOW_MS,
-      duplicateWindowMs: LIVE_UPDATE_DUPLICATE_WINDOW_MS,
-      logger: console,
-      normalizeText,
-      recipient: suppressLiveUpdates ? "" : activeSender,
-      sendReply,
-      timestamp,
-    });
-    let parsedSessionId = sessionId || null;
-    let pendingAgentMessage = null;
-    let finalMessage = "";
-    const subagentState = appServerMessages.createSubagentProgressState();
-    let turnId = null;
-    let toolSuggestion = null;
-    let didFinish = false;
-    let timeout = null;
-    const toolSuggestionCalls = new Map();
-
-    const client = createAppServerClient({
-      onNotification: handleNotification,
-      onServerRequest: handleServerRequest,
-      replyRecipient: activeSender,
-    });
-    const unregisterCancellation = registerCancellationHandler(jobControl, (error) => {
-      fail(error);
-    });
-
-    function resetTimeout() {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        fail(new Error("app-server turn timed out"));
-      }, APP_SERVER_IDLE_TIMEOUT_MS);
-    }
-
-    function cleanup() {
-      clearTimeout(timeout);
-      liveUpdates.stop();
-      unregisterCancellation();
-      client.close();
-    }
-
-    function fail(error) {
-      if (didFinish) {
-        return;
-      }
-      didFinish = true;
-      cleanup();
-      reject(error);
-    }
-
-    async function succeed() {
-      if (didFinish) {
-        return;
-      }
-      didFinish = true;
-
-      if (pendingAgentMessage) {
-        finalMessage = pendingAgentMessage;
-        pendingAgentMessage = null;
-      }
-
-      try {
-        await liveUpdates.flush();
-      } catch (error) {
-        console.error(`[${timestamp()}] Failed flushing app-server live updates: ${error.message}`);
-      }
-
-      if (!toolSuggestion && parsedSessionId) {
-        try {
-          toolSuggestion = await codexSessionReader.findToolSuggestionForTurn(
-            parsedSessionId,
-            startedAt
-          );
-        } catch (error) {
-          console.error(
-            `[${timestamp()}] Failed reading structured tool suggestions: ${error.message}`
-          );
-        }
-      }
-
-      if (!normalizeText(finalMessage) && parsedSessionId) {
-        try {
-          finalMessage = await codexSessionReader.findSessionErrorMessageForTurn(
-            parsedSessionId,
-            startedAt
-          );
-        } catch (error) {
-          console.error(
-            `[${timestamp()}] Failed reading structured session error: ${error.message}`
-          );
-        }
-      }
-
-      cleanup();
-      resolve({
-        sessionId: parsedSessionId,
-        message: finalMessage,
-        toolSuggestion,
-        startedFreshBecauseResumeFailed: false,
-      });
-    }
-
-    function handleNotification(message) {
-      resetTimeout();
-      ops.captureUsageSnapshot(message);
-      ops.captureRateLimitSnapshot(message);
-
-      if (message.method === "turn/started") {
-        turnId = normalizeText(message.params?.turn?.id) || turnId;
-        ops.noteTurnStarted();
-        liveUpdates.queue("• Working...");
-        return;
-      }
-
-      const rawSuggestion = appServerMessages.captureToolSuggestionFromNotification(
-        message,
-        toolSuggestionCalls
-      );
-      if (rawSuggestion) {
-        toolSuggestion = rawSuggestion;
-        return;
-      }
-
-      if (message.method === "item/started" || message.method === "item/completed") {
-        appServerMessages.handleSubagentToolCallNotification(message, subagentState, liveUpdates);
-        const parsed = appServerMessages.handleCodexAppServerItem(message.params?.item, {
-          pendingAgentMessage,
-          finalMessage,
-          liveUpdates,
-          subagentState,
-        });
-        pendingAgentMessage = parsed.pendingAgentMessage;
-        finalMessage = parsed.finalMessage;
-        return;
-      }
-
-      if (message.method === "item/mcpToolCall/progress") {
-        const progress = normalizeText(message.params?.message);
-        if (progress && !subagentState.activeCount) {
-          liveUpdates.queue(formatProgressMessage(progress));
-        }
-        return;
-      }
-
-      if (message.method === "item/autoApprovalReview/started") {
-        const summary = normalizeText(message.params?.review?.summary) || "Approval review in progress.";
-        liveUpdates.queue(formatProgressMessage(summary));
-        return;
-      }
-
-      if (message.method === "item/autoApprovalReview/completed") {
-        const outcome =
-          normalizeText(message.params?.review?.summary) ||
-          normalizeText(message.params?.decisionSource) ||
-          "Approval review completed.";
-        liveUpdates.queue(formatProgressMessage(outcome));
-        return;
-      }
-
-      if (message.method === "turn/completed") {
-        if (normalizeText(message.params?.turn?.id) === turnId || !turnId) {
-          ops.noteTurnCompleted();
-          void succeed();
-        }
-      }
-    }
-
-    async function handleServerRequest(message) {
-      resetTimeout();
-
-      if (message.method === "item/commandExecution/requestApproval") {
-        return { decision: "approved" };
-      }
-
-      if (message.method === "item/fileChange/requestApproval") {
-        return { decision: "approved" };
-      }
-
-      if (message.method === "item/permissions/requestApproval") {
-        return {
-          permissions: message.params?.permissions || {},
-          scope: "turn",
-        };
-      }
-
-      if (message.method === "item/tool/requestUserInput") {
-        const promptText = appServerMessages.formatToolUserInputRequest(message.params);
-        if (promptText && activeSender) {
-          await sendReply(activeSender, promptText);
-        }
-        return { answers: {} };
-      }
-
-      if (message.method === "mcpServer/elicitation/request") {
-        console.log(
-          `[${timestamp()}] MCP elicitation request: ${truncateText(
-            JSON.stringify(message.params),
-            600
-          )}`
-        );
-
-        const autoResponse = appServerMessages.buildAutoAcceptedMcpElicitationResponse(
-          message.params
-        );
-        if (autoResponse) {
-          return autoResponse;
-        }
-
-        const promptText = appServerMessages.formatMcpElicitationRequest(message.params);
-        if (promptText && activeSender) {
-          await sendReply(activeSender, promptText);
-        }
-        return { action: "cancel" };
-      }
-
-      return {};
-    }
-
-    (async () => {
-      try {
-        await client.initialize();
-
-        const threadMethod = sessionId ? "thread/resume" : "thread/start";
-        const threadParams = buildAppServerThreadParams(sessionId);
-        testSupport.appendAppServerLog({
-          method: threadMethod,
-          params: threadParams,
-        });
-        const threadResponse = await client.request(threadMethod, threadParams);
-
-        parsedSessionId =
-          normalizeText(threadResponse?.thread?.id) ||
-          normalizeText(threadResponse?.threadId) ||
-          parsedSessionId;
-
-        const turnParams = {
-          ...buildAppServerTurnParams(parsedSessionId, prompt, imagePaths),
-        };
-        testSupport.appendAppServerLog({
-          method: "turn/start",
-          params: turnParams,
-        });
-        const turnResponse = await client.request("turn/start", turnParams);
-
-        turnId = normalizeText(turnResponse?.turn?.id) || turnId;
-        resetTimeout();
-      } catch (error) {
-        if (sessionId && isInvalidSessionError(String(error?.message || error))) {
-          if (typeof onInvalidSession === "function") {
-            onInvalidSession();
-          }
-          client.close();
-          try {
-            const freshResult = await runCodexViaAppServer(
-              prompt,
-              null,
-              imagePaths,
-              null,
-              suppressLiveUpdates,
-              onInvalidSession
-            );
-            resolve({
-              ...freshResult,
-              startedFreshBecauseResumeFailed: true,
-            });
-          } catch (freshError) {
-            reject(freshError);
-          }
-          return;
-        }
-
-        fail(error instanceof Error ? error : new Error(String(error)));
-      }
-    })();
-  });
+  return appServerTurnRunner.runCodexViaAppServer(
+    prompt,
+    sessionId,
+    imagePaths,
+    jobControl,
+    suppressLiveUpdates,
+    onInvalidSession
+  );
 }
 
 function buildAppServerThreadParams(threadId = null) {
-  const params = {
-    cwd: CODEX_CWD,
-    sandbox: "danger-full-access",
-    approvalPolicy: "never",
-    approvalsReviewer: "guardian_subagent",
-    personality: "pragmatic",
-  };
-
-  if (threadId) {
-    params.threadId = threadId;
-  }
-
-  return params;
+  return appServerTurnRunner.buildThreadParams(threadId);
 }
 
 function buildAppServerTurnParams(threadId, prompt, imagePaths = []) {
-  return {
-    threadId,
-    cwd: CODEX_CWD,
-    sandbox: "danger-full-access",
-    approvalPolicy: "never",
-    approvalsReviewer: "guardian_subagent",
-    personality: "pragmatic",
-    input: [
-      { type: "text", text: prompt },
-      ...imagePaths.map((imagePath) => ({ type: "localImage", path: imagePath })),
-    ],
-  };
+  return appServerTurnRunner.buildTurnParams(threadId, prompt, imagePaths);
 }
 
 async function checkForPendingPluginAuth() {
