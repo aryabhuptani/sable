@@ -11,6 +11,7 @@
     "currentEntryPoints": [
       "apps/signal-bridge/signal-attachment-plugin.js",
       "apps/signal-bridge/signal-inbound-plugin.js",
+      "apps/signal-bridge/live-update-channel.js",
       "apps/signal-bridge/signal-profile-plugin.js",
       "apps/signal-bridge/scheduled-attachment-discovery.js",
       "apps/signal-bridge/voice-note-plugin.js",
@@ -24,6 +25,7 @@
     "transport.receive",
     "transport.authorize_inbound",
     "transport.discover_scheduled_attachments",
+    "transport.batch_live_updates",
     "transport.send_text",
     "transport.send_attachments",
     "transport.transcribe_voice_notes",

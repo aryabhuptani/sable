@@ -14,6 +14,8 @@ const suites = [
       "tests/smoke-contract.test.js",
       "tests/autoresearch-monitor.test.js",
       "tests/bridge-codex-client.test.js",
+      "tests/job-control.test.js",
+      "tests/live-update-channel.test.js",
       "tests/obsidian-link-plugin.test.js",
       "tests/plugin-auth-manager.test.js",
       "tests/runner-adapter.test.js",

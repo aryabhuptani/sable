@@ -18,6 +18,13 @@ const {
   normalizePendingPluginAuth,
 } = require("./plugin-auth-manager");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
+const {
+  cancelJobControl,
+  createJobControl,
+  isCancellationError,
+  registerCancellationHandler,
+} = require("./job-control");
+const { createLiveUpdateChannel } = require("./live-update-channel");
 const { createScheduledAttachmentDiscovery } = require("./scheduled-attachment-discovery");
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
 const { createSignalInboundPlugin } = require("./signal-inbound-plugin");
@@ -474,62 +481,6 @@ function normalizeIntegerEnv(value, defaultValue) {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-class CancellationError extends Error {
-  constructor(message = "Request cancelled.") {
-    super(message);
-    this.name = "CancellationError";
-  }
-}
-
-function isCancellationError(error) {
-  return error instanceof CancellationError || error?.name === "CancellationError";
-}
-
-function createJobControl(sender) {
-  return {
-    sender,
-    cancelled: false,
-    reason: null,
-    handlers: new Set(),
-  };
-}
-
-function registerCancellationHandler(jobControl, handler) {
-  if (!jobControl || typeof handler !== "function") {
-    return () => {};
-  }
-
-  if (jobControl.cancelled) {
-    handler(jobControl.reason || new CancellationError());
-    return () => {};
-  }
-
-  jobControl.handlers.add(handler);
-  return () => {
-    jobControl.handlers.delete(handler);
-  };
-}
-
-function cancelJobControl(jobControl, message = "Cancelled by /cancel.") {
-  if (!jobControl || jobControl.cancelled) {
-    return false;
-  }
-
-  const reason = new CancellationError(message);
-  jobControl.cancelled = true;
-  jobControl.reason = reason;
-
-  for (const handler of [...jobControl.handlers]) {
-    try {
-      handler(reason);
-    } catch (error) {
-      console.error(`[${timestamp()}] Cancellation handler failed: ${error.message}`);
-    }
-  }
-
-  return true;
-}
-
 function selectTranscribePythonBin() {
   const candidates = [VENV_PYTHON_PATH, "python3"];
 
@@ -892,7 +843,10 @@ async function handleCancelCommand(sender) {
     return;
   }
 
-  const cancelled = cancelJobControl(activeJobControl);
+  const cancelled = cancelJobControl(activeJobControl, undefined, {
+    logger: console,
+    timestamp,
+  });
   if (!cancelled) {
     await sendReply(sender, "The active task is already stopping.");
     return;
@@ -1458,9 +1412,15 @@ function runCodexViaAppServer(
 ) {
   return new Promise((resolve, reject) => {
     const startedAt = timestamp();
-    const liveUpdates = createLiveUpdateChannel(
-      suppressLiveUpdates ? "" : activeSender
-    );
+    const liveUpdates = createLiveUpdateChannel({
+      batchWindowMs: LIVE_UPDATE_BATCH_WINDOW_MS,
+      duplicateWindowMs: LIVE_UPDATE_DUPLICATE_WINDOW_MS,
+      logger: console,
+      normalizeText,
+      recipient: suppressLiveUpdates ? "" : activeSender,
+      sendReply,
+      timestamp,
+    });
     let parsedSessionId = sessionId || null;
     let pendingAgentMessage = null;
     let finalMessage = "";
@@ -2229,83 +2189,6 @@ async function checkForPendingPluginAuth() {
   } catch (error) {
     console.error(`[${timestamp()}] ${error.message}`);
   }
-}
-
-function createLiveUpdateChannel(recipient) {
-  let queue = [];
-  let timer = null;
-  let lastSentAt = 0;
-  let lastSentText = "";
-
-  async function flush() {
-    if (!recipient || queue.length === 0) {
-      queue = [];
-      clearTimer();
-      return;
-    }
-
-    const text = queue.join("\n");
-    queue = [];
-    clearTimer();
-
-    if (shouldSuppressDuplicate(text)) {
-      return;
-    }
-
-    await sendReply(recipient, text);
-    markSent(text);
-  }
-
-  function queueMessage(text) {
-    const normalized = normalizeText(text);
-    if (!normalized) {
-      return;
-    }
-
-    if (queue.length > 0 && queue[queue.length - 1] === normalized) {
-      return;
-    }
-
-    queue.push(normalized);
-
-    if (!timer) {
-      timer = setTimeout(() => {
-        void flush().catch((error) => {
-          console.error(`[${timestamp()}] Failed sending live update: ${error.message}`);
-        });
-      }, LIVE_UPDATE_BATCH_WINDOW_MS);
-    }
-  }
-
-  function clearTimer() {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
-
-  function shouldSuppressDuplicate(text) {
-    return (
-      text === lastSentText &&
-      Date.now() - lastSentAt < LIVE_UPDATE_DUPLICATE_WINDOW_MS
-    );
-  }
-
-  function markSent(text) {
-    lastSentText = text;
-    lastSentAt = Date.now();
-  }
-
-  function stop() {
-    clearTimer();
-  }
-
-  return {
-    queue: queueMessage,
-    flush,
-    markSent,
-    stop,
-  };
 }
 
 function normalizeText(text) {
