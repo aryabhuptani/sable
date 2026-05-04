@@ -4,9 +4,12 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 
-const DEFAULT_BRIDGE_DIR = "/home/arya/projects/sable/apps/signal-bridge";
 const SIGNAL_REPLY_TO_ENV = "SABLE_SIGNAL_REPLY_TO";
 const SIGNAL_BRIDGE_DIR_ENV = "SABLE_SIGNAL_BRIDGE_DIR";
+const { createInstanceConfig } = require("../instance/instance-config");
+
+const DEFAULT_SIGNAL_ATTACHMENT_PATHS = getDefaultSignalAttachmentPaths({ env: {} });
+const DEFAULT_BRIDGE_DIR = DEFAULT_SIGNAL_ATTACHMENT_PATHS.bridgeDir;
 const DEFAULT_QUEUE_DIR = path.join(DEFAULT_BRIDGE_DIR, ".attachment-queue");
 
 async function main() {
@@ -16,11 +19,8 @@ async function main() {
     process.exit(0);
   }
 
-  const bridgeDir = path.resolve(
-    normalizeText(args.bridgeDir) ||
-      normalizeText(process.env[SIGNAL_BRIDGE_DIR_ENV]) ||
-      DEFAULT_BRIDGE_DIR
-  );
+  const pathDefaults = getDefaultSignalAttachmentPaths();
+  const bridgeDir = path.resolve(normalizeText(args.bridgeDir) || pathDefaults.bridgeDir);
   const queueDir = path.resolve(
     normalizeText(args.queueDir) ||
       normalizeText(process.env.SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR) ||
@@ -160,6 +160,20 @@ function printHelp() {
     `- recipient from --recipient, ${SIGNAL_REPLY_TO_ENV}, or the first ALLOWED_NUMBERS entry in the bridge .env`,
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+function getDefaultSignalAttachmentPaths({ env = process.env, homeDir = "", repoRoot = "" } = {}) {
+  const instance = createInstanceConfig({ env, homeDir, repoRoot });
+  const bridgeDir = path.resolve(
+    normalizeText(env[SIGNAL_BRIDGE_DIR_ENV]) || instance.signalBridgeDir
+  );
+  return {
+    bridgeDir,
+    queueDir: path.resolve(
+      normalizeText(env.SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR) ||
+        path.join(bridgeDir, ".attachment-queue")
+    ),
+  };
 }
 
 function loadSimpleEnv(filePath) {

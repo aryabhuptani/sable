@@ -22,6 +22,9 @@ function createInstanceConfig({
   const autotweetRoot = path.resolve(
     env.SABLE_AUTOTWEET_ROOT || path.join(knowledgeRoot, "projects", "sable", "autotweet")
   );
+  const signalBridgeDir = path.resolve(
+    env.SABLE_SIGNAL_BRIDGE_DIR || path.join(resolvedRepoRoot, "apps", "signal-bridge")
+  );
 
   return {
     homeDir: resolvedHomeDir,
@@ -32,6 +35,7 @@ function createInstanceConfig({
     knowledgeRoot,
     researchRoot,
     autotweetRoot,
+    signalBridgeDir,
     tasksRoot,
     skillsRoot,
     projectKnowledgeRoot: path.join(knowledgeRoot, "projects", "sable"),
