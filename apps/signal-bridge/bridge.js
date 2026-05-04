@@ -12,6 +12,7 @@ const {
 const { parseCommand } = require("./bridge-commands");
 const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
+const { createBridgeLifecycle } = require("./bridge-lifecycle");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createBridgeJobRuntime } = require("./bridge-job-runtime");
 const { createBridgeSchedulerRuntime } = require("./bridge-scheduler-runtime");
@@ -35,9 +36,26 @@ const { createScheduledAttachmentDiscovery } = require("./scheduled-attachment-d
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
 const { createSignalInboundPlugin } = require("./signal-inbound-plugin");
 const { createSignalProfilePlugin } = require("./signal-profile-plugin");
+const { createSignalReplyChannel } = require("./signal-reply-channel");
 const { createSignalRpcSession } = require("./signal-rpc-session");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
 const { createVoiceNotePlugin } = require("./voice-note-plugin");
+const {
+  dedupeStrings,
+  delay,
+  formatProgressMessage,
+  formatSlugForDisplay,
+  formatUnitSummary,
+  isInvalidSessionError,
+  mergePromptSegments,
+  normalizeBooleanEnv,
+  normalizeIntegerEnv,
+  normalizeText,
+  parseAllowedNumbers,
+  parseSystemdShowOutput,
+  splitIntoChunks,
+  truncateText,
+} = require("./bridge-utils");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
 require("dotenv").config();
@@ -268,6 +286,7 @@ const testSupport = createBridgeTestSupport({
 
 validateConfig();
 
+let signalReplyChannel;
 let signalRpc;
 
 const interactiveQueue = [];
@@ -324,6 +343,19 @@ signalRpc = createSignalRpcSession({
   spawn,
   testSignalLogPath: TEST_SIGNAL_LOG_PATH,
   testSupport,
+  timestamp,
+});
+signalReplyChannel = createSignalReplyChannel({
+  allowedNumbers,
+  chunkDelayMs: CHUNK_DELAY_MS,
+  delay,
+  logger: console,
+  maxMessageLength: MAX_SIGNAL_MESSAGE_LENGTH,
+  noteIncoming: (sender) => ops.noteIncoming(sender),
+  noteOutgoing: (recipient) => ops.noteOutgoing(recipient),
+  rewriteText: (text) => obsidianLinks.rewriteMarkdownDocumentReferencesForSignal(text),
+  sendSignalRequest,
+  splitIntoChunks,
   timestamp,
 });
 const runner = createCodexCliRunnerAdapter({
@@ -409,6 +441,37 @@ const jobRuntime = createBridgeJobRuntime({
   voiceNotes,
   voiceNotesEchoTranscript: VOICE_NOTES_ECHO_TRANSCRIPT,
 });
+const lifecycle = createBridgeLifecycle({
+  backgroundQueue,
+  broadcastAllowedMessage,
+  clearInFlightTurn,
+  closeServer: () => obsidianLinks.closeServer(),
+  fs,
+  getInFlightTurn: () => state.inFlightTurn,
+  getRestartRequested: () => restartRequested,
+  getShutdownRequested: () => shutdownRequested,
+  hasActiveWork: () =>
+    isProcessingInteractive ||
+    isProcessingBackground ||
+    interactiveQueue.length > 0 ||
+    backgroundQueue.length > 0,
+  interactiveQueue,
+  logger: console,
+  processBackgroundQueue,
+  processExit: (code) => process.exit(code),
+  processInteractiveQueue,
+  restartNoticePath: RESTART_NOTICE_PATH,
+  restartRequestPath: RESTART_REQUEST_PATH,
+  sendReply,
+  setRestartRequested: (value) => {
+    restartRequested = value;
+  },
+  setShutdownRequested: (value) => {
+    shutdownRequested = value;
+  },
+  signalRpc,
+  timestamp,
+});
 
 signalRpc.start();
 obsidianLinks.startServer();
@@ -418,12 +481,12 @@ if (TEST_RECEIVE_SCENARIO_PATH) {
   void testSupport.startReceiveScenario(TEST_RECEIVE_SCENARIO_PATH);
 }
 setTimeout(() => {
-  void maybeSendRestartReconnectNotice();
+  void lifecycle.maybeSendRestartReconnectNotice();
 }, 1_500);
 setTimeout(() => {
-  void maybeSendInterruptedTurnNotice();
+  void lifecycle.maybeSendInterruptedTurnNotice();
 }, 1_900);
-setInterval(checkForRestartRequest, 2_000);
+setInterval(() => lifecycle.checkForRestartRequest(), 2_000);
 setInterval(checkForPendingPluginAuth, PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS);
 setInterval(checkForDueScheduledJobs, SCHEDULER_POLL_INTERVAL_MS);
 setInterval(checkForPendingAttachmentCommands, 1_000);
@@ -474,37 +537,6 @@ async function refreshCodexRuntimeProbe() {
     });
     console.error(`[${timestamp()}] Failed probing Codex runtime profile: ${error.message}`);
   }
-}
-
-function parseAllowedNumbers(rawValue) {
-  return new Set(
-    String(rawValue || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean)
-  );
-}
-
-function normalizeBooleanEnv(value, defaultValue) {
-  const normalized = normalizeText(String(value || ""));
-  if (!normalized) {
-    return defaultValue;
-  }
-
-  if (["1", "true", "yes", "on"].includes(normalized.toLowerCase())) {
-    return true;
-  }
-
-  if (["0", "false", "no", "off"].includes(normalized.toLowerCase())) {
-    return false;
-  }
-
-  return defaultValue;
-}
-
-function normalizeIntegerEnv(value, defaultValue) {
-  const parsed = Number.parseInt(String(value || ""), 10);
-  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 function selectTranscribePythonBin() {
@@ -747,7 +779,7 @@ async function processInteractiveQueue() {
   }
 
   isProcessingInteractive = false;
-  await restartIfRequested();
+    await lifecycle.restartIfRequested();
 }
 
 async function processBackgroundQueue() {
@@ -776,7 +808,7 @@ async function processBackgroundQueue() {
   }
 
   isProcessingBackground = false;
-  await restartIfRequested();
+    await lifecycle.restartIfRequested();
 }
 
 async function checkForDueScheduledJobs() {
@@ -1150,58 +1182,7 @@ async function checkForPendingPluginAuth() {
   }
 }
 
-function normalizeText(text) {
-  return typeof text === "string" && text.trim() ? text.trim() : "";
-}
-
-function formatProgressMessage(text) {
-  return `• ${normalizeText(text)}`;
-}
-
-function truncateText(text, maxLength) {
-  const normalized = normalizeText(text);
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength - 3)}...`;
-}
-
-function formatSlugForDisplay(value) {
-  return normalizeText(value)
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(" ");
-}
-
-function dedupeStrings(values) {
-  const seen = new Set();
-  const result = [];
-
-  for (const value of values) {
-    const normalized = normalizeText(value);
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    result.push(normalized);
-  }
-
-  return result;
-}
-
 let activeSender = null;
-
-function mergePromptSegments(...segments) {
-  const normalized = segments.map((segment) => normalizeText(segment)).filter(Boolean);
-  if (normalized.length === 0) {
-    return "";
-  }
-
-  return normalized.join("\n\n");
-}
 
 async function cleanupPaths(paths) {
   if (!Array.isArray(paths) || paths.length === 0) {
@@ -1210,126 +1191,6 @@ async function cleanupPaths(paths) {
 
   const parentDir = path.dirname(paths[0]);
   await fs.promises.rm(parentDir, { recursive: true, force: true });
-}
-
-function checkForRestartRequest() {
-  if (!restartRequested && fs.existsSync(RESTART_REQUEST_PATH)) {
-    restartRequested = true;
-  }
-
-  if (
-    !isProcessingInteractive &&
-    !isProcessingBackground &&
-    interactiveQueue.length === 0 &&
-    backgroundQueue.length === 0
-  ) {
-    void restartIfRequested();
-  }
-}
-
-async function restartIfRequested() {
-  if (!restartRequested) {
-    return;
-  }
-
-  restartRequested = false;
-
-  try {
-    await broadcastAllowedMessage("🟡 Restarting Connection to Sable");
-    await fs.promises.writeFile(RESTART_NOTICE_PATH, `${timestamp()}\n`, "utf8");
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed sending restart notification: ${error.message}`);
-  }
-
-  try {
-    await fs.promises.rm(RESTART_REQUEST_PATH, { force: true });
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed clearing restart request: ${error.message}`);
-  }
-
-  console.log(`[${timestamp()}] Restart requested after completing current work`);
-  signalRpc.kill("SIGTERM");
-  process.exit(0);
-}
-
-async function maybeSendRestartReconnectNotice() {
-  if (!fs.existsSync(RESTART_NOTICE_PATH)) {
-    return;
-  }
-
-  try {
-    await broadcastAllowedMessage("🟢 Reconnected to Sable");
-    await fs.promises.rm(RESTART_NOTICE_PATH, { force: true });
-  } catch (error) {
-    console.error(`[${timestamp()}] Failed sending reconnect notification: ${error.message}`);
-  }
-}
-
-async function maybeSendInterruptedTurnNotice() {
-  if (!state.inFlightTurn) {
-    return;
-  }
-
-  const interruptedTurn = state.inFlightTurn;
-  clearInFlightTurn();
-
-  try {
-    await sendReply(interruptedTurn.sender, formatInterruptedTurnNotice(interruptedTurn));
-  } catch (error) {
-    console.error(
-      `[${timestamp()}] Failed sending interrupted-turn notice: ${error.message}`
-    );
-  }
-}
-
-async function getBridgeStatusReport() {
-  const [bridgeService, watcherService] = await Promise.all([
-    getSystemdUnitSummary("signal-codex-bridge.service"),
-    getSystemdUnitSummary("signal-codex-bridge-restart.service"),
-  ]);
-
-  const interactiveSessionLine = state.interactiveSessionId
-    ? `interactive session: ${truncateText(state.interactiveSessionId, 20)}`
-    : "interactive session: none";
-  const backgroundSessionLine = state.backgroundSessionId
-    ? `background session: ${truncateText(state.backgroundSessionId, 20)}`
-    : "background session: none";
-  const obsidianLinkServerAddress = obsidianLinks.getServerAddress();
-  const obsidianServerLine = obsidianLinkServerAddress
-    ? `obsidian links: listening on ${obsidianLinks.host}:${obsidianLinkServerAddress.port}`
-    : `obsidian links: ${obsidianLinks.enabled ? "starting or unavailable" : "disabled"}`;
-  const obsidianBaseUrlLine = obsidianLinks.baseUrl
-    ? `obsidian base url: ${obsidianLinks.baseUrl}`
-    : "obsidian base url: none";
-  const activeSchedulerJobs = schedulerRuntime
-    .getJobs()
-    .filter((job) => job?.active !== false);
-
-  return [
-    `bridge: ${formatUnitSummary(bridgeService)}`,
-    `watcher: ${formatUnitSummary(watcherService)}`,
-    `interactive queue: ${interactiveQueue.length} pending, processing=${isProcessingInteractive ? "yes" : "no"}`,
-    `background queue: ${backgroundQueue.length} pending, processing=${isProcessingBackground ? "yes" : "no"}`,
-    `scheduler: ${activeSchedulerJobs.length} active workflow${activeSchedulerJobs.length === 1 ? "" : "s"}`,
-    interactiveSessionLine,
-    backgroundSessionLine,
-    obsidianServerLine,
-    obsidianBaseUrlLine,
-    `auth: ${pluginAuth.summarize(state.pendingPluginAuth)}`,
-  ].join("\n");
-}
-
-function formatInterruptedTurnNotice(interruptedTurn) {
-  const lines = [
-    "Previous reply was interrupted by a bridge restart before Sable could finish.",
-    "Ask me to continue and I'll pick it back up if the session survived.",
-  ];
-
-  if (interruptedTurn.promptPreview) {
-    lines.push(`Last prompt: ${interruptedTurn.promptPreview}`);
-  }
-
-  return lines.join("\n");
 }
 
 function getSystemdUnitSummary(unitName) {
@@ -1364,102 +1225,12 @@ function getTelegramTriageReport(limit = TELEGRAM_TRIAGE_LIMIT) {
   return telegramReview.getTriageReport(limit);
 }
 
-function parseSystemdShowOutput(stdout) {
-  const values = {};
-
-  for (const line of String(stdout || "").split("\n")) {
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex);
-    const value = line.slice(separatorIndex + 1);
-    values[key] = value;
-  }
-
-  return {
-    activeState: values.ActiveState || "unknown",
-    subState: values.SubState || "unknown",
-    activeEnterTimestamp: values.ActiveEnterTimestamp || "unavailable",
-    execMainPid: values.ExecMainPID || "",
-  };
-}
-
-function formatUnitSummary(summary) {
-  const state = `${summary.activeState}/${summary.subState}`;
-  const pid = summary.execMainPid ? ` pid=${summary.execMainPid}` : "";
-  const since = summary.activeEnterTimestamp && summary.activeEnterTimestamp !== "n/a"
-    ? ` since=${summary.activeEnterTimestamp}`
-    : "";
-  return `${state}${pid}${since}`;
-}
-
-function isInvalidSessionError(stderr) {
-  const text = stderr.toLowerCase();
-  return (
-    text.includes("session not found") ||
-    text.includes("conversation not found") ||
-    text.includes("no rollout found for thread id") ||
-    (text.includes("thread") && text.includes("not found")) ||
-    (text.includes("invalid") && text.includes("session"))
-  );
-}
-
-function splitIntoChunks(text, limit = MAX_SIGNAL_MESSAGE_LENGTH) {
-  const chunks = [];
-  let remaining = text.trim();
-
-  while (remaining.length > limit) {
-    let splitIndex = remaining.lastIndexOf("\n", limit);
-    if (splitIndex <= 0) {
-      splitIndex = limit;
-    }
-
-    const chunk = remaining.slice(0, splitIndex).trim();
-    if (chunk) {
-      chunks.push(chunk);
-    }
-
-    remaining = remaining.slice(splitIndex).replace(/^\s+/, "");
-  }
-
-  if (remaining) {
-    chunks.push(remaining);
-  }
-
-  return chunks.length > 0 ? chunks : ["No output from Sable."];
-}
-
 async function sendReply(recipient, text) {
-  const formattedText = obsidianLinks.rewriteMarkdownDocumentReferencesForSignal(text);
-  const chunks = splitIntoChunks(formattedText);
-
-  for (let index = 0; index < chunks.length; index += 1) {
-    const chunk = chunks[index];
-    await sendSignalMessage(recipient, chunk);
-    logOutgoing(recipient, chunk, index + 1, chunks.length);
-
-    if (index < chunks.length - 1) {
-      await delay(CHUNK_DELAY_MS);
-    }
-  }
+  await signalReplyChannel.sendReply(recipient, text);
 }
 
 async function broadcastAllowedMessage(text) {
-  const recipients = [...allowedNumbers];
-
-  for (const recipient of recipients) {
-    await sendSignalMessage(recipient, text);
-    logOutgoing(recipient, text, 1, 1);
-  }
-}
-
-function sendSignalMessage(recipient, message) {
-  return sendSignalRequest("send", {
-    recipient: [recipient],
-    message,
-  });
+  await signalReplyChannel.broadcastAllowedMessage(text);
 }
 
 function sendSignalAttachmentMessage(recipient, message = "", attachmentPaths = []) {
@@ -1490,59 +1261,12 @@ function sendSignalRequest(method, params) {
 }
 
 function logIncoming(sender, message, imageCount = 0) {
-  ops.noteIncoming(sender);
-  const imageLabel = imageCount > 0 ? ` [images=${imageCount}]` : "";
-  console.log(`[${timestamp()}] IN  ${sender}${imageLabel}: ${message}`);
-}
-
-function logOutgoing(recipient, message, chunkNumber, totalChunks) {
-  ops.noteOutgoing(recipient);
-  const label = totalChunks > 1 ? ` (${chunkNumber}/${totalChunks})` : "";
-  console.log(
-    `[${timestamp()}] OUT ${recipient}${label}: ${message.slice(0, 120).replace(/\n/g, "\\n")}`
-  );
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  signalReplyChannel.logIncoming(sender, message, imageCount);
 }
 
 function timestamp() {
   return new Date().toISOString();
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-
-function shutdown() {
-  if (shutdownRequested) {
-    return;
-  }
-
-  shutdownRequested = true;
-
-  if (
-    isProcessingInteractive ||
-    isProcessingBackground ||
-    interactiveQueue.length > 0 ||
-    backgroundQueue.length > 0
-  ) {
-    restartRequested = true;
-    console.log(
-      `[${timestamp()}] Shutdown requested while work is active; deferring exit until both queues drain`
-    );
-    if (!isProcessingInteractive && interactiveQueue.length > 0) {
-      void processInteractiveQueue();
-    }
-    if (!isProcessingBackground && backgroundQueue.length > 0) {
-      void processBackgroundQueue();
-    }
-    return;
-  }
-
-  console.log(`[${timestamp()}] Shutting down bridge`);
-  obsidianLinks.closeServer();
-  signalRpc.rejectAllPendingRequests(new Error("Bridge shutting down"));
-  signalRpc.kill("SIGTERM");
-  process.exit(0);
-}
+process.on("SIGINT", () => lifecycle.shutdown());
+process.on("SIGTERM", () => lifecycle.shutdown());
