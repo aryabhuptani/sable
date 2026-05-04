@@ -9,6 +9,7 @@
   "runtime": {
     "type": "node-service",
     "currentEntryPoints": [
+      "apps/signal-bridge/obsidian-link-plugin.js",
       "apps/signal-bridge/bridge.js",
       "apps/signal-bridge/bridge-ops.js"
     ]
