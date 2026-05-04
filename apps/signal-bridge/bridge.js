@@ -16,6 +16,10 @@ const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeLifecycle } = require("./bridge-lifecycle");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createBridgeJobRuntime } = require("./bridge-job-runtime");
+const {
+  createBridgeConfig,
+  validateBridgeConfig,
+} = require("./bridge-config");
 const { createBridgeQueueRuntime } = require("./bridge-queue-runtime");
 const { createBridgeSchedulerRuntime } = require("./bridge-scheduler-runtime");
 const { createBridgeStateStore } = require("./bridge-state-store");
@@ -64,87 +68,78 @@ require("dotenv").config();
 
 const PROJECT_DIR = __dirname;
 const INSTANCE_CONFIG = createInstanceConfig();
-const CODEX_CWD = normalizeText(process.env.SABLE_CODEX_CWD) || INSTANCE_CONFIG.homeDir;
-const STATE_PATH =
-  normalizeText(process.env.SABLE_BRIDGE_STATE_PATH) ||
-  path.join(PROJECT_DIR, ".bridge-state.json");
-const RESTART_REQUEST_PATH =
-  normalizeText(process.env.SABLE_RESTART_REQUEST_PATH) ||
-  path.join(PROJECT_DIR, ".restart-requested");
-const RESTART_NOTICE_PATH =
-  normalizeText(process.env.SABLE_RESTART_NOTICE_PATH) ||
-  path.join(PROJECT_DIR, ".restart-notice-pending");
-const SCHEDULER_JOBS_PATH =
-  normalizeText(process.env.SABLE_SCHEDULER_JOBS_PATH) ||
-  INSTANCE_CONFIG.schedulerJobsPath;
-const RESEARCH_ROOT =
-  normalizeText(process.env.SABLE_RESEARCH_ROOT) ||
-  INSTANCE_CONFIG.researchRoot;
-const MAX_SIGNAL_MESSAGE_LENGTH = 1500;
-const CHUNK_DELAY_MS = 500;
-const LIVE_UPDATE_BATCH_WINDOW_MS = 750;
-const LIVE_UPDATE_DUPLICATE_WINDOW_MS = 5_000;
-const PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS = 15_000;
-const MAX_COMMAND_TEXT_LENGTH = 120;
-const MAX_FAILURE_OUTPUT_LENGTH = 400;
-const DEFAULT_IMAGE_PROMPT = "Please analyze the attached image.";
-const DEFAULT_FILE_PROMPT = "Please analyze the attached files.";
-const SCHEDULED_NO_REPLY_MARKER = "__SABLE_NO_REPLY__";
-const MAX_FILE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const MAX_TEXT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
-const MAX_FILE_EXCERPT_CHARS = 20_000;
-const MAX_TOTAL_FILE_CONTEXT_CHARS = 48_000;
-const VOICE_NOTES_ENABLED = normalizeBooleanEnv(process.env.VOICE_NOTES_ENABLED, true);
-const VOICE_NOTES_MODEL = normalizeText(process.env.VOICE_NOTES_MODEL) || "base.en";
-const VOICE_NOTES_MODEL_PATH =
-  normalizeText(process.env.VOICE_NOTES_MODEL_PATH) ||
-  path.join(INSTANCE_CONFIG.homeDir, "models", "faster-whisper-base.en");
-const VOICE_NOTES_LANGUAGE = normalizeText(process.env.VOICE_NOTES_LANGUAGE) || "en";
-const VOICE_NOTES_BEAM_SIZE = normalizeIntegerEnv(process.env.VOICE_NOTES_BEAM_SIZE, 5);
-const VOICE_NOTES_COMPUTE_TYPE =
-  normalizeText(process.env.VOICE_NOTES_COMPUTE_TYPE) || "int8";
-const VOICE_NOTES_TIMEOUT_SEC = normalizeIntegerEnv(
-  process.env.VOICE_NOTES_TIMEOUT_SEC,
-  900
-);
-const VOICE_NOTES_ECHO_TRANSCRIPT = normalizeBooleanEnv(
-  process.env.VOICE_NOTES_ECHO_TRANSCRIPT,
-  true
-);
-const CODEX_HOME_ROOT =
-  normalizeText(process.env.CODEX_HOME) || path.join(INSTANCE_CONFIG.homeDir, ".codex");
-const CODEX_SESSIONS_DIR = path.join(CODEX_HOME_ROOT, "sessions");
-const APP_SERVER_REQUEST_TIMEOUT_MS = normalizeIntegerEnv(
-  process.env.APP_SERVER_REQUEST_TIMEOUT_MS,
-  20_000
-);
-const APP_SERVER_IDLE_TIMEOUT_MS = normalizeIntegerEnv(
-  process.env.APP_SERVER_IDLE_TIMEOUT_MS,
-  10 * 60 * 1000
-);
-const APP_SERVER_CLIENT_VERSION = "1.1.0";
-const SCHEDULER_POLL_INTERVAL_MS = normalizeIntegerEnv(
-  process.env.SABLE_SCHEDULER_POLL_INTERVAL_MS,
-  30_000
-);
-const MAX_SCHEDULED_LOCAL_IMAGES = normalizeIntegerEnv(
-  process.env.SABLE_MAX_SCHEDULED_LOCAL_IMAGES,
-  6
-);
-const MAX_SCHEDULED_LOCAL_IMAGE_BYTES = normalizeIntegerEnv(
-  process.env.SABLE_MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
-  10 * 1024 * 1024
-);
-const MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES = normalizeIntegerEnv(
-  process.env.SABLE_MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES,
-  25 * 1024 * 1024
-);
-const TRANSCRIBE_SCRIPT_PATH = path.join(PROJECT_DIR, "transcribe_voice_note.py");
-const EXTRACT_PDF_SCRIPT_PATH = path.join(PROJECT_DIR, "extract_pdf_text.py");
-const VENV_PYTHON_PATH = path.join(PROJECT_DIR, ".venv", "bin", "python");
-const VENV_PDF_PYTHON_PATH = path.join(PROJECT_DIR, ".venv-pdf", "bin", "python");
-const TRANSCRIBE_PYTHON_BIN = selectTranscribePythonBin();
-const PDF_EXTRACT_PYTHON_BIN = selectPdfExtractPythonBin();
+const BRIDGE_CONFIG = createBridgeConfig({
+  env: process.env,
+  execFileSync,
+  fs,
+  instanceConfig: INSTANCE_CONFIG,
+  normalizeBooleanEnv,
+  normalizeIntegerEnv,
+  normalizeText,
+  parseAllowedNumbers,
+  projectDir: PROJECT_DIR,
+});
+const {
+  APP_SERVER_CLIENT_VERSION,
+  APP_SERVER_IDLE_TIMEOUT_MS,
+  APP_SERVER_REQUEST_TIMEOUT_MS,
+  ATTACHMENT_QUEUE_PENDING_DIR,
+  ATTACHMENT_QUEUE_RESULTS_DIR,
+  CHUNK_DELAY_MS,
+  CODEX_CWD,
+  CODEX_HOME_ROOT,
+  CODEX_SESSIONS_DIR,
+  DEFAULT_FILE_PROMPT,
+  DEFAULT_IMAGE_PROMPT,
+  EXTRACT_PDF_SCRIPT_PATH,
+  LIVE_UPDATE_BATCH_WINDOW_MS,
+  LIVE_UPDATE_DUPLICATE_WINDOW_MS,
+  MAX_COMMAND_TEXT_LENGTH,
+  MAX_FAILURE_OUTPUT_LENGTH,
+  MAX_FILE_ATTACHMENT_BYTES,
+  MAX_FILE_EXCERPT_CHARS,
+  MAX_SIGNAL_MESSAGE_LENGTH,
+  MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
+  MAX_SCHEDULED_LOCAL_IMAGE_TOTAL_BYTES,
+  MAX_SCHEDULED_LOCAL_IMAGES,
+  MAX_TEXT_ATTACHMENT_BYTES,
+  MAX_TOTAL_FILE_CONTEXT_CHARS,
+  OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES,
+  OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
+  OPS_ALERTS_ENABLED,
+  OPS_ROOT,
+  OPS_SNAPSHOT_INTERVAL_MS,
+  OPS_STALLED_RUN_THRESHOLD_MS,
+  PDF_EXTRACT_PYTHON_BIN,
+  PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS,
+  RESEARCH_ROOT,
+  RESTART_NOTICE_PATH,
+  RESTART_REQUEST_PATH,
+  SCHEDULED_NO_REPLY_MARKER,
+  SCHEDULER_JOBS_PATH,
+  SCHEDULER_POLL_INTERVAL_MS,
+  SIGNAL_BRIDGE_DIR_ENV,
+  SIGNAL_REPLY_TO_ENV,
+  STATE_PATH,
+  TEST_APP_SERVER_LOG_PATH,
+  TEST_RECEIVE_SCENARIO_PATH,
+  TEST_SIGNAL_LOG_PATH,
+  TEST_TURN_CURSOR_PATH,
+  TEST_TURN_SCENARIO_PATH,
+  TRANSCRIBE_PYTHON_BIN,
+  TRANSCRIBE_SCRIPT_PATH,
+  VOICE_NOTES_BEAM_SIZE,
+  VOICE_NOTES_COMPUTE_TYPE,
+  VOICE_NOTES_ECHO_TRANSCRIPT,
+  VOICE_NOTES_ENABLED,
+  VOICE_NOTES_LANGUAGE,
+  VOICE_NOTES_MODEL,
+  VOICE_NOTES_MODEL_PATH,
+  VOICE_NOTES_TIMEOUT_SEC,
+  allowedNumbers,
+  allowedSenders,
+  phoneNumber,
+} = BRIDGE_CONFIG;
 const telegramReview = createTelegramReviewPlugin({
   execFile,
   env: process.env,
@@ -152,49 +147,11 @@ const telegramReview = createTelegramReviewPlugin({
   truncateText,
 });
 const TELEGRAM_TRIAGE_LIMIT = telegramReview.triageLimit;
-const TEST_RECEIVE_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_RECEIVE_SCENARIO_PATH);
-const TEST_APP_SERVER_LOG_PATH = normalizeText(process.env.SABLE_E2E_APP_SERVER_LOG_PATH);
-const TEST_TURN_SCENARIO_PATH = normalizeText(process.env.SABLE_E2E_TURN_SCENARIO_PATH);
-const TEST_TURN_CURSOR_PATH = normalizeText(process.env.SABLE_E2E_TURN_CURSOR_PATH);
-const TEST_SIGNAL_LOG_PATH = normalizeText(process.env.SABLE_E2E_SIGNAL_LOG_PATH);
 const obsidianLinks = createObsidianLinkPlugin({
   env: process.env,
   instanceConfig: INSTANCE_CONFIG,
   logger: console,
 });
-const SIGNAL_REPLY_TO_ENV = "SABLE_SIGNAL_REPLY_TO";
-const SIGNAL_BRIDGE_DIR_ENV = "SABLE_SIGNAL_BRIDGE_DIR";
-const ATTACHMENT_QUEUE_ROOT =
-  normalizeText(process.env.SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR) ||
-  path.join(PROJECT_DIR, ".attachment-queue");
-const ATTACHMENT_QUEUE_PENDING_DIR = path.join(ATTACHMENT_QUEUE_ROOT, "pending");
-const ATTACHMENT_QUEUE_RESULTS_DIR = path.join(ATTACHMENT_QUEUE_ROOT, "results");
-const OPS_ROOT =
-  normalizeText(process.env.SABLE_OPS_STATE_DIR) || path.join(PROJECT_DIR, ".ops");
-const OPS_SNAPSHOT_INTERVAL_MS = normalizeIntegerEnv(
-  process.env.SABLE_OPS_SNAPSHOT_INTERVAL_MS,
-  60_000
-);
-const OPS_STALLED_RUN_THRESHOLD_MS = normalizeIntegerEnv(
-  process.env.SABLE_OPS_STALLED_RUN_THRESHOLD_MS,
-  6 * 60 * 60 * 1000
-);
-const OPS_ALERTS_ENABLED = normalizeBooleanEnv(
-  process.env.SABLE_OPS_ALERTS_ENABLED,
-  !TEST_SIGNAL_LOG_PATH
-);
-const OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES = normalizeIntegerEnv(
-  process.env.SABLE_OPS_ALERT_BRIDGE_RSS_THRESHOLD_BYTES,
-  1200 * 1024 * 1024
-);
-const OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS = normalizeIntegerEnv(
-  process.env.SABLE_OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
-  20 * 60 * 1000
-);
-
-const phoneNumber = process.env.PHONE_NUMBER?.trim();
-const allowedNumbers = parseAllowedNumbers(process.env.ALLOWED_NUMBERS);
-const allowedSenders = parseAllowedNumbers(process.env.ALLOWED_SENDERS);
 const signalAttachments = createSignalAttachmentPlugin({
   allowedNumbers,
   extractPdfScriptPath: EXTRACT_PDF_SCRIPT_PATH,
@@ -552,15 +509,7 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 function validateConfig() {
-  const missing = [];
-
-  if (!phoneNumber) {
-    missing.push("PHONE_NUMBER");
-  }
-
-  if (allowedNumbers.size === 0) {
-    missing.push("ALLOWED_NUMBERS");
-  }
+  const missing = validateBridgeConfig({ allowedNumbers, phoneNumber });
 
   if (missing.length > 0) {
     console.error(
@@ -582,54 +531,6 @@ async function refreshCodexRuntimeProbe() {
     });
     console.error(`[${timestamp()}] Failed probing Codex runtime profile: ${error.message}`);
   }
-}
-
-function selectTranscribePythonBin() {
-  const candidates = [VENV_PYTHON_PATH, "python3"];
-
-  for (const candidate of candidates) {
-    if (candidate !== "python3" && !fs.existsSync(candidate)) {
-      continue;
-    }
-
-    try {
-      execFileSync(
-        candidate,
-        ["-c", "import faster_whisper, ctranslate2, av"],
-        {
-          cwd: PROJECT_DIR,
-          stdio: "ignore",
-        }
-      );
-      return candidate;
-    } catch (error) {
-      continue;
-    }
-  }
-
-  return "python3";
-}
-
-function selectPdfExtractPythonBin() {
-  const candidates = [VENV_PDF_PYTHON_PATH, "python3"];
-
-  for (const candidate of candidates) {
-    if (candidate !== "python3" && !fs.existsSync(candidate)) {
-      continue;
-    }
-
-    try {
-      execFileSync(candidate, ["--version"], {
-        cwd: PROJECT_DIR,
-        stdio: "ignore",
-      });
-      return candidate;
-    } catch (error) {
-      continue;
-    }
-  }
-
-  return "python3";
 }
 
 function saveState() {
