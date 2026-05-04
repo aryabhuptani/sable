@@ -54,6 +54,7 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/instance/instance-config.js",
     "tools/instance/instance_config.py",
     "tools/signal/send_attachment.js",
+    "docs/community-install.md",
     "docs/sable-architecture-migration-checklist.md",
     "plugins/schema/plugin-manifest.schema.json",
   ].forEach(assertFile);

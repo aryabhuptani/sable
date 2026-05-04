@@ -80,10 +80,11 @@ Shareable code must not assume Arya's instance except through defaults or explic
 2. Add `RunnerAdapter` around the existing Codex CLI path.
 3. Add plugin manifest schema and descriptive manifests for current integrations.
 4. Add `sable doctor` for config, runner, plugin, memory, and bridge diagnostics.
-5. Extract one low-risk integration behind a plugin boundary.
-6. Move Arya-specific config discovery toward an instance directory.
-7. Repeat plugin extraction with smoke coverage after each slice.
-8. Split repos only after internal boundaries hold inside the current repo.
+5. Add an agent-ingestible community install guide.
+6. Extract one low-risk integration behind a plugin boundary.
+7. Move Arya-specific config discovery toward an instance directory.
+8. Repeat plugin extraction with smoke coverage after each slice.
+9. Split repos only after internal boundaries hold inside the current repo.
 
 ## Per-Slice Checklist
 
@@ -104,3 +105,4 @@ Do not split repos until all are true:
 - `sable doctor` can diagnose missing local config without exposing secrets.
 - Arya's local instance works through config rather than hardcoded private paths for the migration-touched surfaces.
 - A fresh clone can run the smoke gate without requiring Arya's private secrets.
+- `docs/community-install.md` can guide a human or agent through fresh local instance setup without copying Arya's private state.

@@ -4,6 +4,8 @@ Sable is Arya's local-first automation and messaging stack on the minipc.
 
 Runtime paths are centralized through `tools/instance/instance-config.js` and can be overridden with environment variables. The `/home/arya/...` paths below document Arya's current minipc layout; they are examples, not assumptions every install must inherit.
 
+For fresh local setup, see `docs/community-install.md`.
+
 ## Layout
 
 - `apps/signal-bridge/`: the live Signal bridge service
