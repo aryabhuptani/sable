@@ -5064,10 +5064,16 @@ async function processNextAttachmentCommand() {
     const requestId = normalizeText(payload?.id) || path.basename(nextEntry, ".json");
     const recipient = normalizeText(payload?.recipient) || allowedNumbers[0] || "";
     const message = normalizeText(payload?.message);
+    const requestedFiles = Array.isArray(payload?.files)
+      ? payload.files.map((filePath) => normalizeText(filePath)).filter(Boolean)
+      : [];
     const files = normalizeOutgoingAttachmentPaths(payload?.files);
 
     if (!recipient) {
       throw new Error("Attachment request did not include a recipient.");
+    }
+    if (requestedFiles.length > 0 && files.length === 0) {
+      throw new Error("Attachment request did not include any valid files.");
     }
     if (files.length === 0 && !message) {
       throw new Error("Message request did not include text or any valid files.");

@@ -21,6 +21,8 @@ async function assertNoCodexTurnStarted(harness) {
 }
 
 test("/schedules lists persisted recurring workflows", async () => {
+  const futureDailyRun = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const futureMaintenanceRun = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString();
   const harness = await startBridgeScenario({
     signalScenario: {
       receive: [
@@ -42,7 +44,7 @@ test("/schedules lists persisted recurring workflows", async () => {
         recurrence: { type: "daily" },
         time: { hour: 8, minute: 0, text: "8:00 AM" },
         workflowPrompt: "Give me a daily briefing of my day",
-        nextRunAt: "2026-04-18T07:00:00.000Z",
+        nextRunAt: futureDailyRun,
         lastRunAt: "",
       },
       {
@@ -54,7 +56,7 @@ test("/schedules lists persisted recurring workflows", async () => {
         recurrence: { type: "interval", intervalMinutes: 5 },
         replyMode: "silent",
         workflowPrompt: "Run passive background maintenance",
-        nextRunAt: "2026-04-18T07:05:00.000Z",
+        nextRunAt: futureMaintenanceRun,
         lastRunAt: "",
       },
     ],

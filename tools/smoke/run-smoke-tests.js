@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
+
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+
+const suites = [
+  {
+    name: "migration contract",
+    command: "node",
+    args: [
+      "--test",
+      "tests/smoke-contract.test.js",
+      "tests/bridge-codex-client.test.js",
+      "tests/test_bridge_commands.js",
+      "tests/test_signal_attachment_cli.js",
+    ],
+  },
+  {
+    name: "Signal bridge E2E",
+    command: "npm",
+    args: ["run", "test:e2e"],
+  },
+  {
+    name: "scheduler CLI",
+    command: "npm",
+    args: ["run", "test:scheduler"],
+  },
+  {
+    name: "knowledge base and autoresearch",
+    command: "npm",
+    args: ["run", "test:kb"],
+  },
+  {
+    name: "autotweet",
+    command: "npm",
+    args: ["run", "test:autotweet"],
+  },
+  {
+    name: "Home Assistant CLI",
+    command: "npm",
+    args: ["run", "test:homeassistant"],
+  },
+  {
+    name: "humidifier low-water watcher",
+    command: "npm",
+    args: ["run", "test:humidifier"],
+  },
+  {
+    name: "Telegram CLI",
+    command: "npm",
+    args: ["run", "test:telegram"],
+  },
+];
+
+function runSuite(suite) {
+  console.log(`\n==> ${suite.name}`);
+  const result = spawnSync(suite.command, suite.args, {
+    cwd: REPO_ROOT,
+    env: process.env,
+    stdio: "inherit",
+  });
+
+  if (result.error) {
+    console.error(`Smoke suite failed to start: ${result.error.message}`);
+    return 1;
+  }
+
+  return result.status || 0;
+}
+
+function main() {
+  for (const suite of suites) {
+    const status = runSuite(suite);
+    if (status !== 0) {
+      console.error(`\nSmoke gate failed in suite: ${suite.name}`);
+      process.exit(status);
+    }
+  }
+
+  console.log("\nSable smoke gate passed.");
+}
+
+main();
