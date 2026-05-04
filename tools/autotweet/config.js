@@ -3,19 +3,33 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const DEFAULT_CONFIG_PATH = "/home/arya/memory/knowledge/projects/sable/autotweet/CONFIG.md";
-const DEFAULT_STYLE_GUIDE_PATH = "/home/arya/memory/knowledge/projects/sable/autotweet/STYLE_GUIDE.md";
-const DEFAULT_QUESTION_BANK_PATH =
-  "/home/arya/memory/knowledge/projects/sable/autotweet/QUESTION_BANK.md";
-const DEFAULT_SUGGESTIONS_PATH =
-  "/home/arya/memory/knowledge/projects/sable/autotweet/SUGGESTIONS.md";
+const { createInstanceConfig } = require("../instance/instance-config");
 
-function loadAutotweetConfig(configPath = DEFAULT_CONFIG_PATH) {
-  const raw = fs.readFileSync(configPath, "utf8");
+const DEFAULT_AUTOTWEET_PATHS = getDefaultAutotweetPaths({ env: {} });
+const DEFAULT_CONFIG_PATH = DEFAULT_AUTOTWEET_PATHS.configPath;
+const DEFAULT_STYLE_GUIDE_PATH = DEFAULT_AUTOTWEET_PATHS.styleGuidePath;
+const DEFAULT_QUESTION_BANK_PATH = DEFAULT_AUTOTWEET_PATHS.questionBankPath;
+const DEFAULT_SUGGESTIONS_PATH = DEFAULT_AUTOTWEET_PATHS.suggestionsPath;
+
+function getDefaultAutotweetPaths({ env = process.env, homeDir = "" } = {}) {
+  const instance = createInstanceConfig({ env, homeDir });
+  return {
+    root: instance.autotweetRoot,
+    configPath: path.join(instance.autotweetRoot, "CONFIG.md"),
+    styleGuidePath: path.join(instance.autotweetRoot, "STYLE_GUIDE.md"),
+    questionBankPath: path.join(instance.autotweetRoot, "QUESTION_BANK.md"),
+    suggestionsPath: path.join(instance.autotweetRoot, "SUGGESTIONS.md"),
+  };
+}
+
+function loadAutotweetConfig(configPath = "", { env = process.env, homeDir = "" } = {}) {
+  const defaults = getDefaultAutotweetPaths({ env, homeDir });
+  const resolvedConfigPath = configPath || defaults.configPath;
+  const raw = fs.readFileSync(resolvedConfigPath, "utf8");
   const { frontmatter, body } = parseFrontmatter(raw);
 
   return {
-    path: configPath,
+    path: resolvedConfigPath,
     body,
     enabled: toBoolean(frontmatter.enabled, false),
     draftCount: toInteger(frontmatter.draft_count, 5),
@@ -23,9 +37,9 @@ function loadAutotweetConfig(configPath = DEFAULT_CONFIG_PATH) {
     maxCharsPerFile: toInteger(frontmatter.max_chars_per_file, 4_000),
     platforms: toStringArray(frontmatter.platforms, ["x"]),
     knowledgeBases: toStringArray(frontmatter.knowledge_bases, []),
-    questionFiles: toStringArray(frontmatter.question_files, [DEFAULT_QUESTION_BANK_PATH]),
-    styleGuideFiles: toStringArray(frontmatter.style_guide_files, [DEFAULT_STYLE_GUIDE_PATH]),
-    suggestionFiles: toStringArray(frontmatter.suggestion_files, [DEFAULT_SUGGESTIONS_PATH]),
+    questionFiles: toStringArray(frontmatter.question_files, [defaults.questionBankPath]),
+    styleGuideFiles: toStringArray(frontmatter.style_guide_files, [defaults.styleGuidePath]),
+    suggestionFiles: toStringArray(frontmatter.suggestion_files, [defaults.suggestionsPath]),
     queueMode: normalizeText(frontmatter.queue_mode) || "draft",
   };
 }
@@ -159,6 +173,7 @@ module.exports = {
   DEFAULT_SUGGESTIONS_PATH,
   DEFAULT_STYLE_GUIDE_PATH,
   discoverKbFiles,
+  getDefaultAutotweetPaths,
   loadAutotweetConfig,
   parseFrontmatter,
 };

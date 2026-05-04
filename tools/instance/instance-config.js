@@ -19,6 +19,9 @@ function createInstanceConfig({
   const tasksRoot = path.resolve(env.SABLE_TASKS_ROOT || path.join(memoryRoot, "tasks"));
   const skillsRoot = path.resolve(env.SABLE_SKILLS_ROOT || path.join(resolvedHomeDir, "skills"));
   const researchRoot = path.resolve(env.SABLE_RESEARCH_ROOT || path.join(knowledgeRoot, "research"));
+  const autotweetRoot = path.resolve(
+    env.SABLE_AUTOTWEET_ROOT || path.join(knowledgeRoot, "projects", "sable", "autotweet")
+  );
 
   return {
     homeDir: resolvedHomeDir,
@@ -28,6 +31,7 @@ function createInstanceConfig({
     memoryRoot,
     knowledgeRoot,
     researchRoot,
+    autotweetRoot,
     tasksRoot,
     skillsRoot,
     projectKnowledgeRoot: path.join(knowledgeRoot, "projects", "sable"),

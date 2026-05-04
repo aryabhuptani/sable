@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const {
   discoverKbFiles,
+  getDefaultAutotweetPaths,
   loadAutotweetConfig,
 } = require("../tools/autotweet/config");
 const {
@@ -27,6 +28,7 @@ const {
 } = require("../tools/autotweet/bootstrap-style-guide");
 const {
   extractJsonArrayFromText,
+  getDefaultAutotweetRuntimePaths,
   handleDraftingItem,
   normalizeGeneratedDrafts,
 } = require("../tools/autotweet/run-draft-cycle");
@@ -66,6 +68,90 @@ queue_mode: draft
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("autotweet default paths follow instance config", () => {
+  assert.deepEqual(getDefaultAutotweetPaths({ env: {} }), {
+    root: "/home/arya/memory/knowledge/projects/sable/autotweet",
+    configPath: "/home/arya/memory/knowledge/projects/sable/autotweet/CONFIG.md",
+    styleGuidePath: "/home/arya/memory/knowledge/projects/sable/autotweet/STYLE_GUIDE.md",
+    questionBankPath: "/home/arya/memory/knowledge/projects/sable/autotweet/QUESTION_BANK.md",
+    suggestionsPath: "/home/arya/memory/knowledge/projects/sable/autotweet/SUGGESTIONS.md",
+  });
+
+  assert.deepEqual(
+    getDefaultAutotweetPaths({
+      env: {
+        SABLE_AUTOTWEET_ROOT: "/data/alex/autotweet",
+      },
+    }),
+    {
+      root: "/data/alex/autotweet",
+      configPath: "/data/alex/autotweet/CONFIG.md",
+      styleGuidePath: "/data/alex/autotweet/STYLE_GUIDE.md",
+      questionBankPath: "/data/alex/autotweet/QUESTION_BANK.md",
+      suggestionsPath: "/data/alex/autotweet/SUGGESTIONS.md",
+    }
+  );
+});
+
+test("loadAutotweetConfig uses instance-derived fallback files", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-autotweet-instance-"));
+  const autotweetRoot = path.join(tempRoot, "autotweet");
+  const configPath = path.join(autotweetRoot, "CONFIG.md");
+
+  try {
+    await fs.mkdir(autotweetRoot, { recursive: true });
+    await fs.writeFile(
+      configPath,
+      `---
+enabled: true
+---
+
+# Notes
+`,
+      "utf8"
+    );
+
+    const config = loadAutotweetConfig("", {
+      env: {
+        SABLE_AUTOTWEET_ROOT: autotweetRoot,
+      },
+    });
+
+    assert.equal(config.path, configPath);
+    assert.deepEqual(config.questionFiles, [path.join(autotweetRoot, "QUESTION_BANK.md")]);
+    assert.deepEqual(config.styleGuideFiles, [path.join(autotweetRoot, "STYLE_GUIDE.md")]);
+    assert.deepEqual(config.suggestionFiles, [path.join(autotweetRoot, "SUGGESTIONS.md")]);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("autotweet runtime paths follow instance config", () => {
+  assert.deepEqual(getDefaultAutotweetRuntimePaths({ env: {} }), {
+    codexCwd: "/home/arya/projects/sable",
+    projectDir: "/home/arya/projects/sable/apps/signal-bridge",
+    runLogDir: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs",
+    historyPath: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs/history.jsonl",
+    lastRunPath: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs/last-run.json",
+  });
+
+  assert.deepEqual(
+    getDefaultAutotweetRuntimePaths({
+      env: {
+        SABLE_REPO_ROOT: "/srv/sable-core",
+        SABLE_AUTOTWEET_ROOT: "/data/alex/autotweet",
+      },
+    }),
+    {
+      codexCwd: "/srv/sable-core",
+      projectDir: "/srv/sable-core/apps/signal-bridge",
+      runLogDir: "/data/alex/autotweet/run-logs",
+      historyPath: "/data/alex/autotweet/run-logs/history.jsonl",
+      lastRunPath: "/data/alex/autotweet/run-logs/last-run.json",
+    }
+  );
 });
 
 test("discoverKbFiles returns KB.md, index, and note files with truncation", async () => {

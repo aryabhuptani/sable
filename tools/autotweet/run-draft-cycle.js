@@ -9,6 +9,7 @@ const {
   discoverKbFiles,
   loadAutotweetConfig,
 } = require("./config");
+const { createInstanceConfig } = require("../instance/instance-config");
 const {
   buildDraftPayload,
   typefullyRequest,
@@ -21,10 +22,11 @@ const {
   createBridgeCodexClient,
 } = require("../../apps/signal-bridge/bridge-codex-client");
 
-const DEFAULT_CODEX_CWD = "/home/arya/projects/sable";
-const DEFAULT_PROJECT_DIR = "/home/arya/projects/sable/apps/signal-bridge";
+const DEFAULT_RUNTIME_PATHS = getDefaultAutotweetRuntimePaths({ env: {} });
+const DEFAULT_CODEX_CWD = DEFAULT_RUNTIME_PATHS.codexCwd;
+const DEFAULT_PROJECT_DIR = DEFAULT_RUNTIME_PATHS.projectDir;
 const DEFAULT_APP_SERVER_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_RUN_LOG_DIR = "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs";
+const DEFAULT_RUN_LOG_DIR = DEFAULT_RUNTIME_PATHS.runLogDir;
 const DEFAULT_HISTORY_PATH = path.join(DEFAULT_RUN_LOG_DIR, "history.jsonl");
 const DEFAULT_LAST_RUN_PATH = path.join(DEFAULT_RUN_LOG_DIR, "last-run.json");
 const DEFAULT_MODEL = "gpt-5.5";
@@ -130,6 +132,18 @@ async function main() {
     runRecord.completedAt = new Date().toISOString();
     await writeRunLog(runRecord);
   }
+}
+
+function getDefaultAutotweetRuntimePaths({ env = process.env, homeDir = "", repoRoot = "" } = {}) {
+  const instance = createInstanceConfig({ env, homeDir, repoRoot });
+  const runLogDir = path.join(instance.autotweetRoot, "run-logs");
+  return {
+    codexCwd: instance.repoRoot,
+    projectDir: path.join(instance.repoRoot, "apps", "signal-bridge"),
+    runLogDir,
+    historyPath: path.join(runLogDir, "history.jsonl"),
+    lastRunPath: path.join(runLogDir, "last-run.json"),
+  };
 }
 
 function buildContextPacket(config, selectedSuggestions) {
@@ -257,10 +271,11 @@ function buildDraftPrompt({ config, selectedSuggestions, contextPacket }) {
 
 async function runCodexPrompt(prompt) {
   const envSource = buildCodexEnvSource();
+  const runtimePaths = getDefaultAutotweetRuntimePaths();
   const codexClient = createBridgeCodexClient({
     spawn,
-    cwd: DEFAULT_CODEX_CWD,
-    projectDir: DEFAULT_PROJECT_DIR,
+    cwd: runtimePaths.codexCwd,
+    projectDir: runtimePaths.projectDir,
     signalReplyToEnv: "SABLE_SIGNAL_REPLY_TO",
     signalBridgeDirEnv: "SABLE_SIGNAL_BRIDGE_DIR",
     appServerClientVersion: "1.0.0",
@@ -329,7 +344,7 @@ async function runCodexPrompt(prompt) {
     try {
       await client.initialize();
       const threadResponse = await client.request("thread/start", {
-        cwd: DEFAULT_CODEX_CWD,
+        cwd: runtimePaths.codexCwd,
         approvalPolicy: "never",
         approvalsReviewer: "guardian_subagent",
         personality: "pragmatic",
@@ -342,7 +357,7 @@ async function runCodexPrompt(prompt) {
 
       await client.request("turn/start", {
         threadId,
-        cwd: DEFAULT_CODEX_CWD,
+        cwd: runtimePaths.codexCwd,
         approvalPolicy: "never",
         approvalsReviewer: "guardian_subagent",
         personality: "pragmatic",
@@ -452,9 +467,10 @@ function styleGuideLooksPlaceholder(styleGuideFiles) {
 }
 
 async function writeRunLog(runRecord) {
-  fs.mkdirSync(DEFAULT_RUN_LOG_DIR, { recursive: true });
-  fs.writeFileSync(DEFAULT_LAST_RUN_PATH, `${JSON.stringify(runRecord, null, 2)}\n`, "utf8");
-  fs.appendFileSync(DEFAULT_HISTORY_PATH, `${JSON.stringify(runRecord)}\n`, "utf8");
+  const runtimePaths = getDefaultAutotweetRuntimePaths();
+  fs.mkdirSync(runtimePaths.runLogDir, { recursive: true });
+  fs.writeFileSync(runtimePaths.lastRunPath, `${JSON.stringify(runRecord, null, 2)}\n`, "utf8");
+  fs.appendFileSync(runtimePaths.historyPath, `${JSON.stringify(runRecord)}\n`, "utf8");
 }
 
 function dedupeStrings(values) {
@@ -487,6 +503,7 @@ module.exports = {
   buildContextPacket,
   buildDraftPrompt,
   extractJsonArrayFromText,
+  getDefaultAutotweetRuntimePaths,
   handleDraftingItem,
   normalizeGeneratedDrafts,
   styleGuideLooksPlaceholder,
