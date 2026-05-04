@@ -23,12 +23,19 @@ import json
 import os
 import pathlib
 import shutil
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-DEFAULT_SESSION_PATH = "/home/arya/.local/state/sable-telegram/telethon.session"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.instance.instance_config import create_instance_config
+
+
 DEFAULT_ENV_PATH = pathlib.Path(__file__).with_name(".env")
 DEFAULT_DIRECT_REPLY_WINDOW_HOURS = 72
 DEFAULT_ACTIVE_REPLY_WINDOW_HOURS = 24
@@ -124,15 +131,22 @@ class DialogSnapshot:
 
 def load_config() -> TelegramConfig:
     load_local_env(DEFAULT_ENV_PATH)
-    session_path = pathlib.Path(
-        os.environ.get("SABLE_TELEGRAM_SESSION_PATH", DEFAULT_SESSION_PATH)
-    ).expanduser()
+    session_path = pathlib.Path(default_telegram_session_path()).expanduser()
     return TelegramConfig(
         api_id=normalize_text(os.environ.get("SABLE_TELEGRAM_API_ID")),
         api_hash=normalize_text(os.environ.get("SABLE_TELEGRAM_API_HASH")),
         phone=normalize_text(os.environ.get("SABLE_TELEGRAM_PHONE")),
         session_path=session_path,
     )
+
+
+def default_telegram_session_path(env: dict[str, str] | None = None) -> str:
+    active_env = os.environ if env is None else env
+    explicit_path = normalize_text(active_env.get("SABLE_TELEGRAM_SESSION_PATH"))
+    if explicit_path:
+        return explicit_path
+    instance = create_instance_config(env=active_env)
+    return str(pathlib.Path(instance.home_dir) / ".local" / "state" / "sable-telegram" / "telethon.session")
 
 
 def normalize_text(value: str | None) -> str | None:

@@ -11,6 +11,7 @@
     "test:e2e": "node --test tests/e2e/*.test.js",
     "test:doctor": "node --test tests/sable-doctor.test.js",
     "test:instance": "node --test tests/instance-config.test.js",
+    "test:instance:py": "python3 -m unittest tests/test_instance_config.py",
     "test:plugins": "node --test tests/plugin-manifest.test.js",
     "test:scheduler": "node --test tests/scheduler-cli.test.js",
     "test:kb": "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js",

@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs");
+const path = require("path");
 
 const DAY_NAMES = [
   "sunday",
@@ -26,6 +27,7 @@ function loadSchedulerJobs(filePath) {
 }
 
 function saveSchedulerJobs(filePath, jobs) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify({ jobs }, null, 2)}\n`, "utf8");
 }
 

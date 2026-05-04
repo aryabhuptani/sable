@@ -5,19 +5,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import sys
 import time
 import urllib.request
 import uuid
 from datetime import datetime, time as clock_time
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.instance.instance_config import create_instance_config
 
 HA_URL = "http://127.0.0.1:8123"
-BRIDGE_DIR = Path("/home/arya/projects/sable/apps/signal-bridge")
+BRIDGE_DIR = Path(create_instance_config(env={}).signal_bridge_dir)
 BRIDGE_ENV = BRIDGE_DIR / ".env"
 QUEUE_PENDING = BRIDGE_DIR / ".attachment-queue" / "pending"
-STATE_PATH = Path("/home/arya/projects/sable/.state/humidifier_low_water_signal.json")
+STATE_PATH = (
+    Path(create_instance_config(env={}).repo_root)
+    / ".state"
+    / "humidifier_low_water_signal.json"
+)
 HUMIDITY_ENTITY = "sensor.levoit_humidifier_humidity"
 LOW_WATER_ENTITY = "binary_sensor.levoit_humidifier_low_water"
 COOLDOWN_SECONDS = 6 * 60 * 60
@@ -37,6 +48,25 @@ print(jwt.encode({'iss':rt['id'],'iat':now,'exp':now+int(rt.get('access_token_ex
 """.strip()
 
 
+def bridge_dir() -> Path:
+    return Path(create_instance_config().signal_bridge_dir)
+
+
+def bridge_env_path() -> Path:
+    return bridge_dir() / ".env"
+
+
+def queue_pending_dir() -> Path:
+    return bridge_dir() / ".attachment-queue" / "pending"
+
+
+def state_path() -> Path:
+    override = os.environ.get("SABLE_HUMIDIFIER_LOW_WATER_STATE_PATH")
+    if override:
+        return Path(override)
+    return Path(create_instance_config().repo_root) / ".state" / STATE_PATH.name
+
+
 def load_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.exists():
@@ -51,7 +81,7 @@ def load_env(path: Path) -> dict[str, str]:
 
 
 def signal_recipient() -> str:
-    env = load_env(BRIDGE_ENV)
+    env = load_env(bridge_env_path())
     recipients = env.get("ALLOWED_NUMBERS") or env.get("ALLOWED_SENDERS") or ""
     for candidate in recipients.replace(",", " ").split():
         if candidate:
@@ -80,17 +110,19 @@ def get_states(token: str) -> dict[str, dict]:
 
 
 def load_state() -> dict:
-    if not STATE_PATH.exists():
+    path = state_path()
+    if not path.exists():
         return {}
     try:
-        return json.loads(STATE_PATH.read_text())
+        return json.loads(path.read_text())
     except json.JSONDecodeError:
         return {}
 
 
 def save_state(state: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
 
 def is_sleep_window(now: datetime | None = None) -> bool:
@@ -101,9 +133,10 @@ def is_sleep_window(now: datetime | None = None) -> bool:
 
 
 def queue_signal(message: str, recipient: str) -> Path:
-    QUEUE_PENDING.mkdir(parents=True, exist_ok=True)
+    pending_dir = queue_pending_dir()
+    pending_dir.mkdir(parents=True, exist_ok=True)
     request_id = f"humidifier-low-water-{int(time.time())}-{uuid.uuid4().hex[:8]}"
-    path = QUEUE_PENDING / f"{request_id}.json"
+    path = pending_dir / f"{request_id}.json"
     payload = {
         "id": request_id,
         "recipient": recipient,

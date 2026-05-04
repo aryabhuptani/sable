@@ -9,10 +9,11 @@ const {
   loadSchedulerJobs,
   saveSchedulerJobs,
 } = require("./scheduler");
+const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
 const DEFAULT_SCHEDULER_JOBS_PATH =
   process.env.SABLE_SCHEDULER_JOBS_PATH ||
-  "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json";
+  createInstanceConfig().schedulerJobsPath;
 const DEFAULT_SENDER =
   String(process.env.ALLOWED_NUMBERS || "")
     .split(",")

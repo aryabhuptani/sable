@@ -104,3 +104,36 @@ test("scheduler cli supports interval recurring workflows", async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("scheduler cli default jobs path follows instance config", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-instance-"));
+  const tasksRoot = path.join(tempDir, "tasks");
+  const filePath = path.join(tasksRoot, "projects", "sable", "scheduler-jobs.json");
+
+  try {
+    await runCli(
+      [
+        "add",
+        "--sender",
+        "+15551112222",
+        "--recurrence",
+        "daily",
+        "--time",
+        "8:00AM",
+        "--prompt",
+        "Run the morning brief",
+      ],
+      {
+        SABLE_TASKS_ROOT: tasksRoot,
+        SABLE_SCHEDULER_JOBS_PATH: "",
+      }
+    );
+
+    const stored = JSON.parse(await fs.readFile(filePath, "utf8"));
+    assert.equal(stored.jobs.length, 1);
+    assert.equal(stored.jobs[0].workflowPrompt, "Run the morning brief");
+    assert.equal(stored.jobs[0].recurrence.type, "daily");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});

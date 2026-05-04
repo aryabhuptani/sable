@@ -21,8 +21,13 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-DEFAULT_CONFIG_DIR = Path("/home/arya/homeassistant")
+from tools.instance.instance_config import create_instance_config
+
+DEFAULT_CONFIG_DIR = Path(create_instance_config(env={}).home_dir) / "homeassistant"
 DEFAULT_URL = "http://127.0.0.1:8123"
 SABLE_MANAGED_DESCRIPTION = "Managed by Sable homeassistant-cli"
 
@@ -292,10 +297,11 @@ class HomeAssistantCli:
 
     @classmethod
     def from_env(cls) -> "HomeAssistantCli":
+        instance_config = create_instance_config()
         config_dir = Path(
             os.environ.get("SABLE_HOME_ASSISTANT_CONFIG_DIR")
             or os.environ.get("HOME_ASSISTANT_CONFIG_DIR")
-            or DEFAULT_CONFIG_DIR
+            or Path(instance_config.home_dir) / "homeassistant"
         )
         automations_file = Path(
             os.environ.get("SABLE_HOME_ASSISTANT_AUTOMATIONS_FILE")

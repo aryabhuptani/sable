@@ -1,7 +1,9 @@
 import asyncio
 import importlib.util
+import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -146,6 +148,53 @@ class TelegramCliTests(unittest.TestCase):
     def test_validate_attachment_paths_rejects_missing_file(self):
         with self.assertRaises(SystemExit):
             telegram_cli.validate_attachment_paths(["/tmp/definitely-missing-telegram-attachment.pdf"])
+
+    def test_default_session_path_follows_instance_config(self):
+        self.assertEqual(
+            telegram_cli.default_telegram_session_path(env={}),
+            "/home/arya/.local/state/sable-telegram/telethon.session",
+        )
+        self.assertEqual(
+            telegram_cli.default_telegram_session_path(
+                env={"SABLE_INSTANCE_HOME": "/srv/alex"}
+            ),
+            "/srv/alex/.local/state/sable-telegram/telethon.session",
+        )
+        self.assertEqual(
+            telegram_cli.default_telegram_session_path(
+                env={
+                    "SABLE_INSTANCE_HOME": "/srv/alex",
+                    "SABLE_TELEGRAM_SESSION_PATH": "/data/alex/telegram.session",
+                }
+            ),
+            "/data/alex/telegram.session",
+        )
+
+    def test_load_config_uses_instance_session_default(self):
+        original_env_path = telegram_cli.DEFAULT_ENV_PATH
+        original_environ = dict(os.environ)
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                telegram_cli.DEFAULT_ENV_PATH = pathlib.Path(temp_dir) / "missing.env"
+                os.environ.clear()
+                os.environ.update(
+                    {
+                        "SABLE_INSTANCE_HOME": "/srv/alex",
+                        "SABLE_TELEGRAM_API_ID": "123",
+                        "SABLE_TELEGRAM_API_HASH": "hash",
+                        "SABLE_TELEGRAM_PHONE": "+15551112222",
+                    }
+                )
+                config = telegram_cli.load_config()
+        finally:
+            telegram_cli.DEFAULT_ENV_PATH = original_env_path
+            os.environ.clear()
+            os.environ.update(original_environ)
+
+        self.assertEqual(config.session_path, pathlib.Path("/srv/alex/.local/state/sable-telegram/telethon.session"))
+        self.assertEqual(config.api_id, "123")
+        self.assertEqual(config.api_hash, "hash")
+        self.assertEqual(config.phone, "+15551112222")
 
     def test_mark_read_command_dispatches_with_limit(self):
         captured = {}

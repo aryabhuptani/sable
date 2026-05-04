@@ -40,6 +40,7 @@ function createInstanceConfig({
     skillsRoot,
     projectKnowledgeRoot: path.join(knowledgeRoot, "projects", "sable"),
     projectTasksPath: path.join(tasksRoot, "projects", "sable", "TODO.md"),
+    schedulerJobsPath: path.join(tasksRoot, "projects", "sable", "scheduler-jobs.json"),
   };
 }
 

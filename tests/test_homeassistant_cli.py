@@ -1,8 +1,10 @@
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = "/home/arya/projects/sable/tools/homeassistant/homeassistant_cli.py"
@@ -52,6 +54,44 @@ class HomeAssistantCliTests(unittest.TestCase):
                 "from": "not_home",
             },
         )
+
+    def test_from_env_uses_instance_home_for_default_config_dir(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SABLE_INSTANCE_HOME": "/srv/not-arya",
+                "SABLE_REPO_ROOT": "/srv/not-arya/sable",
+            },
+            clear=True,
+        ):
+            cli = homeassistant_cli.HomeAssistantCli.from_env()
+
+        self.assertEqual(cli.paths.config_dir, Path("/srv/not-arya/homeassistant"))
+        self.assertEqual(
+            cli.paths.automations_file,
+            Path("/srv/not-arya/homeassistant/automations.yaml"),
+        )
+        self.assertEqual(
+            cli.paths.scenes_file,
+            Path("/srv/not-arya/homeassistant/scenes.yaml"),
+        )
+
+    def test_from_env_keeps_direct_home_assistant_overrides(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SABLE_INSTANCE_HOME": "/srv/not-arya",
+                "SABLE_HOME_ASSISTANT_CONFIG_DIR": "/var/lib/ha",
+                "SABLE_HOME_ASSISTANT_AUTOMATIONS_FILE": "/tmp/custom-automations.yaml",
+                "SABLE_HOME_ASSISTANT_SCENES_FILE": "/tmp/custom-scenes.yaml",
+            },
+            clear=True,
+        ):
+            cli = homeassistant_cli.HomeAssistantCli.from_env()
+
+        self.assertEqual(cli.paths.config_dir, Path("/var/lib/ha"))
+        self.assertEqual(cli.paths.automations_file, Path("/tmp/custom-automations.yaml"))
+        self.assertEqual(cli.paths.scenes_file, Path("/tmp/custom-scenes.yaml"))
 
     def test_add_and_remove_managed_schedule_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
