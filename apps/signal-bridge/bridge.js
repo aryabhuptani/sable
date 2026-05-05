@@ -47,10 +47,8 @@ const { createSignalRpcSession } = require("./signal-rpc-session");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
 const { createVoiceNotePlugin } = require("./voice-note-plugin");
 const {
-  dedupeStrings,
   delay,
   formatProgressMessage,
-  formatSlugForDisplay,
   formatUnitSummary,
   isInvalidSessionError,
   mergePromptSegments,
