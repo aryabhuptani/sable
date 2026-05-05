@@ -12,6 +12,8 @@ const {
   createInstanceConfig,
   redactInstancePath,
 } = require("../instance/instance-config");
+const { getInstanceEnvPath } = require("../instance/init-instance");
+const { getUserServicePath, SERVICE_NAME } = require("../service/user-service");
 
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -35,9 +37,11 @@ function buildDoctorReport({
 
   checks.push(checkCommand("codex", commandExists));
   checks.push(checkRunnerConfig(resolvedRepoRoot, env, instance));
+  checks.push(checkCodexHomeWritable(env, instance));
   checks.push(checkBridgeRuntimePaths(env, instance));
   checks.push(...checkPluginRegistry(resolvedRepoRoot));
   checks.push(...checkLocalInstance(instance));
+  checks.push(...checkServiceInstall(env, instance));
   checks.push(...checkConfigPresence(resolvedRepoRoot));
 
   return {
@@ -84,6 +88,35 @@ function checkRunnerConfig(repoRoot, env, instance) {
       homeDir: instance.homeDir,
     })}`
   );
+}
+
+function checkCodexHomeWritable(env, instance) {
+  const bridgeEnvPath = path.join(instance.repoRoot, "apps", "signal-bridge", ".env");
+  const envSummary = readEnvSummary(bridgeEnvPath);
+  const configuredCodexHome =
+    env.CODEX_HOME ||
+    (envSummary.CODEX_HOME === "[present]" ? "" : envSummary.CODEX_HOME) ||
+    path.join(instance.homeDir, ".codex-bridge");
+
+  const codexHome = configuredCodexHome || path.join(instance.homeDir, ".codex-bridge");
+  try {
+    if (!fs.existsSync(codexHome)) {
+      return warn(
+        "runner:codex-home",
+        `${redactInstancePath(codexHome, { homeDir: instance.homeDir })} does not exist yet`
+      );
+    }
+    fs.accessSync(codexHome, fs.constants.W_OK);
+    return pass(
+      "runner:codex-home",
+      `${redactInstancePath(codexHome, { homeDir: instance.homeDir })} is writable`
+    );
+  } catch (error) {
+    return fail(
+      "runner:codex-home",
+      `${redactInstancePath(codexHome, { homeDir: instance.homeDir })} is not writable`
+    );
+  }
 }
 
 function checkBridgeRuntimePaths(env, instance) {
@@ -148,8 +181,69 @@ function checkLocalInstance(instance) {
     checkPath("instance:AGENTS", instance.agentsPath, "file"),
     checkPath("instance:TODO", instance.todoPath, "file"),
     checkPath("instance:memory", instance.memoryRoot, "dir"),
+    checkPath("instance:knowledge", instance.knowledgeRoot, "dir"),
+    checkPath("instance:tasks", instance.tasksRoot, "dir"),
     checkPath("instance:skills", instance.skillsRoot, "dir"),
+    checkOptionalInstancePath("instance:codex-home", path.join(instance.homeDir, ".codex"), "dir", instance),
+    checkOptionalInstancePath("instance:codex-bridge-home", path.join(instance.homeDir, ".codex-bridge"), "dir", instance),
+    checkOptionalInstancePath("instance:plugins", path.join(instance.homeDir, "plugins"), "dir", instance),
+    checkOptionalInstancePath("instance:env", getInstanceEnvPath(instance), "file", instance),
+    checkPrivateStateBoundary(instance),
   ];
+}
+
+function checkOptionalInstancePath(name, targetPath, expectedType, instance) {
+  const check = checkPath(name, targetPath, expectedType);
+  if (check.status === "fail") {
+    return warn(name, redactInstancePath(check.detail, { homeDir: instance.homeDir }));
+  }
+  return {
+    ...check,
+    detail: redactInstancePath(check.detail, { homeDir: instance.homeDir }),
+  };
+}
+
+function checkPrivateStateBoundary(instance) {
+  const repoRoot = path.resolve(instance.repoRoot);
+  const privatePaths = [
+    instance.homeDir,
+    instance.memoryRoot,
+    instance.tasksRoot,
+    instance.skillsRoot,
+    path.join(instance.homeDir, "plugins"),
+  ].map((entry) => path.resolve(entry));
+
+  const insideRepo = privatePaths.filter(
+    (entry) => entry === repoRoot || entry.startsWith(`${repoRoot}${path.sep}`)
+  );
+  if (insideRepo.length > 0) {
+    return fail(
+      "instance:private-boundary",
+      `private paths are inside the repo: ${insideRepo
+        .map((entry) => redactInstancePath(entry, { homeDir: instance.homeDir }))
+        .join(", ")}`
+    );
+  }
+  return pass("instance:private-boundary", "private instance paths are outside the repo");
+}
+
+function checkServiceInstall(env, instance) {
+  const servicePath = getUserServicePath({ env });
+  const checks = [checkPath("service:user-unit", servicePath, "file")];
+  if (!fs.existsSync(servicePath)) {
+    checks[0] = warn("service:user-unit", `${servicePath} is not installed`);
+    return checks;
+  }
+
+  const unit = fs.readFileSync(servicePath, "utf8");
+  const hasExpectedService = unit.includes(SERVICE_NAME) || unit.includes("Sable Signal bridge");
+  const hasInstanceEnv = unit.includes(getInstanceEnvPath(instance));
+  if (!hasExpectedService || !hasInstanceEnv) {
+    checks.push(warn("service:user-unit-content", "service exists but does not look like the current Sable unit"));
+  } else {
+    checks.push(pass("service:user-unit-content", "service unit references the current instance env"));
+  }
+  return checks;
 }
 
 function checkConfigPresence(repoRoot) {
@@ -157,8 +251,10 @@ function checkConfigPresence(repoRoot) {
   const telegramEnvPath = path.join(repoRoot, "tools", "telegram", ".env");
   const checks = [];
 
-  checks.push(checkSecretFileSummary("config:signal-bridge-env", bridgeEnvPath, ["ALLOWED_NUMBERS", "CODEX_HOME"]));
+  checks.push(checkSecretFileSummary("config:signal-bridge-env", bridgeEnvPath, ["PHONE_NUMBER", "ALLOWED_NUMBERS", "CODEX_HOME"]));
   checks.push(checkSecretFileSummary("config:telegram-env", telegramEnvPath, ["TELEGRAM_API_ID", "TELEGRAM_API_HASH"]));
+  checks.push(checkPath("config:signal-bridge-env-example", path.join(repoRoot, "apps", "signal-bridge", ".env.example"), "file"));
+  checks.push(checkPath("config:telegram-env-example", path.join(repoRoot, "tools", "telegram", ".env.example"), "file"));
 
   return checks;
 }
@@ -318,5 +414,9 @@ module.exports = {
   formatDoctorReport,
   parseArgs,
   readEnvSummary,
+  checkCodexHomeWritable,
   checkBridgeRuntimePaths,
+  checkLocalInstance,
+  checkPrivateStateBoundary,
+  checkServiceInstall,
 };

@@ -25,6 +25,7 @@ const suites = [
       "tests/bridge-test-support.test.js",
       "tests/bridge-utils.test.js",
       "tests/codex-session-reader.test.js",
+      "tests/init-instance.test.js",
       "tests/job-control.test.js",
       "tests/live-update-channel.test.js",
       "tests/obsidian-link-plugin.test.js",
@@ -40,6 +41,7 @@ const suites = [
       "tests/voice-note-plugin.test.js",
       "tests/test_bridge_commands.js",
       "tests/test_signal_attachment_cli.js",
+      "tests/user-service.test.js",
     ],
   },
   {

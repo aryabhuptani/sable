@@ -4,6 +4,46 @@ This guide is for installing Sable as a local-first personal agent runtime on a 
 
 The `/home/arya/...` paths in this repository are Arya's current minipc layout. Treat them as examples. Your install should set its own `SABLE_INSTANCE_HOME` and related paths.
 
+## Fast Path: Run Sable Today
+
+This is the shortest path for a trusted early user who wants a real local Sable process, not just a repo tour.
+
+```bash
+git clone <sable-repo-url> ~/projects/sable
+cd ~/projects/sable
+npm install
+npm run init:instance -- --instance-home "$HOME/sable-instance"
+cp apps/signal-bridge/.env.example apps/signal-bridge/.env
+```
+
+Edit `apps/signal-bridge/.env` with your Signal number, allowed sender number, and generated instance paths. The private instance env is generated at:
+
+```bash
+$HOME/sable-instance/.config/sable/sable.env
+```
+
+Then validate and install the service:
+
+```bash
+npm run sable:doctor -- --home-dir "$HOME/sable-instance"
+npm run install:user-service -- --instance-home "$HOME/sable-instance"
+npm run service:start -- --instance-home "$HOME/sable-instance"
+npm run service:status -- --instance-home "$HOME/sable-instance"
+```
+
+Send a Signal message to the Sable number. Once it replies, check:
+
+```text
+/ops
+/bridgestatus
+```
+
+If the bridge fails to start, read logs with:
+
+```bash
+journalctl --user -u sable-signal-bridge.service -f
+```
+
 ## Current Shape
 
 Sable is still a single repo with descriptive plugin manifests, not a polished package manager install. The public-ish code lives in the checkout. Your memory, tasks, secrets, Signal account state, Telegram session, Home Assistant config, Typefully credentials, and generated runtime state belong in your local instance home.
@@ -59,31 +99,21 @@ The PDF and speech-to-text dependencies are only needed for the Signal bridge at
 
 ## Create Instance State
 
-Pick an instance home and create the local directories Sable expects:
+Pick an instance home and let Sable create the local directories it expects:
 
 ```bash
-export SABLE_INSTANCE_HOME="$HOME/sable-instance"
-mkdir -p "$SABLE_INSTANCE_HOME"/{memory/knowledge,memory/tasks,skills,.codex,.codex-bridge}
-touch "$SABLE_INSTANCE_HOME/AGENTS.md" "$SABLE_INSTANCE_HOME/TODO.md"
+npm run init:instance -- --instance-home "$HOME/sable-instance"
 ```
 
-Recommended baseline environment:
+The initializer is conservative. It creates missing directories and starter files, but it does not overwrite existing notes unless you pass `--force`; generated files such as scheduler jobs can be regenerated with `--reset-generated`.
+
+The generated private env file contains the baseline environment:
 
 ```bash
-export SABLE_REPO_ROOT="$HOME/projects/sable"
-export SABLE_MEMORY_ROOT="$SABLE_INSTANCE_HOME/memory"
-export SABLE_KNOWLEDGE_ROOT="$SABLE_INSTANCE_HOME/memory/knowledge"
-export SABLE_TASKS_ROOT="$SABLE_INSTANCE_HOME/memory/tasks"
-export SABLE_SKILLS_ROOT="$SABLE_INSTANCE_HOME/skills"
-export SABLE_CODEX_CWD="$SABLE_INSTANCE_HOME"
-export SABLE_SCHEDULER_JOBS_PATH="$SABLE_INSTANCE_HOME/memory/tasks/projects/sable/scheduler-jobs.json"
-export SABLE_RESEARCH_ROOT="$SABLE_INSTANCE_HOME/memory/knowledge/research"
-export SABLE_AUTOTWEET_ROOT="$SABLE_INSTANCE_HOME/memory/knowledge/projects/sable/autotweet"
-export SABLE_SIGNAL_BRIDGE_DIR="$SABLE_REPO_ROOT/apps/signal-bridge"
-export CODEX_HOME="$SABLE_INSTANCE_HOME/.codex-bridge"
+$HOME/sable-instance/.config/sable/sable.env
 ```
 
-For a persistent install, put those exports in your shell profile, service environment, or a private env file loaded by your process supervisor. Do not bake them into tracked repo files.
+For a persistent install, the user-level service loads that env file. Do not bake private paths or secrets into tracked repo files.
 
 Instance config currently recognizes these path overrides:
 
@@ -118,6 +148,8 @@ SABLE_TASKS_ROOT=/home/example/sable-instance/memory/tasks
 SABLE_KNOWLEDGE_ROOT=/home/example/sable-instance/memory/knowledge
 ```
 
+Use `apps/signal-bridge/.env.example` as the starting point. Keep the real `.env` ignored and private.
+
 Create Telegram config at `tools/telegram/.env` only if you are enabling Telegram:
 
 ```dotenv
@@ -126,6 +158,8 @@ SABLE_TELEGRAM_API_HASH=your_api_hash
 SABLE_TELEGRAM_PHONE=+15551112222
 SABLE_TELEGRAM_SESSION_PATH=/home/example/sable-instance/.local/state/sable-telegram/telethon.session
 ```
+
+Use `tools/telegram/.env.example` as the starting point.
 
 For Home Assistant and Typefully, prefer process environment or a private secret manager:
 
@@ -271,23 +305,37 @@ Keep unpublished drafts, account IDs, style notes, and suggestions in your insta
 
 ## Running as a Service
 
-For a personal machine, use a user-level service or a small process supervisor. The service should:
-
-- run from `<repo>/apps/signal-bridge`
-- load `apps/signal-bridge/.env` and your instance environment
-- keep `CODEX_HOME` writable
-- keep `SABLE_CODEX_CWD` pointed at your instance home or chosen workspace
-- restart the bridge after env changes
-
-On Linux with systemd user services, the operational loop is:
+For a personal machine, prefer the provided user-level systemd service on Linux:
 
 ```bash
-systemctl --user status signal-codex-bridge.service
-systemctl --user restart signal-codex-bridge.service
-journalctl --user -u signal-codex-bridge.service -f
+npm run install:user-service -- --instance-home "$HOME/sable-instance"
+npm run service:start -- --instance-home "$HOME/sable-instance"
+npm run service:status -- --instance-home "$HOME/sable-instance"
 ```
 
-The exact unit file is instance-specific because paths and secret loading differ per person.
+The service:
+
+- runs from `<repo>/apps/signal-bridge`
+- loads `<instance-home>/.config/sable/sable.env`
+- loads `<repo>/apps/signal-bridge/.env`
+- keeps `CODEX_HOME` pointed at the private instance
+- restarts on bridge failure
+
+Operational commands:
+
+```bash
+npm run service:restart -- --instance-home "$HOME/sable-instance"
+npm run service:stop -- --instance-home "$HOME/sable-instance"
+npm run uninstall:user-service -- --instance-home "$HOME/sable-instance"
+journalctl --user -u sable-signal-bridge.service -f
+```
+
+To inspect the generated unit without installing it:
+
+```bash
+node tools/service/user-service.js render --instance-home "$HOME/sable-instance"
+node tools/service/user-service.js install --instance-home "$HOME/sable-instance" --dry-run
+```
 
 ## Updates and Contributions
 

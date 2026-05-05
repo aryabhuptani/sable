@@ -6,12 +6,16 @@ const test = require("node:test");
 
 const {
   buildDoctorReport,
+  checkCodexHomeWritable,
   checkBridgeRuntimePaths,
+  checkPrivateStateBoundary,
+  checkServiceInstall,
   formatDoctorReport,
   parseArgs,
   readEnvSummary,
 } = require("../tools/doctor/sable-doctor");
 const { createInstanceConfig } = require("../tools/instance/instance-config");
+const { getInstanceEnvPath } = require("../tools/instance/init-instance");
 
 test("doctor reports the current repo as healthy enough for migration work", () => {
   const report = buildDoctorReport({
@@ -21,9 +25,11 @@ test("doctor reports the current repo as healthy enough for migration work", () 
   assert.equal(report.ok, true);
   assert.ok(report.checks.some((check) => check.name === "command:codex" && check.status === "pass"));
   assert.ok(report.checks.some((check) => check.name === "plugins" && check.status === "pass"));
-  assert.ok(report.checks.some((check) => check.name === "runner:codex-cli" && check.status === "pass"));
-  assert.ok(report.checks.some((check) => check.name === "bridge:runtime-paths" && check.status === "pass"));
-  assert.ok(report.checks.some((check) => check.name === "instance:python-config" && check.status === "pass"));
+    assert.ok(report.checks.some((check) => check.name === "runner:codex-cli" && check.status === "pass"));
+    assert.ok(report.checks.some((check) => check.name === "runner:codex-home"));
+    assert.ok(report.checks.some((check) => check.name === "bridge:runtime-paths" && check.status === "pass"));
+    assert.ok(report.checks.some((check) => check.name === "instance:python-config" && check.status === "pass"));
+    assert.ok(report.checks.some((check) => check.name === "config:signal-bridge-env-example" && check.status === "pass"));
 });
 
 test("doctor redacts env contents and reports only key presence", async () => {
@@ -55,6 +61,8 @@ test("doctor fails when migration-critical repo files are missing", async () => 
 
   try {
     await fs.mkdir(path.join(tempHome, "memory"), { recursive: true });
+    await fs.mkdir(path.join(tempHome, "memory", "knowledge"), { recursive: true });
+    await fs.mkdir(path.join(tempHome, "memory", "tasks"), { recursive: true });
     await fs.mkdir(path.join(tempHome, "skills"), { recursive: true });
     await fs.writeFile(path.join(tempHome, "AGENTS.md"), "# Agent\n", "utf8");
     await fs.writeFile(path.join(tempHome, "TODO.md"), "# Todo\n", "utf8");
@@ -119,6 +127,48 @@ test("doctor reports bridge runtime paths through active instance config", () =>
   assert.match(check.detail, /schedulerJobsPath=\/data\/alex\/tasks\/projects\/sable\/scheduler-jobs.json/);
   assert.match(check.detail, /researchRoot=\/data\/alex\/memory\/knowledge\/research/);
   assert.doesNotMatch(check.detail, /\/srv\/alex\/workspace/);
+});
+
+test("doctor reports initialized instance, service, and codex-home details", async () => {
+  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "sable-doctor-home-"));
+  const tempConfig = await fs.mkdtemp(path.join(os.tmpdir(), "sable-doctor-systemd-"));
+
+  try {
+    const instance = createInstanceConfig({
+      homeDir: tempHome,
+      repoRoot: "/opt/sable",
+    });
+    await fs.mkdir(instance.knowledgeRoot, { recursive: true });
+    await fs.mkdir(instance.tasksRoot, { recursive: true });
+    await fs.mkdir(instance.skillsRoot, { recursive: true });
+    await fs.mkdir(path.join(instance.homeDir, ".codex-bridge"), { recursive: true });
+    await fs.mkdir(path.join(instance.homeDir, "plugins"), { recursive: true });
+    await fs.mkdir(path.dirname(getInstanceEnvPath(instance)), { recursive: true });
+    await fs.writeFile(getInstanceEnvPath(instance), "SABLE_INSTANCE_HOME=/tmp/example\n", "utf8");
+
+    const codexCheck = checkCodexHomeWritable({}, instance);
+    assert.equal(codexCheck.status, "pass");
+
+    const boundaryCheck = checkPrivateStateBoundary(instance);
+    assert.equal(boundaryCheck.status, "pass");
+
+    const serviceChecks = checkServiceInstall({ XDG_CONFIG_HOME: tempConfig }, instance);
+    assert.equal(serviceChecks[0].status, "warn");
+  } finally {
+    await fs.rm(tempHome, { recursive: true, force: true });
+    await fs.rm(tempConfig, { recursive: true, force: true });
+  }
+});
+
+test("doctor fails private boundary when instance state is inside repo", () => {
+  const instance = createInstanceConfig({
+    homeDir: "/tmp/repo/private-instance",
+    repoRoot: "/tmp/repo",
+  });
+  const check = checkPrivateStateBoundary(instance);
+
+  assert.equal(check.status, "fail");
+  assert.match(check.detail, /private paths are inside the repo/);
 });
 
 test("doctor argument parser supports json and path overrides", () => {

@@ -32,6 +32,13 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:humidifier"], "python3 -m unittest tests/test_humidifier_low_water_signal.py");
   assert.equal(pkg.scripts["test:telegram"], "python3 -m unittest tests/test_telegram_cli.py");
   assert.equal(pkg.scripts["test:signal-attachment"], "node --test tests/test_signal_attachment_cli.js");
+  assert.equal(pkg.scripts["init:instance"], "node tools/instance/init-instance.js");
+  assert.equal(pkg.scripts["install:user-service"], "node tools/service/user-service.js install");
+  assert.equal(pkg.scripts["uninstall:user-service"], "node tools/service/user-service.js uninstall");
+  assert.equal(pkg.scripts["service:restart"], "node tools/service/user-service.js restart");
+  assert.equal(pkg.scripts["service:start"], "node tools/service/user-service.js start");
+  assert.equal(pkg.scripts["service:status"], "node tools/service/user-service.js status");
+  assert.equal(pkg.scripts["service:stop"], "node tools/service/user-service.js stop");
 });
 
 test("current Sable core candidates are present before architecture extraction", () => {
@@ -77,8 +84,13 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/plugins/plugin-manifest.js",
     "tools/doctor/sable-doctor.js",
     "tools/instance/instance-config.js",
+    "tools/instance/init-instance.js",
     "tools/instance/instance_config.py",
+    "tools/service/user-service.js",
     "tools/signal/send_attachment.js",
+    "apps/signal-bridge/.env.example",
+    "tools/telegram/.env.example",
+    "tools/instance/templates/sable.env.example",
     "docs/community-install.md",
     "docs/sable-architecture-migration-checklist.md",
     "plugins/schema/plugin-manifest.schema.json",
