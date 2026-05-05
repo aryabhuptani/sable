@@ -43,6 +43,8 @@ const suites = [
       "tests/voice-note-plugin.test.js",
       "tests/test_bridge_commands.js",
       "tests/test_signal_attachment_cli.js",
+      "tests/shareability-check.test.js",
+      "tests/upgrade.test.js",
       "tests/user-service.test.js",
     ],
   },

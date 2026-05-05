@@ -2,13 +2,25 @@
 
 Sable is Arya's local-first automation and messaging stack on the minipc.
 
+Current status: developer preview. Sable is still a single repo with private instance state kept outside the checkout, a Signal-first bridge, Codex CLI under the hood, and plugin API v1 for local command plugins. Trusted friends can start running it now, but it is still an early local-first system rather than a polished package.
+
 Runtime paths are centralized through `tools/instance/instance-config.js` and can be overridden with environment variables. The `/home/arya/...` paths below document Arya's current minipc layout; they are examples, not assumptions every install must inherit.
 
-For fresh local setup, see `docs/community-install.md`.
+Fast path:
+
+```bash
+npm install
+npm run init:instance -- --instance-home "$HOME/sable-instance"
+npm run sable:doctor -- --home-dir "$HOME/sable-instance"
+```
+
+For fresh local setup, see `docs/community-install.md`. For upgrades, see `docs/upgrade.md`. For contributing, see `CONTRIBUTING.md`.
 
 ## Layout
 
 - `apps/signal-bridge/`: the live Signal bridge service
+- `plugins/`: official plugin manifests and upstreamable plugin scaffolds
+- `tools/`: install, upgrade, diagnostics, plugin, and integration tooling
 - `tests/e2e/`: black-box end-to-end tests for the bridge
 - `knowledge/`: symlink to canonical project knowledge in `/home/arya/memory/knowledge/projects/sable/`
 - `TASKS.md`: symlink to canonical project tasks in `/home/arya/memory/tasks/projects/sable/TODO.md`
@@ -28,6 +40,8 @@ Current boundaries:
   - `/ops`, `/bridgestatus`, snapshot/history writing, and alert logic
 - `apps/signal-bridge/bridge-codex-client.js`
   - Codex app-server transport/client plumbing
+- `apps/signal-bridge/plugin-runtime.js`
+  - plugin API v1 discovery, local command registration, and `/plugins`
 
 Refactor policy:
 
@@ -56,7 +70,25 @@ Current Arya defaults come from instance config and can be overridden per deploy
 - `SABLE_RESEARCH_ROOT`: research KB root, default `/home/arya/memory/knowledge/research`
 - `SABLE_TELEGRAM_CLI_PATH`: Telegram CLI, default `/home/arya/projects/sable/tools/telegram/telegram_cli.py`
 - `SABLE_OBSIDIAN_VAULT_ROOT` / `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian vault link target, default root `/home/arya/memory`
+- `SABLE_PLUGIN_PATHS`: extra local plugin roots, default includes `<instance-home>/plugins`
 - `VOICE_NOTES_MODEL_PATH`: local faster-whisper model path, default `/home/arya/models/faster-whisper-base.en`
+
+## Developer Preview Commands
+
+- First-run instance setup:
+  `npm run init:instance -- --instance-home "$HOME/sable-instance"`
+- Doctor:
+  `npm run sable:doctor`
+- User service:
+  `npm run install:user-service`, `npm run service:start`, `npm run service:status`
+- Local plugin scaffold:
+  `npm run plugin:create -- --id local-hello --target local`
+- Guarded upgrade:
+  `npm run upgrade:check`, then `npm run upgrade`
+- Shareability scan:
+  `npm run shareability:check`
+- Community test aggregate:
+  `npm run test:community`
 
 ## Knowledge Base V0
 

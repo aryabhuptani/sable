@@ -187,6 +187,19 @@ npm run test:smoke
 
 If you only changed local secrets or instance paths, run doctor first. If you changed code or plugin manifests, run smoke before proposing or merging the change.
 
+## Upgrade Safely
+
+Once installed, use the guarded upgrade flow instead of an unreviewed pull:
+
+```bash
+npm run upgrade:check
+npm run upgrade
+```
+
+The upgrade command refuses dirty repo state, fast-forwards from upstream, runs checks, and restarts the user service only after checks pass. It does not overwrite your instance home or local plugins.
+
+See `docs/upgrade.md` for recovery steps and smoke-level options.
+
 ## Optional Plugin Setup
 
 Plugin manifests live under `plugins/*/plugin.json` for official plugins and `<instance-home>/plugins/*/plugin.json` for local plugins. Official plugins are upstreamable. Local plugins are for one person's Sable and should survive repo pulls because they live outside the checkout.
