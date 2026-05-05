@@ -33,6 +33,7 @@
     "ha:cli": "python3 tools/homeassistant/homeassistant_cli.py",
     "telegram:cli": "python3 tools/telegram/telegram_cli.py",
     "signal:attach": "node tools/signal/send_attachment.js",
+    "obsidian:ensure-serve": "node tools/obsidian-link/ensure-serve.js",
     "shareability:check": "node tools/shareability/check.js",
     "sable:doctor": "node tools/doctor/sable-doctor.js",
     "upgrade": "node tools/upgrade/upgrade.js run",
