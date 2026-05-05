@@ -6,10 +6,15 @@ function parseCommand(
     hasImages = false,
     hasAudio = false,
     hasFiles = false,
+    pluginRuntime = null,
     telegramTriageLimit = 25,
   } = {}
 ) {
   const trimmed = normalizeText(text).trim();
+  if (trimmed === "/plugins" || trimmed === "/pluginstatus") {
+    return { type: "plugin-status" };
+  }
+
   if (trimmed === "/bridgestatus") {
     return { type: "status" };
   }
@@ -61,6 +66,11 @@ function parseCommand(
       type: "telegram-triage",
       limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : telegramTriageLimit,
     };
+  }
+
+  const pluginCommand = pluginRuntime?.parsePluginCommand?.(trimmed);
+  if (pluginCommand) {
+    return pluginCommand;
   }
 
   if (trimmed !== "/new" && !trimmed.startsWith("/new ")) {

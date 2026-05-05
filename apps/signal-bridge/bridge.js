@@ -30,6 +30,7 @@ const {
   createPluginAuthManager,
   normalizePendingPluginAuth,
 } = require("./plugin-auth-manager");
+const { createPluginRuntime } = require("./plugin-runtime");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
 const {
   cancelJobControl,
@@ -186,6 +187,13 @@ const voiceNotes = createVoiceNotePlugin({
 const signalProfile = createSignalProfilePlugin({
   sendSignalRequest,
 });
+const pluginRuntime = createPluginRuntime({
+  env: process.env,
+  instanceConfig: INSTANCE_CONFIG,
+  logger: console,
+  repoRoot: INSTANCE_CONFIG.repoRoot,
+  sendReply,
+});
 const scheduledAttachmentDiscovery = createScheduledAttachmentDiscovery({
   maxImages: MAX_SCHEDULED_LOCAL_IMAGES,
   maxImageBytes: MAX_SCHEDULED_LOCAL_IMAGE_BYTES,
@@ -336,6 +344,7 @@ queueRuntime = createBridgeQueueRuntime({
     await lifecycle?.restartIfRequested();
   },
   parseCommand,
+  pluginRuntime,
   schedulerRuntime,
   sendReply,
   signalAttachments,
@@ -429,6 +438,7 @@ jobRuntime = createBridgeJobRuntime({
   mergePromptSegments,
   normalizeText,
   pluginAuth,
+  pluginRuntime,
   runCodex,
   saveSessionId: (key, sessionId) => {
     state[key] = sessionId;

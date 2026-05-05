@@ -3,6 +3,7 @@
   "id": "memory-obsidian",
   "name": "Memory and Obsidian",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "memory",
   "description": "Local markdown memory conventions and Obsidian/Tailscale note-link rewriting for Signal replies.",

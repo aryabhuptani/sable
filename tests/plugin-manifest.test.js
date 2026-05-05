@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  validateDiscoveredPluginRegistry,
   loadPluginManifests,
   validatePluginManifest,
   validatePluginRegistry,
@@ -30,6 +31,7 @@ test("plugin validator rejects missing capabilities and private Arya paths", () 
       id: "bad-plugin",
       name: "Bad Plugin",
       version: "0.1.0",
+      pluginApiVersion: 1,
       status: "descriptive",
       category: "test",
       description: "Invalid on purpose.",
@@ -66,11 +68,36 @@ test("plugin registry validator rejects duplicate IDs", () => {
   assert.ok(errors.some((error) => error.includes("duplicate plugin id duplicate-plugin")));
 });
 
+test("discovered plugin registry permits local namespaced plugins but rejects shadowing", () => {
+  const entries = [
+    {
+      source: "official",
+      manifestPath: "plugins/telegram-review/plugin.json",
+      manifest: validManifest("telegram-review"),
+    },
+    {
+      source: "local",
+      manifestPath: "/tmp/local-hello/plugin.json",
+      manifest: validManifest("local-hello"),
+    },
+    {
+      source: "local",
+      manifestPath: "/tmp/telegram-review/plugin.json",
+      manifest: validManifest("telegram-review"),
+    },
+  ];
+
+  const errors = validateDiscoveredPluginRegistry(entries);
+  assert.ok(errors.some((error) => error.includes("shadows official plugin")));
+  assert.ok(errors.some((error) => error.includes("must start with local-")));
+});
+
 function validManifest(id) {
   return {
     id,
     name: "Valid Plugin",
     version: "0.1.0",
+    pluginApiVersion: 1,
     status: "descriptive",
     category: "test",
     description: "Valid manifest for a test.",

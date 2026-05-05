@@ -24,7 +24,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:doctor"], "node --test tests/sable-doctor.test.js");
   assert.equal(pkg.scripts["test:instance"], "node --test tests/instance-config.test.js");
   assert.equal(pkg.scripts["test:instance:py"], "python3 -m unittest tests/test_instance_config.py");
-  assert.equal(pkg.scripts["test:plugins"], "node --test tests/plugin-manifest.test.js");
+  assert.equal(pkg.scripts["test:plugins"], "node --test tests/plugin-manifest.test.js tests/plugin-runtime.test.js tests/plugin-create.test.js");
   assert.equal(pkg.scripts["test:scheduler"], "node --test tests/scheduler-cli.test.js");
   assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js");
   assert.equal(pkg.scripts["test:autotweet"], "node --test tests/autotweet.test.js");
@@ -32,6 +32,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:humidifier"], "python3 -m unittest tests/test_humidifier_low_water_signal.py");
   assert.equal(pkg.scripts["test:telegram"], "python3 -m unittest tests/test_telegram_cli.py");
   assert.equal(pkg.scripts["test:signal-attachment"], "node --test tests/test_signal_attachment_cli.js");
+  assert.equal(pkg.scripts["plugin:create"], "node tools/plugins/create-plugin.js");
   assert.equal(pkg.scripts["init:instance"], "node tools/instance/init-instance.js");
   assert.equal(pkg.scripts["install:user-service"], "node tools/service/user-service.js install");
   assert.equal(pkg.scripts["uninstall:user-service"], "node tools/service/user-service.js uninstall");
@@ -62,6 +63,7 @@ test("current Sable core candidates are present before architecture extraction",
     "apps/signal-bridge/live-update-channel.js",
     "apps/signal-bridge/obsidian-link-plugin.js",
     "apps/signal-bridge/plugin-auth-manager.js",
+    "apps/signal-bridge/plugin-runtime.js",
     "apps/signal-bridge/runner-adapter.js",
     "apps/signal-bridge/scheduled-attachment-discovery.js",
     "apps/signal-bridge/signal-attachment-plugin.js",
@@ -82,6 +84,7 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/knowledge-base/init-autoresearch-run.js",
     "tools/knowledge-base/init-topic.js",
     "tools/plugins/plugin-manifest.js",
+    "tools/plugins/create-plugin.js",
     "tools/doctor/sable-doctor.js",
     "tools/instance/instance-config.js",
     "tools/instance/init-instance.js",

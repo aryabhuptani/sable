@@ -6,6 +6,8 @@ const { spawnSync } = require("node:child_process");
 
 const {
   loadPluginManifests,
+  loadPluginManifestsFromRoots,
+  validateDiscoveredPluginRegistry,
   validatePluginRegistry,
 } = require("../plugins/plugin-manifest");
 const {
@@ -39,7 +41,7 @@ function buildDoctorReport({
   checks.push(checkRunnerConfig(resolvedRepoRoot, env, instance));
   checks.push(checkCodexHomeWritable(env, instance));
   checks.push(checkBridgeRuntimePaths(env, instance));
-  checks.push(...checkPluginRegistry(resolvedRepoRoot));
+  checks.push(...checkPluginRegistry(resolvedRepoRoot, env, instance));
   checks.push(...checkLocalInstance(instance));
   checks.push(...checkServiceInstall(env, instance));
   checks.push(...checkConfigPresence(resolvedRepoRoot));
@@ -143,22 +145,36 @@ function checkBridgeRuntimePaths(env, instance) {
   return pass("bridge:runtime-paths", detail);
 }
 
-function checkPluginRegistry(repoRoot) {
+function checkPluginRegistry(repoRoot, env = process.env, instance = createInstanceConfig({ repoRoot, env })) {
   const pluginsRoot = path.join(repoRoot, "plugins");
-  const entries = loadPluginManifests(pluginsRoot);
-  const errors = validatePluginRegistry(entries);
+  const officialEntries = loadPluginManifests(pluginsRoot);
+  const localRoots = getLocalPluginRoots(env, instance);
+  const localEntries = loadPluginManifestsFromRoots(localRoots, { source: "local" });
+  const entries = [...officialEntries, ...localEntries];
+  const officialErrors = validatePluginRegistry(officialEntries);
+  const discoveredErrors = validateDiscoveredPluginRegistry(entries, {
+    allowLocalShadowIds: splitList(env.SABLE_ALLOW_PLUGIN_SHADOWS),
+  });
+  const localErrors = discoveredErrors.filter(
+    (error) =>
+      !officialErrors.includes(error) &&
+      localEntries.some((entry) => error.includes(entry.manifestPath))
+  );
 
-  if (entries.length === 0) {
+  if (officialEntries.length === 0) {
     return [fail("plugins", "no plugin manifests found")];
   }
 
   const checks = [
-    errors.length === 0
-      ? pass("plugins", `${entries.length} plugin manifests validated`)
-      : fail("plugins", `${errors.length} plugin manifest validation errors`),
+    officialErrors.length === 0
+      ? pass("plugins:official", `${officialEntries.length} official plugin manifests validated`)
+      : fail("plugins:official", `${officialErrors.length} official plugin manifest validation errors`),
+    localErrors.length === 0
+      ? pass("plugins:local", `${localEntries.length} local plugin manifests validated from ${localRoots.length} root(s)`)
+      : warn("plugins:local", `${localErrors.length} local plugin manifest validation errors`),
   ];
 
-  for (const entry of entries) {
+  for (const entry of officialEntries) {
     const manifest = entry.manifest;
     checks.push(
       pass(
@@ -168,11 +184,20 @@ function checkPluginRegistry(repoRoot) {
     );
   }
 
-  for (const error of errors.slice(0, 5)) {
-    checks.push(fail("plugins:error", error));
+  for (const error of officialErrors.slice(0, 5)) {
+    checks.push(fail("plugins:official-error", error));
+  }
+  for (const error of localErrors.slice(0, 5)) {
+    checks.push(warn("plugins:local-error", error));
   }
 
   return checks;
+}
+
+function getLocalPluginRoots(env, instance) {
+  const roots = splitList(env.SABLE_PLUGIN_PATHS);
+  roots.push(path.join(instance.homeDir, "plugins"));
+  return [...new Set(roots.map((root) => path.resolve(root)).filter((root) => fs.existsSync(root)))];
 }
 
 function checkLocalInstance(instance) {
@@ -316,6 +341,14 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function splitList(value) {
+  return String(value || "")
+    .split(path.delimiter)
+    .flatMap((part) => part.split(","))
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function pass(name, detail) {
   return { status: "pass", name, detail };
 }
@@ -416,6 +449,7 @@ module.exports = {
   readEnvSummary,
   checkCodexHomeWritable,
   checkBridgeRuntimePaths,
+  checkPluginRegistry,
   checkLocalInstance,
   checkPrivateStateBoundary,
   checkServiceInstall,

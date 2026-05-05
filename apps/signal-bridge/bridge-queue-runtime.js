@@ -12,6 +12,7 @@ function createBridgeQueueRuntime({
   logger = console,
   onQueueDrained = async () => {},
   parseCommand,
+  pluginRuntime = null,
   schedulerRuntime,
   sendReply,
   signalAttachments,
@@ -75,6 +76,7 @@ function createBridgeQueueRuntime({
         hasImages: imageAttachments.length > 0,
         hasAudio: audioAttachments.length > 0,
         hasFiles: fileAttachments.length > 0,
+        pluginRuntime,
         telegramTriageLimit,
       }
     );

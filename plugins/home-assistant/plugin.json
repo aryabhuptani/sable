@@ -3,6 +3,7 @@
   "id": "home-assistant",
   "name": "Home Assistant",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "smart-home",
   "description": "Local Home Assistant inspection, device control, managed automations, and humidifier watcher workflows.",

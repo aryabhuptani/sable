@@ -15,6 +15,7 @@ function createBridgeJobRuntime(options = {}) {
     mergePromptSegments,
     normalizeText,
     pluginAuth,
+    pluginRuntime = null,
     runCodex,
     saveSessionId,
     schedulerRuntime,
@@ -68,6 +69,19 @@ function createBridgeJobRuntime(options = {}) {
 
     if (job.command.type === "ops") {
       await sendJobReply(job, await getOpsReport());
+      return;
+    }
+
+    if (job.command.type === "plugin-status") {
+      await sendJobReply(job, pluginRuntime?.formatStatus?.() || "Plugin runtime is not available.");
+      return;
+    }
+
+    if (job.command.type === "plugin-command") {
+      const handled = await pluginRuntime?.dispatch?.(job);
+      if (!handled) {
+        await sendJobReply(job, `No runtime plugin handled ${job.command.commandName || "that command"}.`);
+      }
       return;
     }
 

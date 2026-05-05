@@ -3,6 +3,7 @@
   "id": "google-calendar",
   "name": "Google Calendar",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "calendar",
   "description": "Calendar scheduling, availability, daily brief, and event-management integration through connector tools.",

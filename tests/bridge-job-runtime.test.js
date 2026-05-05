@@ -41,6 +41,13 @@ function createRuntime(overrides = {}) {
       formatStatus: () => "auth status",
       maybeStart: async () => false,
     },
+    pluginRuntime: {
+      dispatch: async (job) => {
+        await replies.push({ sender: job.sender, message: `plugin ${job.command.commandName}` });
+        return true;
+      },
+      formatStatus: () => "plugin status",
+    },
     runCodex: async () => ({ sessionId: "session-1", message: "final" }),
     saveSessionId: (key, value) => {
       sessions[key] = value;
@@ -84,6 +91,20 @@ test("job runtime handles status, ops, and schedule commands without running Cod
     "status report",
     "ops report",
     "schedule list",
+  ]);
+});
+
+test("job runtime handles plugin status and plugin command dispatch without Codex", async () => {
+  const { replies, runtime } = createRuntime();
+  await runtime.processJob({ sender: "+1555", command: { type: "plugin-status" } });
+  await runtime.processJob({
+    sender: "+1555",
+    command: { type: "plugin-command", commandName: "/hello" },
+  });
+
+  assert.deepEqual(replies.map((reply) => reply.message), [
+    "plugin status",
+    "plugin /hello",
   ]);
 });
 

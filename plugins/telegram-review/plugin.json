@@ -3,6 +3,7 @@
   "id": "telegram-review",
   "name": "Telegram Review",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "communications",
   "description": "Telegram triage, drafting support, send support, and bounded mark-read workflows.",

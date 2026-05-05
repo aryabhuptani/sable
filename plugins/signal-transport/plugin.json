@@ -3,6 +3,7 @@
   "id": "signal-transport",
   "name": "Signal Transport",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "transport",
   "description": "Signal message transport for Sable's local bridge runtime.",

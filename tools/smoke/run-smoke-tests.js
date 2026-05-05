@@ -30,6 +30,8 @@ const suites = [
       "tests/live-update-channel.test.js",
       "tests/obsidian-link-plugin.test.js",
       "tests/plugin-auth-manager.test.js",
+      "tests/plugin-create.test.js",
+      "tests/plugin-runtime.test.js",
       "tests/runner-adapter.test.js",
       "tests/scheduled-attachment-discovery.test.js",
       "tests/signal-attachment-plugin.test.js",

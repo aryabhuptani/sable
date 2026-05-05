@@ -3,6 +3,7 @@
   "id": "autoresearch",
   "name": "Autoresearch",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "research",
   "description": "Knowledge-base topic scaffolding and bounded autonomous research run setup.",

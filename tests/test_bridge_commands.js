@@ -13,6 +13,38 @@ test("parseCommand recognizes bridge control commands", () => {
   assert.deepEqual(parseCommand("/authstatus"), { type: "auth-status" });
   assert.deepEqual(parseCommand("/authcancel"), { type: "auth-cancel" });
   assert.deepEqual(parseCommand("/authresume"), { type: "auth-resume" });
+  assert.deepEqual(parseCommand("/plugins"), { type: "plugin-status" });
+  assert.deepEqual(parseCommand("/pluginstatus"), { type: "plugin-status" });
+});
+
+test("parseCommand lets runtime plugins claim slash commands before prompt fallback", () => {
+  const pluginCommand = {
+    type: "plugin-command",
+    commandName: "/hello",
+    args: "there",
+    pluginId: "local-hello",
+    rawText: "/hello there",
+  };
+  assert.deepEqual(
+    parseCommand("/hello there", {
+      pluginRuntime: {
+        parsePluginCommand: () => pluginCommand,
+      },
+    }),
+    pluginCommand
+  );
+  assert.deepEqual(
+    parseCommand("/ops", {
+      pluginRuntime: {
+        parsePluginCommand: () => ({
+          type: "plugin-command",
+          commandName: "/ops",
+          pluginId: "local-ops",
+        }),
+      },
+    }),
+    { type: "ops" }
+  );
 });
 
 test("parseCommand parses telegram triage limits", () => {

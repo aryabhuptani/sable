@@ -3,6 +3,7 @@
   "id": "autotweet",
   "name": "Autotweet",
   "version": "0.1.0",
+  "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "publishing",
   "description": "Memory-backed editorial suggestions, Typefully draft generation, style-guide bootstrapping, and draft queue management.",

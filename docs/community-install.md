@@ -189,10 +189,72 @@ If you only changed local secrets or instance paths, run doctor first. If you ch
 
 ## Optional Plugin Setup
 
-Plugin manifests live under `plugins/*/plugin.json`. They are currently descriptive contracts for capabilities, config, secrets, diagnostics, and private-data policy. Validate them with:
+Plugin manifests live under `plugins/*/plugin.json` for official plugins and `<instance-home>/plugins/*/plugin.json` for local plugins. Official plugins are upstreamable. Local plugins are for one person's Sable and should survive repo pulls because they live outside the checkout.
+
+Plugin API v1 is intentionally small:
+
+- manifest metadata
+- command registration
+- config lookup through env / instance config
+- logger
+- reply helper
+- instance paths
+- optional diagnostics hook
+
+Validate manifests with:
 
 ```bash
 npm run test:plugins
+```
+
+At runtime, send:
+
+```text
+/plugins
+```
+
+That reports discovered official/local plugins, plugin API version, registered runtime commands, and local validation issues.
+
+### How Kristen Adds a Local Plugin Without Forking Sable
+
+Create a private local plugin under the instance home:
+
+```bash
+npm run plugin:create -- --id local-hello --target local
+```
+
+Local plugin ids must start with `local-` so they cannot silently shadow official plugins. The scaffold creates:
+
+- `<instance-home>/plugins/local-hello/plugin.json`
+- `<instance-home>/plugins/local-hello/handler.js`
+- `<instance-home>/plugins/local-hello/README.md`
+- `<instance-home>/plugins/local-hello/handler.test.js`
+
+Restart Sable, then send `/plugins`. The scaffolded command is registered from `handler.js` and should appear in the command list. Upstream updates should not touch this directory.
+
+If someone intentionally wants Sable to search additional local plugin roots, set:
+
+```bash
+SABLE_PLUGIN_PATHS=/abs/path/to/plugins:/another/plugin/root
+```
+
+Local plugins are loaded after official manifests. A local plugin cannot use an official plugin id unless `SABLE_ALLOW_PLUGIN_SHADOWS` explicitly lists that id. Treat that override as a development escape hatch, not normal configuration.
+
+### How to PR an Official Plugin Upstream
+
+Scaffold into the repo instead:
+
+```bash
+npm run plugin:create -- --id calendar-cleanup --target repo
+```
+
+Then update the manifest category, capabilities, commands, config, secrets, diagnostics, and private-data policy so it accurately describes the integration. Official plugins should avoid user-specific paths, tokens, phone numbers, session files, message contents, or local memory in tracked files.
+
+Before opening a PR, run:
+
+```bash
+npm run test:plugins
+npm run test:smoke
 ```
 
 ### Signal Transport

@@ -24,7 +24,8 @@ test("doctor reports the current repo as healthy enough for migration work", () 
 
   assert.equal(report.ok, true);
   assert.ok(report.checks.some((check) => check.name === "command:codex" && check.status === "pass"));
-  assert.ok(report.checks.some((check) => check.name === "plugins" && check.status === "pass"));
+  assert.ok(report.checks.some((check) => check.name === "plugins:official" && check.status === "pass"));
+  assert.ok(report.checks.some((check) => check.name === "plugins:local"));
     assert.ok(report.checks.some((check) => check.name === "runner:codex-cli" && check.status === "pass"));
     assert.ok(report.checks.some((check) => check.name === "runner:codex-home"));
     assert.ok(report.checks.some((check) => check.name === "bridge:runtime-paths" && check.status === "pass"));
