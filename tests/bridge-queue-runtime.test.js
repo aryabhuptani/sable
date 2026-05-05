@@ -71,7 +71,7 @@ function createRuntimeHarness(overrides = {}) {
       queueDrainedCount += 1;
     },
     parseCommand,
-    schedulerRuntime: {
+    schedulerRuntime: overrides.schedulerRuntime || {
       async checkForDueScheduledJobs({ enqueueBackgroundJob, ensureBackgroundProcessing }) {
         enqueueBackgroundJob({ sender: "scheduled", command: { type: "prompt" } });
         ensureBackgroundProcessing();
@@ -197,4 +197,21 @@ test("bridge queue runtime enqueues due scheduled background jobs", async () => 
   assert.equal(harness.processed.length, 1);
   assert.equal(harness.processed[0].sender, "scheduled");
   assert.equal(harness.getQueueDrainedCount(), 1);
+});
+
+test("bridge queue runtime exposes restart pause state to scheduled jobs", async () => {
+  let observedPaused = null;
+  const harness = createRuntimeHarness({
+    schedulerRuntime: {
+      async checkForDueScheduledJobs({ isPaused }) {
+        observedPaused = isPaused();
+      },
+    },
+  });
+
+  harness.setRestartRequested(true);
+  await harness.runtime.checkForDueScheduledJobs();
+
+  assert.equal(observedPaused, true);
+  assert.equal(harness.processed.length, 0);
 });
