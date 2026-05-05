@@ -34,6 +34,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:signal-attachment"], "node --test tests/test_signal_attachment_cli.js");
   assert.equal(pkg.scripts["plugin:create"], "node tools/plugins/create-plugin.js");
   assert.equal(pkg.scripts["shareability:check"], "node tools/shareability/check.js");
+  assert.equal(pkg.scripts["simulate:fresh-clone"], "node tools/community/fresh-clone-sim.js");
   assert.equal(pkg.scripts["upgrade"], "node tools/upgrade/upgrade.js run");
   assert.equal(pkg.scripts["upgrade:check"], "node tools/upgrade/upgrade.js check");
   assert.ok(pkg.scripts["test:community"].includes("npm run shareability:check"));
@@ -90,6 +91,7 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/plugins/plugin-manifest.js",
     "tools/plugins/create-plugin.js",
     "tools/shareability/check.js",
+    "tools/community/fresh-clone-sim.js",
     "tools/upgrade/upgrade.js",
     "tools/doctor/sable-doctor.js",
     "tools/instance/instance-config.js",
@@ -101,9 +103,11 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/telegram/.env.example",
     "tools/instance/templates/sable.env.example",
     "docs/community-install.md",
+    "docs/first-user-handoff.md",
     "docs/upgrade.md",
     "docs/sable-architecture-migration-checklist.md",
     "CONTRIBUTING.md",
+    "DEVELOPER_PREVIEW.md",
     "plugins/schema/plugin-manifest.schema.json",
   ].forEach(assertFile);
 });

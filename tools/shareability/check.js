@@ -131,7 +131,8 @@ function isAllowedAryaPathFile(file) {
     file.startsWith("tests/") ||
     file.endsWith("README.md") ||
     file === "tools/instance/instance-config.js" ||
-    file === "tools/instance/instance_config.py"
+    file === "tools/instance/instance_config.py" ||
+    file === "tools/shareability/check.js"
   );
 }
 

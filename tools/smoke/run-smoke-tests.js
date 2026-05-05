@@ -25,6 +25,7 @@ const suites = [
       "tests/bridge-test-support.test.js",
       "tests/bridge-utils.test.js",
       "tests/codex-session-reader.test.js",
+      "tests/fresh-clone-sim.test.js",
       "tests/init-instance.test.js",
       "tests/job-control.test.js",
       "tests/live-update-channel.test.js",

@@ -2,7 +2,7 @@
 
 Sable is Arya's local-first automation and messaging stack on the minipc.
 
-Current status: developer preview. Sable is still a single repo with private instance state kept outside the checkout, a Signal-first bridge, Codex CLI under the hood, and plugin API v1 for local command plugins. Trusted friends can start running it now, but it is still an early local-first system rather than a polished package.
+Current status: `v0.1.0` developer preview. Sable is still a single repo with private instance state kept outside the checkout, a Signal-first bridge, Codex CLI under the hood, and plugin API v1 for local command plugins. Trusted friends can start running it now, but it is still an early local-first system rather than a polished package.
 
 Runtime paths are centralized through `tools/instance/instance-config.js` and can be overridden with environment variables. The `/home/arya/...` paths below document Arya's current minipc layout; they are examples, not assumptions every install must inherit.
 
@@ -14,7 +14,7 @@ npm run init:instance -- --instance-home "$HOME/sable-instance"
 npm run sable:doctor -- --home-dir "$HOME/sable-instance"
 ```
 
-For fresh local setup, see `docs/community-install.md`. For upgrades, see `docs/upgrade.md`. For contributing, see `CONTRIBUTING.md`.
+For fresh local setup, see `docs/community-install.md`. For first-user handoff, see `docs/first-user-handoff.md`. For upgrades, see `docs/upgrade.md`. For contributing, see `CONTRIBUTING.md`. For release status, see `DEVELOPER_PREVIEW.md`.
 
 ## Layout
 
@@ -89,6 +89,8 @@ Current Arya defaults come from instance config and can be overridden per deploy
   `npm run shareability:check`
 - Community test aggregate:
   `npm run test:community`
+- Fresh-clone setup simulation:
+  `npm run simulate:fresh-clone`
 
 ## Knowledge Base V0
 

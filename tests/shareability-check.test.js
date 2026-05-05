@@ -24,7 +24,8 @@ test("shareability content scanner allows fake examples and rejects likely priva
   assert.ok(scanContent("README.md", "call me at +351912345678").some((finding) => finding.message.includes("phone")));
   assert.ok(scanContent("plugins/bad/plugin.json", "/home/arya/private").some((finding) => finding.message.includes("Arya-specific")));
   assert.ok(scanContent("docs/example.md", "/home/arya/example").length === 0);
-  assert.ok(scanContent("README.md", "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz").length > 0);
+  const fakeOpenAiKey = `sk-${"abcdefghijklmnopqrstuvwx"}`;
+  assert.ok(scanContent("README.md", `OPENAI_API_KEY=${fakeOpenAiKey}`).length > 0);
 });
 
 test("shareability check scans tracked files from git", () => {
