@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 
 const { createInstanceConfig } = require("../instance/instance-config");
 
@@ -25,8 +25,13 @@ function parseArgs(argv) {
     dryRun: false,
     codex: process.env.CODEX_BIN || "codex",
     codexHome: process.env.CODEX_HOME || DEFAULT_CODEX_HOME,
+    callbackCommand: "",
     model: "",
     recentLines: DEFAULT_RECENT_LOG_LINES,
+    worktreeBase: "HEAD",
+    worktreeBranch: "",
+    worktreeDir: "",
+    worktreeFrom: "",
   };
 
   for (let index = options.command === "help" ? 0 : 1; index < argv.length; index += 1) {
@@ -47,10 +52,20 @@ function parseArgs(argv) {
       options.codex = argv[++index] || options.codex;
     } else if (arg === "--codex-home") {
       options.codexHome = path.resolve(expandHome(argv[++index] || ""));
+    } else if (arg === "--callback-command") {
+      options.callbackCommand = argv[++index] || "";
     } else if (arg === "--model") {
       options.model = argv[++index] || "";
     } else if (arg === "--recent-lines") {
       options.recentLines = parsePositiveInteger(argv[++index], DEFAULT_RECENT_LOG_LINES);
+    } else if (arg === "--worktree-from") {
+      options.worktreeFrom = path.resolve(expandHome(argv[++index] || ""));
+    } else if (arg === "--worktree-branch") {
+      options.worktreeBranch = argv[++index] || "";
+    } else if (arg === "--worktree-dir") {
+      options.worktreeDir = path.resolve(expandHome(argv[++index] || ""));
+    } else if (arg === "--worktree-base") {
+      options.worktreeBase = argv[++index] || "HEAD";
     } else if (arg === "--dry-run") {
       options.dryRun = true;
     } else if (arg === "--help" || arg === "-h") {
@@ -99,6 +114,11 @@ function createJobId(name, now = new Date()) {
   return `${stamp}-${slug}`;
 }
 
+function defaultWorktreeDir(sourceRepo, id) {
+  const repoDir = path.resolve(sourceRepo);
+  return path.join(path.dirname(repoDir), `${path.basename(repoDir)}-worktrees`, id);
+}
+
 function jobPaths(jobDir) {
   return {
     jobDir,
@@ -121,18 +141,31 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
   if (!options.name) {
     throw new Error("start requires --name.");
   }
-  if (!options.cwd) {
-    throw new Error("start requires --cwd. The harness does not assume a repo/workspace.");
-  }
-  if (!fs.existsSync(options.cwd)) {
-    throw new Error(`cwd does not exist: ${options.cwd}`);
-  }
   if (!options.prompt && !options.promptFile) {
     throw new Error("start requires --prompt or --prompt-file.");
   }
 
   const jobsRoot = options.jobsRoot || defaultJobsRoot();
   const id = options.id || createJobId(options.name, now);
+  const worktree = resolveWorktreePlan(options, id);
+  const cwd = worktree ? worktree.path : options.cwd;
+  if (!cwd) {
+    throw new Error("start requires --cwd or --worktree-from. The harness does not assume a repo/workspace.");
+  }
+  if (options.cwd && options.worktreeFrom) {
+    throw new Error("Use --cwd for an existing workspace or --worktree-from for an isolated worktree, not both.");
+  }
+  if (worktree) {
+    if (!fs.existsSync(worktree.sourceRepo)) {
+      throw new Error(`worktree source repo does not exist: ${worktree.sourceRepo}`);
+    }
+    if (!options.dryRun) {
+      await createGitWorktree(worktree);
+    }
+  } else if (!fs.existsSync(cwd)) {
+    throw new Error(`cwd does not exist: ${cwd}`);
+  }
+
   const jobDir = path.join(jobsRoot, id);
   const paths = jobPaths(jobDir);
   const prompt = await readPrompt(options);
@@ -146,7 +179,8 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
   const status = {
     id,
     name: options.name,
-    cwd: options.cwd,
+    cwd,
+    callbackCommand: options.callbackCommand || "",
     codex: options.codex,
     codexHome: options.codexHome,
     createdAt: now.toISOString(),
@@ -156,6 +190,7 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
     pid: null,
     status: options.dryRun ? "prepared" : "starting",
     updatedAt: now.toISOString(),
+    worktree,
   };
 
   await writeStatus(paths.statusPath, status);
@@ -191,6 +226,38 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
   status.updatedAt = new Date().toISOString();
   await writeStatus(paths.statusPath, status);
   return status;
+}
+
+function resolveWorktreePlan(options, id) {
+  if (!options.worktreeFrom) {
+    return null;
+  }
+  const sourceRepo = path.resolve(options.worktreeFrom);
+  const branch = options.worktreeBranch || `bg/${id}`;
+  return {
+    base: options.worktreeBase || "HEAD",
+    branch,
+    path: options.worktreeDir || defaultWorktreeDir(sourceRepo, id),
+    sourceRepo,
+  };
+}
+
+async function createGitWorktree(worktree, execFileFn = execFile) {
+  await fsp.mkdir(path.dirname(worktree.path), { recursive: true });
+  await new Promise((resolve, reject) => {
+    execFileFn(
+      "git",
+      ["-C", worktree.sourceRepo, "worktree", "add", "-b", worktree.branch, worktree.path, worktree.base],
+      (error, stdout, stderr) => {
+        if (error) {
+          error.message = [error.message, stdout, stderr].filter(Boolean).join("\n");
+          reject(error);
+          return;
+        }
+        resolve();
+      }
+    );
+  });
 }
 
 async function runWorker(options) {
@@ -248,6 +315,42 @@ async function runWorker(options) {
     exitCode: exit.code,
     signal: exit.signal || "",
     status: exit.code === 0 ? "completed" : "failed",
+  });
+
+  if (job.callbackCommand) {
+    await runCompletionCallback(job, paths, exit);
+  }
+}
+
+async function runCompletionCallback(job, paths, exit) {
+  await updateStatus(paths.statusPath, {
+    callbackStartedAt: new Date().toISOString(),
+  });
+
+  const callback = spawn(job.callbackCommand, [], {
+    cwd: job.cwd,
+    env: {
+      ...process.env,
+      SABLE_BACKGROUND_JOB_DIR: job.jobDir,
+      SABLE_BACKGROUND_JOB_ID: job.id,
+      SABLE_BACKGROUND_JOB_LAST_MESSAGE: paths.lastMessagePath,
+      SABLE_BACKGROUND_JOB_STATUS: exit.code === 0 ? "completed" : "failed",
+      SABLE_BACKGROUND_JOB_STATUS_PATH: paths.statusPath,
+    },
+    shell: true,
+    stdio: "ignore",
+  });
+
+  const result = await new Promise((resolve) => {
+    callback.on("exit", (code, signal) => resolve({ code, signal }));
+    callback.on("error", (error) => resolve({ code: 1, error: error.message, signal: null }));
+  });
+
+  await updateStatus(paths.statusPath, {
+    callbackCompletedAt: new Date().toISOString(),
+    callbackError: result.error || "",
+    callbackExitCode: result.code,
+    callbackSignal: result.signal || "",
   });
 }
 
@@ -349,6 +452,7 @@ function usage() {
   return [
     "Usage:",
     "  npm run background-job -- start --name NAME --cwd DIR (--prompt TEXT | --prompt-file FILE)",
+    "  npm run background-job -- start --name NAME --worktree-from REPO [--worktree-branch BRANCH] [--worktree-dir DIR] (--prompt TEXT | --prompt-file FILE)",
     "  npm run background-job -- list",
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
@@ -414,8 +518,10 @@ if (require.main === module) {
 module.exports = {
   createJobId,
   defaultJobsRoot,
+  defaultWorktreeDir,
   formatJobList,
   jobPaths,
   parseArgs,
+  resolveWorktreePlan,
   startJob,
 };
