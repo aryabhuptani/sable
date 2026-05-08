@@ -2,6 +2,8 @@ function createBridgeSchedulerRuntime(options = {}) {
   const {
     buildAttachmentContext,
     computeFollowingRunAt,
+    defaultScheduledSender = "",
+    defaultSchedulerJobsPath = "",
     discoverFileAttachments,
     discoverImageAttachments,
     formatScheduleList,
@@ -13,18 +15,29 @@ function createBridgeSchedulerRuntime(options = {}) {
     timestamp = () => new Date().toISOString(),
   } = options;
 
-  let schedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+  let defaultSchedulerJobs = loadDefaultJobs();
+  let localSchedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+  let schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
 
   function getJobs() {
     return schedulerJobs;
   }
 
+  function loadDefaultJobs() {
+    return defaultSchedulerJobsPath ? loadSchedulerJobs(defaultSchedulerJobsPath) : [];
+  }
+
   function persistJobs() {
-    saveSchedulerJobs(schedulerJobsPath, schedulerJobs);
+    if (defaultSchedulerJobsPath) {
+      saveSchedulerJobs(defaultSchedulerJobsPath, defaultSchedulerJobs);
+    }
+    saveSchedulerJobs(schedulerJobsPath, localSchedulerJobs);
   }
 
   function refreshJobs() {
-    schedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+    defaultSchedulerJobs = loadDefaultJobs();
+    localSchedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+    schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
     return schedulerJobs;
   }
 
@@ -35,13 +48,16 @@ function createBridgeSchedulerRuntime(options = {}) {
       return false;
     }
 
-    const originalLength = schedulerJobs.length;
-    schedulerJobs = schedulerJobs.filter((job) => job.id !== normalizedId);
-    if (schedulerJobs.length === originalLength) {
+    const defaultLength = defaultSchedulerJobs.length;
+    const localLength = localSchedulerJobs.length;
+    defaultSchedulerJobs = defaultSchedulerJobs.filter((job) => job.id !== normalizedId);
+    localSchedulerJobs = localSchedulerJobs.filter((job) => job.id !== normalizedId);
+    if (defaultSchedulerJobs.length === defaultLength && localSchedulerJobs.length === localLength) {
       return false;
     }
 
     persistJobs();
+    schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
     return true;
   }
 
@@ -93,6 +109,10 @@ function createBridgeSchedulerRuntime(options = {}) {
   }
 
   function queueScheduledWorkflowRun(scheduledJob) {
+    const sender =
+      scheduledJob.sender === "__default_sender__"
+        ? defaultScheduledSender
+        : scheduledJob.sender;
     const executionPrompt = [
       scheduledJob.workflowPrompt,
       "",
@@ -102,7 +122,7 @@ function createBridgeSchedulerRuntime(options = {}) {
     const localFileAttachments = discoverFileAttachments(scheduledJob.workflowPrompt);
 
     return {
-      sender: scheduledJob.sender,
+      sender,
       command: { type: "prompt", prompt: executionPrompt },
       context: buildAttachmentContext(
         {},
@@ -126,6 +146,22 @@ function createBridgeSchedulerRuntime(options = {}) {
     refreshJobs,
     removeScheduledJob,
   };
+}
+
+function mergeJobs(defaultJobs, localJobs) {
+  return [
+    ...tagJobs(defaultJobs, "default"),
+    ...tagJobs(localJobs, "local"),
+  ];
+}
+
+function tagJobs(jobs, scheduleKind) {
+  return (Array.isArray(jobs) ? jobs : []).map((job) => {
+    if (job && typeof job === "object" && !job.scheduleKind) {
+      job.scheduleKind = scheduleKind;
+    }
+    return job;
+  });
 }
 
 function defaultNormalizeText(text) {

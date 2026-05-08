@@ -28,6 +28,7 @@ test("init instance creates private state and generated env without overwriting"
       instance.agentsPath,
       instance.todoPath,
       instance.projectTasksPath,
+      instance.defaultSchedulerJobsPath,
       instance.schedulerJobsPath,
       getInstanceEnvPath(instance),
       path.join(instance.homeDir, "plugins"),
@@ -56,7 +57,8 @@ test("init instance can reset generated files without overwriting user notes", a
 
   try {
     const first = initInstance({ homeDir: tempHome, logger: null });
-    await fs.writeFile(first.instance.schedulerJobsPath, "[{\"id\":\"old\"}]\n", "utf8");
+    await fs.writeFile(first.instance.defaultSchedulerJobsPath, "{\"jobs\":[{\"id\":\"old-default\"}]}\n", "utf8");
+    await fs.writeFile(first.instance.schedulerJobsPath, "{\"jobs\":[{\"id\":\"old\"}]}\n", "utf8");
     await fs.writeFile(first.instance.agentsPath, "custom agents\n", "utf8");
 
     const second = initInstance({
@@ -65,8 +67,10 @@ test("init instance can reset generated files without overwriting user notes", a
       resetGenerated: true,
     });
 
-    assert.equal(await fs.readFile(first.instance.schedulerJobsPath, "utf8"), "[]\n");
+    assert.match(await fs.readFile(first.instance.defaultSchedulerJobsPath, "utf8"), /default-dreaming/);
+    assert.equal(await fs.readFile(first.instance.schedulerJobsPath, "utf8"), "{\"jobs\":[]}\n");
     assert.equal(await fs.readFile(first.instance.agentsPath, "utf8"), "custom agents\n");
+    assert.ok(second.overwritten.some((entry) => entry.endsWith("default-scheduler-jobs.json")));
     assert.ok(second.overwritten.some((entry) => entry.endsWith("scheduler-jobs.json")));
   } finally {
     await fs.rm(tempHome, { recursive: true, force: true });
@@ -83,6 +87,7 @@ test("rendered instance env points runtime paths at the private instance", () =>
   assert.match(env, /SABLE_INSTANCE_HOME=\/srv\/sable-user/);
   assert.match(env, /SABLE_REPO_ROOT=\/opt\/sable/);
   assert.match(env, /SABLE_CODEX_CWD=\/srv\/sable-user/);
+  assert.match(env, /SABLE_DEFAULT_SCHEDULER_JOBS_PATH=\/srv\/sable-user\/memory\/tasks\/projects\/sable\/default-scheduler-jobs\.json/);
   assert.match(env, /SABLE_PLUGIN_PATHS=\/srv\/sable-user\/plugins/);
   assert.match(env, /CODEX_HOME=\/srv\/sable-user\/\.codex-bridge/);
 });

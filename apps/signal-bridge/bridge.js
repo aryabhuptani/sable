@@ -9,7 +9,7 @@ const {
   loadSchedulerJobs,
   saveSchedulerJobs,
 } = require("./scheduler");
-const { parseCommand } = require("./bridge-commands");
+const { formatHelp, parseCommand } = require("./bridge-commands");
 const { createAppServerMessageHelpers } = require("./app-server-message-helpers");
 const { createAppServerTurnRunner } = require("./app-server-turn-runner");
 const { createAutoresearchMonitor } = require("./autoresearch-monitor");
@@ -90,6 +90,7 @@ const {
   CODEX_SESSIONS_DIR,
   DEFAULT_FILE_PROMPT,
   DEFAULT_IMAGE_PROMPT,
+  DEFAULT_SCHEDULER_JOBS_PATH,
   EXTRACT_PDF_SCRIPT_PATH,
   LIVE_UPDATE_BATCH_WINDOW_MS,
   LIVE_UPDATE_DUPLICATE_WINDOW_MS,
@@ -210,6 +211,8 @@ const schedulerRuntime = createBridgeSchedulerRuntime({
   loadSchedulerJobs,
   normalizeText,
   saveSchedulerJobs,
+  defaultSchedulerJobsPath: DEFAULT_SCHEDULER_JOBS_PATH,
+  defaultScheduledSender: [...allowedNumbers][0] || [...allowedSenders][0] || "",
   schedulerJobsPath: SCHEDULER_JOBS_PATH,
   timestamp,
 });
@@ -435,6 +438,7 @@ jobRuntime = createBridgeJobRuntime({
   getPendingPluginAuth: () => state.pendingPluginAuth,
   getSessionId: (key) => state[key],
   getTelegramTriageReport,
+  formatHelp,
   mergePromptSegments,
   normalizeText,
   pluginAuth,

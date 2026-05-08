@@ -24,6 +24,9 @@ function createBridgeConfig({
   const SCHEDULER_JOBS_PATH =
     normalizeText(env.SABLE_SCHEDULER_JOBS_PATH) ||
     instanceConfig.schedulerJobsPath;
+  const DEFAULT_SCHEDULER_JOBS_PATH =
+    normalizeText(env.SABLE_DEFAULT_SCHEDULER_JOBS_PATH) ||
+    instanceConfig.defaultSchedulerJobsPath;
   const RESEARCH_ROOT =
     normalizeText(env.SABLE_RESEARCH_ROOT) ||
     instanceConfig.researchRoot;
@@ -132,6 +135,7 @@ function createBridgeConfig({
     CODEX_SESSIONS_DIR,
     DEFAULT_FILE_PROMPT: "Please analyze the attached files.",
     DEFAULT_IMAGE_PROMPT: "Please analyze the attached image.",
+    DEFAULT_SCHEDULER_JOBS_PATH,
     EXTRACT_PDF_SCRIPT_PATH,
     LIVE_UPDATE_BATCH_WINDOW_MS: 750,
     LIVE_UPDATE_DUPLICATE_WINDOW_MS: 5_000,

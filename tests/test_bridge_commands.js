@@ -1,9 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { parseCommand } = require("../apps/signal-bridge/bridge-commands");
+const { formatHelp, parseCommand } = require("../apps/signal-bridge/bridge-commands");
 
 test("parseCommand recognizes bridge control commands", () => {
+  assert.deepEqual(parseCommand("/help"), { type: "help" });
   assert.deepEqual(parseCommand("/bridgestatus"), { type: "status" });
   assert.deepEqual(parseCommand("/ops"), { type: "ops" });
   assert.deepEqual(parseCommand("/schedules"), { type: "list-schedules" });
@@ -15,6 +16,25 @@ test("parseCommand recognizes bridge control commands", () => {
   assert.deepEqual(parseCommand("/authresume"), { type: "auth-resume" });
   assert.deepEqual(parseCommand("/plugins"), { type: "plugin-status" });
   assert.deepEqual(parseCommand("/pluginstatus"), { type: "plugin-status" });
+});
+
+test("formatHelp includes built-in and runtime plugin commands", () => {
+  const help = formatHelp({
+    commands: new Map([
+      [
+        "/hello",
+        {
+          commandName: "/hello",
+          description: "Say hello.",
+          pluginId: "local-hello",
+        },
+      ],
+    ]),
+  });
+
+  assert.match(help, /\/help - Show available Sable slash commands/);
+  assert.match(help, /\/ops - Show bridge/);
+  assert.match(help, /\/hello \(local-hello\) - Say hello/);
 });
 
 test("parseCommand lets runtime plugins claim slash commands before prompt fallback", () => {

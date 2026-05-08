@@ -34,6 +34,7 @@ function createRuntime(overrides = {}) {
     getPendingPluginAuth: () => null,
     getSessionId: (key) => sessions[key],
     getTelegramTriageReport: async () => "telegram report",
+    formatHelp: () => "help text",
     mergePromptSegments: (...segments) => segments.filter(Boolean).join("\n"),
     normalizeText: (value) => (typeof value === "string" && value.trim() ? value.trim() : ""),
     pluginAuth: {
@@ -83,11 +84,13 @@ function createRuntime(overrides = {}) {
 
 test("job runtime handles status, ops, and schedule commands without running Codex", async () => {
   const { replies, runtime } = createRuntime();
+  await runtime.processJob({ sender: "+1555", command: { type: "help" } });
   await runtime.processJob({ sender: "+1555", command: { type: "status" } });
   await runtime.processJob({ sender: "+1555", command: { type: "ops" } });
   await runtime.processJob({ sender: "+1555", command: { type: "list-schedules" } });
 
   assert.deepEqual(replies.map((reply) => reply.message), [
+    "help text",
     "status report",
     "ops report",
     "schedule list",

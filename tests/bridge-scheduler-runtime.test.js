@@ -3,8 +3,8 @@ const test = require("node:test");
 
 const { createBridgeSchedulerRuntime } = require("../apps/signal-bridge/bridge-scheduler-runtime");
 
-function createRuntime(jobs) {
-  let saved = null;
+function createRuntime(jobs, defaultJobs = []) {
+  const saved = {};
   const runtime = createBridgeSchedulerRuntime({
     buildAttachmentContext: (_envelope, sender, images, audio, files) => ({
       sender,
@@ -15,11 +15,13 @@ function createRuntime(jobs) {
     computeFollowingRunAt: () => "2026-05-04T11:00:00.000Z",
     discoverFileAttachments: () => [{ path: "/tmp/file.txt" }],
     discoverImageAttachments: () => [{ path: "/tmp/image.png" }],
-    formatScheduleList: (items) => `schedules:${items.length}`,
-    loadSchedulerJobs: () => jobs,
+    defaultScheduledSender: "+1555",
+    defaultSchedulerJobsPath: "/tmp/default-jobs.json",
+    formatScheduleList: (items) => `schedules:${items.length}:${items.map((job) => job.scheduleKind).join(",")}`,
+    loadSchedulerJobs: (filePath) => (filePath.includes("default") ? defaultJobs : jobs),
     normalizeText: (value) => (typeof value === "string" && value.trim() ? value.trim() : ""),
     saveSchedulerJobs: (_path, items) => {
-      saved = JSON.parse(JSON.stringify(items));
+      saved[_path] = JSON.parse(JSON.stringify(items));
     },
     schedulerJobsPath: "/tmp/jobs.json",
     timestamp: () => "2026-05-04T10:00:00.000Z",
@@ -67,7 +69,7 @@ test("scheduler runtime queues due jobs and advances schedule state", async () =
   assert.equal(dueJob.nextRunAt, "2026-05-04T11:00:00.000Z");
   assert.equal(dueJob.updatedAt, "2026-05-04T10:00:00.000Z");
   assert.equal(ensured, 1);
-  assert.equal(getSaved().length, 2);
+  assert.equal(getSaved()["/tmp/jobs.json"].length, 2);
 });
 
 test("scheduler runtime removes jobs and formats refreshed listings", () => {
@@ -75,12 +77,38 @@ test("scheduler runtime removes jobs and formats refreshed listings", () => {
     { id: "keep", active: true },
     { id: "remove-me", active: true },
   ];
-  const { runtime, getSaved } = createRuntime(jobs);
+  const defaultJobs = [{ id: "default-dreaming", active: true }];
+  const { runtime, getSaved } = createRuntime(jobs, defaultJobs);
 
-  assert.equal(runtime.listSchedules(), "schedules:2");
+  assert.equal(runtime.listSchedules(), "schedules:3:default,local,local");
   assert.equal(runtime.removeScheduledJob(" remove-me "), true);
-  assert.deepEqual(getSaved().map((job) => job.id), ["keep"]);
+  assert.deepEqual(getSaved()["/tmp/jobs.json"].map((job) => job.id), ["keep"]);
+  assert.deepEqual(getSaved()["/tmp/default-jobs.json"].map((job) => job.id), ["default-dreaming"]);
   assert.equal(runtime.removeScheduledJob("missing"), false);
+});
+
+test("scheduler runtime queues default jobs with configured sender and persists default state separately", async () => {
+  const defaultDueJob = {
+    id: "default-dreaming",
+    active: true,
+    nextRunAt: "2026-05-04T09:00:00.000Z",
+    sender: "__default_sender__",
+    workflowPrompt: "Run dreaming",
+    replyMode: "silent",
+  };
+  const queued = [];
+  const { runtime, getSaved } = createRuntime([], [defaultDueJob]);
+
+  await runtime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: (job) => queued.push(job),
+    ensureBackgroundProcessing: () => {},
+  });
+
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].sender, "+1555");
+  assert.equal(queued[0].replyMode, "silent");
+  assert.equal(getSaved()["/tmp/default-jobs.json"][0].nextRunAt, "2026-05-04T11:00:00.000Z");
+  assert.deepEqual(getSaved()["/tmp/jobs.json"], []);
 });
 
 test("scheduler runtime respects paused checks", async () => {
@@ -101,5 +129,5 @@ test("scheduler runtime respects paused checks", async () => {
   });
 
   assert.deepEqual(queued, []);
-  assert.equal(getSaved(), null);
+  assert.deepEqual(getSaved(), {});
 });

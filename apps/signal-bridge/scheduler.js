@@ -31,6 +31,29 @@ function saveSchedulerJobs(filePath, jobs) {
   fs.writeFileSync(filePath, `${JSON.stringify({ jobs }, null, 2)}\n`, "utf8");
 }
 
+function createDefaultScheduledWorkflowJobs({ now = new Date() } = {}) {
+  const time = parseTimeText("3:30AM");
+  const recurrence = { type: "daily" };
+  const createdAt = now.toISOString();
+  return [
+    {
+      id: "default-dreaming",
+      sender: "__default_sender__",
+      createdAt,
+      updatedAt: createdAt,
+      active: true,
+      recurrence,
+      time,
+      replyMode: "silent",
+      workflowPrompt:
+        "Run Sable's conservative dreaming workflow: review AGENTS.md, TODO.md, skills, and task files for duplicates, drift, and safe consolidation opportunities. Keep the pass silent unless there is a final user-facing output or a real blocker.",
+      nextRunAt: computeNextRunAt(recurrence, time, now),
+      lastRunAt: "",
+      scheduleKind: "default",
+    },
+  ];
+}
+
 function createScheduledWorkflowJob({
   sender,
   recurrenceType,
@@ -69,6 +92,7 @@ function createScheduledWorkflowJob({
     workflowPrompt: cleanedPrompt,
     nextRunAt: computeNextRunAt(recurrence, time, now),
     lastRunAt: "",
+    scheduleKind: "local",
   };
 }
 
@@ -290,6 +314,7 @@ function withReplyModeSuffix(headline, replyMode) {
 }
 
 module.exports = {
+  createDefaultScheduledWorkflowJobs,
   createScheduledWorkflowJob,
   computeFollowingRunAt,
   dayNameToIndex,

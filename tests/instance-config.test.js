@@ -22,6 +22,10 @@ test("instance config defaults to Arya's current local layout", () => {
   assert.equal(config.todoPath, "/home/arya/TODO.md");
   assert.equal(config.projectKnowledgeRoot, "/home/arya/memory/knowledge/projects/sable");
   assert.equal(config.projectTasksPath, "/home/arya/memory/tasks/projects/sable/TODO.md");
+  assert.equal(
+    config.defaultSchedulerJobsPath,
+    "/home/arya/memory/tasks/projects/sable/default-scheduler-jobs.json"
+  );
   assert.equal(config.schedulerJobsPath, "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json");
 });
 
@@ -50,6 +54,10 @@ test("instance config supports future non-Arya install paths through env overrid
   assert.equal(config.skillsRoot, "/data/alex/skills");
   assert.equal(config.projectKnowledgeRoot, "/data/alex/memory/knowledge/projects/sable");
   assert.equal(config.projectTasksPath, "/data/alex/memory/tasks/projects/sable/TODO.md");
+  assert.equal(
+    config.defaultSchedulerJobsPath,
+    "/data/alex/memory/tasks/projects/sable/default-scheduler-jobs.json"
+  );
   assert.equal(config.schedulerJobsPath, "/data/alex/memory/tasks/projects/sable/scheduler-jobs.json");
 });
 

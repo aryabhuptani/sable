@@ -12,6 +12,7 @@ function createBridgeJobRuntime(options = {}) {
     getPendingPluginAuth,
     getSessionId,
     getTelegramTriageReport,
+    formatHelp,
     mergePromptSegments,
     normalizeText,
     pluginAuth,
@@ -62,6 +63,11 @@ function createBridgeJobRuntime(options = {}) {
   }
 
   async function processJob(job) {
+    if (job.command.type === "help") {
+      await sendJobReply(job, formatHelp ? formatHelp(pluginRuntime) : "Help is not available.");
+      return;
+    }
+
     if (job.command.type === "status") {
       await sendJobReply(job, await getBridgeStatusReport());
       return;

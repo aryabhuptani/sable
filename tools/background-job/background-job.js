@@ -9,7 +9,6 @@ const { execFile, spawn } = require("node:child_process");
 
 const { createInstanceConfig } = require("../instance/instance-config");
 
-const DEFAULT_CODEX_HOME = "/home/arya/.codex-bridge";
 const DEFAULT_RECENT_LOG_LINES = 80;
 
 function parseArgs(argv) {
@@ -24,7 +23,7 @@ function parseArgs(argv) {
     jobsRoot: "",
     dryRun: false,
     codex: process.env.CODEX_BIN || "codex",
-    codexHome: process.env.CODEX_HOME || DEFAULT_CODEX_HOME,
+    codexHome: process.env.CODEX_HOME || defaultCodexHome(),
     callbackCommand: "",
     model: "",
     recentLines: DEFAULT_RECENT_LOG_LINES,
@@ -76,6 +75,10 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+function defaultCodexHome({ env = process.env } = {}) {
+  return path.join(createInstanceConfig({ env }).homeDir, ".codex-bridge");
 }
 
 function parsePositiveInteger(value, fallback) {

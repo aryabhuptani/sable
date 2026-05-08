@@ -5,6 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 const { createInstanceConfig } = require("./instance-config");
+const { createDefaultScheduledWorkflowJobs } = require("../../apps/signal-bridge/scheduler");
 
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -109,6 +110,12 @@ function initInstance({
       "This file is private instance state. Put your local assistant identity, preferences, and operating norms here.",
       "Do not commit secrets, OAuth tokens, phone numbers, or private memory into the Sable repo.",
       "",
+      "## First-Run Identity",
+      "",
+      "- Assistant name: Sable",
+      "- Personality: edit this section to describe how Sable should sound and what she should prioritize for you.",
+      "- Avatar: after the Signal bridge is running, send `/setavatar` with an attached image to set Sable's profile picture.",
+      "",
     ].join("\n")
   );
   writeFile(
@@ -134,7 +141,12 @@ function initInstance({
       "",
     ].join("\n")
   );
-  writeFile(instance.schedulerJobsPath, "[]\n", { generated: true });
+  writeFile(
+    instance.defaultSchedulerJobsPath,
+    `${JSON.stringify({ jobs: createDefaultScheduledWorkflowJobs() }, null, 2)}\n`,
+    { generated: true }
+  );
+  writeFile(instance.schedulerJobsPath, '{"jobs":[]}\n', { generated: true });
   writeFile(getInstanceEnvPath(instance), renderInstanceEnv(instance), {
     generated: true,
   });
@@ -167,6 +179,7 @@ function renderInstanceEnv(instance) {
     `SABLE_AUTOTWEET_ROOT=${shellValue(instance.autotweetRoot)}`,
     `SABLE_SIGNAL_BRIDGE_DIR=${shellValue(instance.signalBridgeDir)}`,
     `SABLE_CODEX_CWD=${shellValue(instance.homeDir)}`,
+    `SABLE_DEFAULT_SCHEDULER_JOBS_PATH=${shellValue(instance.defaultSchedulerJobsPath)}`,
     `SABLE_SCHEDULER_JOBS_PATH=${shellValue(instance.schedulerJobsPath)}`,
     `SABLE_PLUGIN_PATHS=${shellValue(path.join(instance.homeDir, "plugins"))}`,
     `CODEX_HOME=${shellValue(path.join(instance.homeDir, ".codex-bridge"))}`,
@@ -201,6 +214,7 @@ function formatInitResult(result) {
   lines.push("Next:");
   lines.push(`  npm run sable:doctor -- --home-dir ${shellQuote(result.instance.homeDir)}`);
   lines.push("  fill apps/signal-bridge/.env from apps/signal-bridge/.env.example");
+  lines.push("  edit AGENTS.md to choose Sable's personality and send /setavatar with an image");
   lines.push(`  npm run install:user-service -- --instance-home ${shellQuote(result.instance.homeDir)}`);
 
   return `${lines.join("\n")}\n`;

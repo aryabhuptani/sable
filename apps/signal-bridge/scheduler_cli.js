@@ -14,6 +14,9 @@ const { createInstanceConfig } = require("../../tools/instance/instance-config")
 const DEFAULT_SCHEDULER_JOBS_PATH =
   process.env.SABLE_SCHEDULER_JOBS_PATH ||
   createInstanceConfig().schedulerJobsPath;
+const DEFAULT_DEFAULT_SCHEDULER_JOBS_PATH =
+  process.env.SABLE_DEFAULT_SCHEDULER_JOBS_PATH ||
+  createInstanceConfig().defaultSchedulerJobsPath;
 const DEFAULT_SENDER =
   String(process.env.ALLOWED_NUMBERS || "")
     .split(",")
@@ -24,6 +27,7 @@ function main() {
   const [, , command, ...rest] = process.argv;
   const args = parseArgs(rest);
   const filePath = args.file || DEFAULT_SCHEDULER_JOBS_PATH;
+  const defaultFilePath = args["default-file"] || DEFAULT_DEFAULT_SCHEDULER_JOBS_PATH;
   const jobs = loadSchedulerJobs(filePath);
 
   if (command === "add") {
@@ -52,16 +56,21 @@ function main() {
   }
 
   if (command === "list") {
-    console.log(formatScheduleList(jobs));
+    console.log(formatScheduleList([...loadSchedulerJobs(defaultFilePath), ...jobs]));
     return;
   }
 
   if (command === "remove") {
     const id = normalizeText(args.id);
+    const defaultJobs = loadSchedulerJobs(defaultFilePath);
+    const nextDefaultJobs = defaultJobs.filter((job) => job.id !== id);
     const nextJobs = jobs.filter((job) => job.id !== id);
-    if (nextJobs.length === jobs.length) {
+    if (nextJobs.length === jobs.length && nextDefaultJobs.length === defaultJobs.length) {
       console.error(`No scheduled workflow matched ${id || "that id"}.`);
       process.exit(1);
+    }
+    if (nextDefaultJobs.length !== defaultJobs.length) {
+      saveSchedulerJobs(defaultFilePath, nextDefaultJobs);
     }
     saveSchedulerJobs(filePath, nextJobs);
     console.log(`Removed scheduled workflow ${id}.`);
@@ -93,8 +102,8 @@ function printUsage() {
       "Usage:",
       "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--file path]",
       "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--file path]",
-      "  scheduler_cli.js list [--file path]",
-      "  scheduler_cli.js remove --id sched-abc [--file path]",
+      "  scheduler_cli.js list [--file path] [--default-file path]",
+      "  scheduler_cli.js remove --id sched-abc [--file path] [--default-file path]",
     ].join("\n")
   );
 }

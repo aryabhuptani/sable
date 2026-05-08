@@ -11,7 +11,7 @@ This is the shortest path for a trusted early user who wants a real local Sable 
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.0
+git checkout v0.1.1
 npm install
 npm run init:instance -- --instance-home "$HOME/sable-instance"
 cp apps/signal-bridge/.env.example apps/signal-bridge/.env
@@ -35,6 +35,7 @@ npm run service:status -- --instance-home "$HOME/sable-instance"
 Send a Signal message to the Sable number. Once it replies, check:
 
 ```text
+/help
 /ops
 /bridgestatus
 ```
@@ -84,7 +85,7 @@ Choose your own repo location:
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.0
+git checkout v0.1.1
 npm install
 ```
 
@@ -117,6 +118,8 @@ $HOME/sable-instance/.config/sable/sable.env
 
 For a persistent install, the user-level service loads that env file. Do not bake private paths or secrets into tracked repo files.
 
+Before starting the bridge, open `<instance-home>/AGENTS.md` and choose Sable's local identity/personality. After Signal is running, send `/setavatar` with an attached image to set Sable's profile picture.
+
 Instance config currently recognizes these path overrides:
 
 - `SABLE_INSTANCE_HOME` or `SABLE_HOME`
@@ -129,6 +132,7 @@ Instance config currently recognizes these path overrides:
 - `SABLE_AUTOTWEET_ROOT`
 - `SABLE_SIGNAL_BRIDGE_DIR`
 - `SABLE_CODEX_CWD`
+- `SABLE_DEFAULT_SCHEDULER_JOBS_PATH`
 - `SABLE_SCHEDULER_JOBS_PATH`
 - `SABLE_OBSIDIAN_VAULT_ROOT`
 - `SABLE_OBSIDIAN_VAULT_NAME`
@@ -201,6 +205,10 @@ npm run upgrade
 The upgrade command refuses dirty repo state, fast-forwards from upstream, runs checks, and restarts the user service only after checks pass. It does not overwrite your instance home or local plugins.
 
 See `docs/upgrade.md` for recovery steps and smoke-level options.
+
+## What Sable Can Do
+
+See `docs/capabilities.md` for the current developer-preview capability map and the live slash commands to try first.
 
 ## Optional Plugin Setup
 

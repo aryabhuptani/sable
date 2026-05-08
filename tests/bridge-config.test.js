@@ -18,6 +18,7 @@ const projectDir = "/repo/apps/signal-bridge";
 const instanceConfig = {
   homeDir: "/home/tester",
   researchRoot: "/home/tester/memory/knowledge/research",
+  defaultSchedulerJobsPath: "/home/tester/memory/tasks/default-schedules.json",
   schedulerJobsPath: "/home/tester/memory/tasks/schedules.json",
 };
 
@@ -45,6 +46,7 @@ test("bridge config preserves local defaults while allowing future instance over
   assert.equal(config.CODEX_CWD, "/home/tester");
   assert.equal(config.STATE_PATH, path.join(projectDir, ".bridge-state.json"));
   assert.equal(config.RESEARCH_ROOT, instanceConfig.researchRoot);
+  assert.equal(config.DEFAULT_SCHEDULER_JOBS_PATH, instanceConfig.defaultSchedulerJobsPath);
   assert.equal(config.SCHEDULER_JOBS_PATH, instanceConfig.schedulerJobsPath);
   assert.equal(config.VOICE_NOTES_MODEL, "base.en");
   assert.equal(
@@ -66,6 +68,7 @@ test("bridge config applies environment overrides and disables ops alerts in e2e
     CODEX_HOME: "/tmp/codex-home",
     SABLE_CODEX_CWD: "/tmp/work",
     SABLE_E2E_SIGNAL_LOG_PATH: "/tmp/signal.log",
+    SABLE_DEFAULT_SCHEDULER_JOBS_PATH: "/tmp/default-schedules.json",
     SABLE_RESEARCH_ROOT: "/tmp/research",
     SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR: "/tmp/attachments",
     VOICE_NOTES_ENABLED: "false",
@@ -75,6 +78,7 @@ test("bridge config applies environment overrides and disables ops alerts in e2e
   assert.equal(config.CODEX_CWD, "/tmp/work");
   assert.equal(config.CODEX_SESSIONS_DIR, "/tmp/codex-home/sessions");
   assert.equal(config.RESEARCH_ROOT, "/tmp/research");
+  assert.equal(config.DEFAULT_SCHEDULER_JOBS_PATH, "/tmp/default-schedules.json");
   assert.equal(config.ATTACHMENT_QUEUE_RESULTS_DIR, "/tmp/attachments/results");
   assert.equal(config.APP_SERVER_IDLE_TIMEOUT_MS, 1234);
   assert.equal(config.VOICE_NOTES_ENABLED, false);

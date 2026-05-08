@@ -1,6 +1,6 @@
-# Sable v0.1.0 Developer Preview
+# Sable v0.1.1 Developer Preview
 
-Release: `v0.1.0`
+Release: `v0.1.1`
 
 This is the first developer-preview handoff for trusted early users.
 
@@ -17,6 +17,10 @@ This is the first developer-preview handoff for trusted early users.
 - Local plugin roots via `SABLE_PLUGIN_PATHS` and `<instance-home>/plugins`.
 - Guarded upgrades through `npm run upgrade:check` and `npm run upgrade`.
 - Shareability scan for obvious private-state leaks.
+- Split default scheduled workflows from local/personal scheduled workflows.
+- `/help` command for live slash-command discovery.
+- First-run identity/avatar setup prompts.
+- Capability docs for what Sable can do out of the box.
 
 ## What Is Not Stable Yet
 
@@ -29,7 +33,7 @@ This is the first developer-preview handoff for trusted early users.
 
 ## Compatibility Promise
 
-For `v0.1.0`, the compatibility promise is narrow:
+For `v0.1.1`, the compatibility promise is narrow:
 
 - Private instance state should stay outside the repo and should not be overwritten by upgrades.
 - Local plugins under `<instance-home>/plugins/local-*` should survive repo pulls.
@@ -38,7 +42,7 @@ For `v0.1.0`, the compatibility promise is narrow:
 
 ## Recommended Release Flow
 
-- Users install from `v0.1.0`.
+- Users install from the latest named developer-preview tag.
 - Contributors PR changes to `main`.
 - `main` can move faster than user installs.
 - Cut named tags for safer handoffs after `npm run test:community` and fresh-clone simulation pass.

@@ -138,3 +138,49 @@ test("scheduler cli default jobs path follows instance config", async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("scheduler cli lists default and local scheduled workflows separately", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-defaults-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+  const defaultFilePath = path.join(tempDir, "default-scheduler-jobs.json");
+
+  try {
+    await fs.writeFile(
+      defaultFilePath,
+      JSON.stringify({
+        jobs: [
+          {
+            id: "default-dreaming",
+            active: true,
+            recurrence: { type: "daily" },
+            time: { text: "3:30 AM" },
+            nextRunAt: "2999-01-01T00:00:00.000Z",
+            replyMode: "silent",
+            workflowPrompt: "Run dreaming",
+            scheduleKind: "default",
+          },
+        ],
+      }),
+      "utf8"
+    );
+    await runCli([
+      "add",
+      "--file",
+      filePath,
+      "--sender",
+      "+15551112222",
+      "--recurrence",
+      "daily",
+      "--time",
+      "8:00AM",
+      "--prompt",
+      "Run the morning brief",
+    ]);
+
+    const listResult = await runCli(["list", "--file", filePath, "--default-file", defaultFilePath]);
+    assert.match(listResult.stdout, /default-dreaming/);
+    assert.match(listResult.stdout, /Run the morning brief/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});

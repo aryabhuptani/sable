@@ -1,5 +1,22 @@
 "use strict";
 
+const BUILT_IN_COMMANDS = [
+  ["/help", "Show available Sable slash commands."],
+  ["/new", "Start a fresh interactive Sable session; with attachments, asks Sable to inspect them."],
+  ["/cancel", "Cancel the current active turn for this sender."],
+  ["/ops", "Show bridge, scheduler, research, queue, and runtime health."],
+  ["/bridgestatus", "Show concise bridge status."],
+  ["/plugins", "Show discovered official/local plugins and runtime plugin commands."],
+  ["/schedules", "List recurring Sable workflows."],
+  ["/unschedule <id>", "Remove a recurring workflow by id."],
+  ["/telegram [limit]", "Review Telegram inbound queue when Telegram is configured."],
+  ["/setavatar", "Use the first attached image as Sable's Signal profile picture."],
+  ["/removeavatar", "Remove Sable's Signal profile picture."],
+  ["/authstatus", "Show pending plugin connector auth state."],
+  ["/authresume", "Resume the saved prompt after connector auth completes."],
+  ["/authcancel", "Clear a pending connector auth flow."],
+];
+
 function parseCommand(
   text,
   {
@@ -11,6 +28,10 @@ function parseCommand(
   } = {}
 ) {
   const trimmed = normalizeText(text).trim();
+  if (trimmed === "/help") {
+    return { type: "help" };
+  }
+
   if (trimmed === "/plugins" || trimmed === "/pluginstatus") {
     return { type: "plugin-status" };
   }
@@ -94,10 +115,30 @@ function parseCommand(
   };
 }
 
+function formatHelp(pluginRuntime = null) {
+  const lines = ["Sable commands:", ""];
+  for (const [command, description] of BUILT_IN_COMMANDS) {
+    lines.push(`- ${command} - ${description}`);
+  }
+  const pluginCommands = pluginRuntime?.commands
+    ? [...pluginRuntime.commands.values()].sort((a, b) => a.commandName.localeCompare(b.commandName))
+    : [];
+  if (pluginCommands.length > 0) {
+    lines.push("", "Plugin commands:");
+    for (const command of pluginCommands) {
+      const suffix = command.description ? ` - ${command.description}` : "";
+      lines.push(`- ${command.commandName} (${command.pluginId})${suffix}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function normalizeText(value) {
   return typeof value === "string" ? value : "";
 }
 
 module.exports = {
+  BUILT_IN_COMMANDS,
+  formatHelp,
   parseCommand,
 };
