@@ -216,6 +216,105 @@ test("background job start can create a real git worktree before launching worke
   }
 });
 
+test("background job run-worker writes completion state and invokes callback", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const cwd = path.join(tempDir, "workspace");
+  const codexHome = path.join(tempDir, "codex-home");
+  const jobsRoot = path.join(tempDir, "jobs");
+  const jobDir = path.join(jobsRoot, "job-1");
+  const callbackOutput = path.join(tempDir, "callback.json");
+  const fakeCodex = path.join(tempDir, "fake-codex.js");
+  const callbackScript = path.join(tempDir, "callback.js");
+  const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
+
+  await fs.mkdir(cwd, { recursive: true });
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.mkdir(jobDir, { recursive: true });
+  await fs.writeFile(
+    fakeCodex,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const args = process.argv.slice(2);",
+      "const outputPath = args[args.indexOf('-o') + 1];",
+      "let input = '';",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  fs.writeFileSync(outputPath, `worker saw: ${input.trim()}\\n`);",
+      "  console.log(JSON.stringify({ type: 'complete' }));",
+      "});",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  await fs.writeFile(
+    callbackScript,
+    [
+      "const fs = require('node:fs');",
+      "fs.writeFileSync(process.argv[2], JSON.stringify({",
+      "  id: process.env.SABLE_BACKGROUND_JOB_ID,",
+      "  status: process.env.SABLE_BACKGROUND_JOB_STATUS,",
+      "  lastMessage: fs.readFileSync(process.env.SABLE_BACKGROUND_JOB_LAST_MESSAGE, 'utf8').trim(),",
+      "}));",
+      "",
+    ].join("\n")
+  );
+  await fs.writeFile(path.join(jobDir, "prompt.md"), "Implement the bounded thing.", "utf8");
+  await fs.writeFile(
+    path.join(jobDir, "status.json"),
+    `${JSON.stringify(
+      {
+        id: "job-1",
+        name: "Job One",
+        cwd,
+        callbackCommand: `${process.execPath} ${callbackScript} ${callbackOutput}`,
+        codex: fakeCodex,
+        codexHome,
+        createdAt: "2026-05-08T00:00:00.000Z",
+        dryRun: false,
+        jobDir,
+        model: "",
+        pid: 12345,
+        status: "running",
+        updatedAt: "2026-05-08T00:00:00.000Z",
+        worktree: null,
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  try {
+    execFileSync(process.execPath, [
+      harness,
+      "run-worker",
+      "--jobs-root",
+      jobsRoot,
+      "--id",
+      "job-1",
+      "--codex",
+      fakeCodex,
+      "--codex-home",
+      codexHome,
+    ]);
+
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    assert.equal(status.status, "completed");
+    assert.equal(status.exitCode, 0);
+    assert.equal(status.callbackExitCode, 0);
+    assert.equal(await fs.readFile(path.join(jobDir, "last-message.md"), "utf8"), "worker saw: Implement the bounded thing.\n");
+    assert.match(await fs.readFile(path.join(jobDir, "stdout.jsonl"), "utf8"), /"type":"complete"/);
+    assert.deepEqual(JSON.parse(await fs.readFile(callbackOutput, "utf8")), {
+      id: "job-1",
+      status: "completed",
+      lastMessage: "worker saw: Implement the bounded thing.",
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("background job default root follows project task state", () => {
   assert.equal(
     defaultJobsRoot({
