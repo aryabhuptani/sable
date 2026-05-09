@@ -28,6 +28,10 @@ test("init instance creates private state and generated env without overwriting"
       instance.agentsPath,
       instance.todoPath,
       instance.projectTasksPath,
+      path.join(instance.memoryRoot, "README.md"),
+      path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
+      path.join(instance.knowledgeRoot, "projects", "memory", "metrics"),
+      path.join(instance.tasksRoot, "projects", "memory", "TODO.md"),
       instance.defaultSchedulerJobsPath,
       instance.schedulerJobsPath,
       getInstanceEnvPath(instance),
@@ -67,7 +71,9 @@ test("init instance can reset generated files without overwriting user notes", a
       resetGenerated: true,
     });
 
-    assert.match(await fs.readFile(first.instance.defaultSchedulerJobsPath, "utf8"), /default-dreaming/);
+    const defaultSchedulerJobs = await fs.readFile(first.instance.defaultSchedulerJobsPath, "utf8");
+    assert.match(defaultSchedulerJobs, /default-dreaming/);
+    assert.match(defaultSchedulerJobs, /default-memory-eval/);
     assert.equal(await fs.readFile(first.instance.schedulerJobsPath, "utf8"), "{\"jobs\":[]}\n");
     assert.equal(await fs.readFile(first.instance.agentsPath, "utf8"), "custom agents\n");
     assert.ok(second.overwritten.some((entry) => entry.endsWith("default-scheduler-jobs.json")));

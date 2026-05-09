@@ -12,6 +12,39 @@ async function assertNoCodexTurnStarted(harness) {
   assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
 }
 
+test("/help returns the live command list without starting a Codex turn", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/help",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+  });
+
+  try {
+    const reply = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("Sable commands:") &&
+        request.params.message.includes("/ops - Show bridge, scheduler, research") &&
+        request.params.message.includes("/plugins - Show discovered official/local plugins") &&
+        request.params.message.includes("/setavatar - Use the first attached image"),
+      "help reply"
+    );
+
+    assert.match(reply.params.message, /\/authresume - Resume the saved prompt/);
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
 test("/bridgestatus reports Obsidian link server configuration", async () => {
   const harness = await startBridgeScenario({
     signalScenario: {
@@ -115,7 +148,7 @@ test("/ops reports bridge, scheduler, and research health without starting a Cod
     );
 
     assert.match(reply.params.message, /host flags: lingering=/);
-    assert.match(reply.params.message, /scheduler: 1 active/);
+    assert.match(reply.params.message, /scheduler: \d+ active/);
     assert.match(reply.params.message, /Research watchlist:/);
     assert.match(reply.params.message, /darkbloom\/stalled-run: active/);
 

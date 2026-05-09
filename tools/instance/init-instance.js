@@ -96,6 +96,10 @@ function initInstance({
     instance.autotweetRoot,
     path.dirname(instance.projectTasksPath),
     instance.projectKnowledgeRoot,
+    path.join(instance.knowledgeRoot, "projects", "memory"),
+    path.join(instance.knowledgeRoot, "projects", "memory", "evals"),
+    path.join(instance.knowledgeRoot, "projects", "memory", "metrics"),
+    path.join(instance.tasksRoot, "projects", "memory"),
     path.join(instance.homeDir, ".codex"),
     path.join(instance.homeDir, ".codex-bridge"),
     path.join(instance.homeDir, "plugins"),
@@ -140,6 +144,15 @@ function initInstance({
       "- [ ] Add any local plugins under `~/plugins`",
       "",
     ].join("\n")
+  );
+  writeFile(path.join(instance.memoryRoot, "README.md"), renderMemoryReadme());
+  writeFile(
+    path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
+    renderMemoryEvalSuite()
+  );
+  writeFile(
+    path.join(instance.tasksRoot, "projects", "memory", "TODO.md"),
+    renderMemoryTaskFile()
   );
   writeFile(
     instance.defaultSchedulerJobsPath,
@@ -186,6 +199,121 @@ function renderInstanceEnv(instance) {
     "",
   ];
   return `${lines.join("\n")}`;
+}
+
+function renderMemoryReadme() {
+  return [
+    "# Sable Memory",
+    "",
+    "This private instance memory is markdown-first. Keep canonical state in files that humans, agents, and scripts can read.",
+    "",
+    "## Source Of Truth",
+    "",
+    "| Memory kind | Location | Purpose |",
+    "| --- | --- | --- |",
+    "| Durable norms | `AGENTS.md` | Identity, operating policy, broad behavior rules |",
+    "| Procedures | `skills/*/SKILL.md` | Reusable workflows and SOPs |",
+    "| Tasks | `memory/tasks/` | Active work, queues, blockers, next actions |",
+    "| Semantic knowledge | `memory/knowledge/` | Project context, research notes, stable facts |",
+    "| Logs/audits | `memory/knowledge/**/LOG.md` or `logs/` | What happened, when, and why |",
+    "",
+    "## Default Improvement Loop",
+    "",
+    "Sable includes a silent daily memory eval loop. It should test reusable memory capabilities, score whether Sable retrieved and applied the right memory, then make at most one low-risk improvement that generalizes.",
+    "",
+    "When improving memory, prefer protocol/template/index fixes before one-off note fixes.",
+    "",
+  ].join("\n");
+}
+
+function renderMemoryEvalSuite() {
+  return [
+    "# Memory Evals",
+    "",
+    "These evals are probes for general memory capabilities. Add domain-specific examples over time, but optimize for reusable protocol improvements rather than one-off answers.",
+    "",
+    "## Scoring",
+    "",
+    "- `0`: missed memory entirely",
+    "- `1`: found vague or stale memory",
+    "- `2`: found the canonical source",
+    "- `3`: found the canonical source and applied it correctly",
+    "",
+    "## Capability Types",
+    "",
+    "- `source_of_truth_recovery`",
+    "- `procedure_activation`",
+    "- `current_state_recovery`",
+    "- `task_continuity`",
+    "- `research_synthesis_reuse`",
+    "- `staleness_detection`",
+    "- `contradiction_handling`",
+    "- `generalization_after_fix`",
+    "",
+    "## Seed Evals",
+    "",
+    "### source-of-truth-sable-tasks",
+    "",
+    "Capability: `source_of_truth_recovery`",
+    "",
+    "Prompt: Where does Sable track active Sable project work?",
+    "",
+    "Expected sources:",
+    "- `memory/tasks/projects/sable/TODO.md`",
+    "- `memory/knowledge/projects/sable/`",
+    "",
+    "Expected behavior:",
+    "- distinguish active tasks from archive/history",
+    "- point to the canonical task file first",
+    "",
+    "### memory-procedure-promotion",
+    "",
+    "Capability: `procedure_activation`",
+    "",
+    "Prompt: A repeated workflow keeps coming up. Where should Sable store the reusable procedure?",
+    "",
+    "Expected sources:",
+    "- `AGENTS.md`",
+    "- `skills/`",
+    "- `memory/README.md`",
+    "",
+    "Expected behavior:",
+    "- use `skills/` for reusable procedures",
+    "- use `AGENTS.md` only for durable broad operating norms",
+    "",
+    "### stale-active-detection",
+    "",
+    "Capability: `staleness_detection`",
+    "",
+    "Prompt: A completed research run still appears in an active directory. What should Sable do?",
+    "",
+    "Expected sources:",
+    "- `memory/README.md`",
+    "- relevant project task or research run state",
+    "",
+    "Expected behavior:",
+    "- preserve provenance",
+    "- move or mark completed state out of active lanes",
+    "- avoid deletion unless explicitly approved",
+    "",
+  ].join("\n");
+}
+
+function renderMemoryTaskFile() {
+  return [
+    "# Memory System Tasks",
+    "",
+    "## In Progress",
+    "",
+    "1. Improve Sable's memory through the daily eval loop",
+    "Current state: this instance has the default markdown-first memory architecture and a seed eval suite. The daily silent memory eval loop should score a few probes, fix at most one low-risk generalizable memory issue, and log metrics under `memory/knowledge/projects/memory/metrics/`.",
+    "",
+    "## Backlog",
+    "",
+    "- [ ] Add project-specific eval probes as new domains become important.",
+    "- [ ] Review memory metrics weekly and promote repeated fixes into templates, skills, or architecture docs.",
+    "",
+  ].join("\n");
 }
 
 function shellValue(value) {
@@ -261,4 +389,7 @@ module.exports = {
   initInstance,
   parseArgs,
   renderInstanceEnv,
+  renderMemoryEvalSuite,
+  renderMemoryReadme,
+  renderMemoryTaskFile,
 };

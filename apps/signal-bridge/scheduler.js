@@ -32,7 +32,8 @@ function saveSchedulerJobs(filePath, jobs) {
 }
 
 function createDefaultScheduledWorkflowJobs({ now = new Date() } = {}) {
-  const time = parseTimeText("3:30AM");
+  const dreamingTime = parseTimeText("3:30AM");
+  const memoryEvalTime = parseTimeText("4:15AM");
   const recurrence = { type: "daily" };
   const createdAt = now.toISOString();
   return [
@@ -43,11 +44,26 @@ function createDefaultScheduledWorkflowJobs({ now = new Date() } = {}) {
       updatedAt: createdAt,
       active: true,
       recurrence,
-      time,
+      time: dreamingTime,
       replyMode: "silent",
       workflowPrompt:
         "Run Sable's conservative dreaming workflow: review AGENTS.md, TODO.md, skills, and task files for duplicates, drift, and safe consolidation opportunities. Keep the pass silent unless there is a final user-facing output or a real blocker.",
-      nextRunAt: computeNextRunAt(recurrence, time, now),
+      nextRunAt: computeNextRunAt(recurrence, dreamingTime, now),
+      lastRunAt: "",
+      scheduleKind: "default",
+    },
+    {
+      id: "default-memory-eval",
+      sender: "__default_sender__",
+      createdAt,
+      updatedAt: createdAt,
+      active: true,
+      recurrence,
+      time: memoryEvalTime,
+      replyMode: "silent",
+      workflowPrompt:
+        "Run Sable's daily memory eval loop. Read the instance memory architecture and eval suite if present. Test 3-5 memory capability probes across source-of-truth recovery, procedure activation, current-state recovery, task continuity, research synthesis reuse, staleness detection, contradiction handling, and generalization after fixes. Score retrieval and application, append a concise metrics entry under the memory project metrics/history if available, update latest metrics, then make at most one low-risk memory improvement that improves a reusable protocol/template/index/skill convention before making a one-off note fix. Keep the run silent unless human judgment is required.",
+      nextRunAt: computeNextRunAt(recurrence, memoryEvalTime, now),
       lastRunAt: "",
       scheduleKind: "default",
     },

@@ -10,11 +10,28 @@ Sable is a local-first personal agent runtime. The useful mental model is: you t
 - Keep default scheduled workflows separate from personal/local scheduled workflows:
   - default workflows live in `SABLE_DEFAULT_SCHEDULER_JOBS_PATH`;
   - local workflows created by the user live in `SABLE_SCHEDULER_JOBS_PATH`.
+  - default workflows include conservative dreaming and the daily memory eval loop.
 - Discover official and local plugins with `/plugins`.
 - Add private local plugins under `<instance-home>/plugins/local-*` without forking Sable.
 - Maintain local markdown memory and produce phone-openable Obsidian links when configured.
 - Run bounded background Codex jobs through the background-job harness.
 - Run guarded upgrades with `npm run upgrade:check` and `npm run upgrade`.
+
+## Memory And Knowledge
+
+Sable expects a markdown-first memory tree:
+
+- `AGENTS.md` for durable local operating norms.
+- `skills/` for reusable procedures.
+- `memory/tasks/` for active work and project task lists.
+- `memory/knowledge/` for semantic, project, and research knowledge.
+
+The memory architecture and daily eval loop are documented in:
+
+- `docs/memory-architecture.md`
+- `docs/memory-eval-loop.md`
+
+New instances get a private `memory/README.md`, seed memory evals, and a memory task file so local memory can improve over time without putting private state in the repo.
 
 ## Optional Integrations
 
