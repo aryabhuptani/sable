@@ -29,6 +29,8 @@ test("init instance creates private state and generated env without overwriting"
       instance.todoPath,
       instance.projectTasksPath,
       path.join(instance.memoryRoot, "README.md"),
+      path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE.md"),
+      path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE_LOG.md"),
       path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
       path.join(instance.knowledgeRoot, "projects", "memory", "metrics"),
       path.join(instance.tasksRoot, "projects", "memory", "TODO.md"),

@@ -80,3 +80,16 @@ When an eval fails, prefer fixes in this order:
 3. Make a specific note/link/summary fix only when the failure is truly local.
 
 The daily loop should make at most one low-risk improvement per run.
+
+## Architecture Change Rule
+
+Each Sable instance should keep a project-knowledge record of its current memory architecture, plus an architecture log.
+
+Recommended paths:
+
+- `memory/knowledge/projects/memory/ARCHITECTURE.md`
+- `memory/knowledge/projects/memory/ARCHITECTURE_LOG.md`
+
+If a change alters where memory belongs, how memory is indexed, how project/research memory is structured, how scheduled memory improvement loops operate, or what conventions future Sable instances should inherit, update the architecture record and append to the architecture log in the same pass.
+
+Memory architecture is itself memory. Do not improve the system by quietly making it harder for future agents to understand what changed. That would be rude, and worse, inefficient.

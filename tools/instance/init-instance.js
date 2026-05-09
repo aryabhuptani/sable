@@ -147,6 +147,14 @@ function initInstance({
   );
   writeFile(path.join(instance.memoryRoot, "README.md"), renderMemoryReadme());
   writeFile(
+    path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE.md"),
+    renderMemoryArchitecture()
+  );
+  writeFile(
+    path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE_LOG.md"),
+    renderMemoryArchitectureLog()
+  );
+  writeFile(
     path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
     renderMemoryEvalSuite()
   );
@@ -222,6 +230,74 @@ function renderMemoryReadme() {
     "Sable includes a silent daily memory eval loop. It should test reusable memory capabilities, score whether Sable retrieved and applied the right memory, then make at most one low-risk improvement that generalizes.",
     "",
     "When improving memory, prefer protocol/template/index fixes before one-off note fixes.",
+    "",
+    "## Architecture Record",
+    "",
+    "The current memory architecture is codified in:",
+    "",
+    "- `memory/knowledge/projects/memory/ARCHITECTURE.md`",
+    "",
+    "Architecture changes should be logged in:",
+    "",
+    "- `memory/knowledge/projects/memory/ARCHITECTURE_LOG.md`",
+    "",
+    "If a change alters where memory belongs, how it should be indexed, what templates future projects should use, or how maintenance/eval loops operate, update both the architecture record and the log in the same pass.",
+    "",
+  ].join("\n");
+}
+
+function renderMemoryArchitecture() {
+  return [
+    "# Current Memory Architecture",
+    "",
+    "This document codifies this Sable instance's memory architecture. Update it whenever the architecture itself changes.",
+    "",
+    "## Core Premise",
+    "",
+    "Sable memory is markdown-first and filesystem-native. Tools may index or render memory, but markdown remains canonical.",
+    "",
+    "## Memory Layers",
+    "",
+    "| Memory kind | Canonical location | Purpose |",
+    "| --- | --- | --- |",
+    "| Durable norms | `AGENTS.md` | Identity, operating policy, broad behavior rules |",
+    "| Procedures | `skills/*/SKILL.md` | Reusable workflows and SOPs |",
+    "| Tasks | `memory/tasks/` | Active work, queues, blockers, next actions |",
+    "| Semantic knowledge | `memory/knowledge/` | Project context, research notes, stable facts |",
+    "| Research sources | `memory/knowledge/research/<topic>/raw/` | Raw inputs and processed provenance |",
+    "| Logs/audits | `memory/knowledge/**/LOG.md` or `logs/` | What happened, when, and why |",
+    "| Generated/background artifacts | project-specific `outputs/` or background-job dirs | Durable evidence, not the first retrieval surface |",
+    "",
+    "## Indexing Rules",
+    "",
+    "- `TODO.md` should stay a thin index into task files.",
+    "- `memory/README.md` maps the top-level memory architecture.",
+    "- `memory/tasks/README.md` maps task memory.",
+    "- substantial projects should expose a source-of-truth block linking repo, tasks, status/knowledge, research, and archive/progress.",
+    "- research topics should expose navigation through `README.md`, `KB.md`, and `wiki/index.md` when relevant.",
+    "",
+    "## Improvement Processes",
+    "",
+    "- `default-dreaming`: conservative cleanup review of norms, skills, and task state.",
+    "- `default-memory-eval`: daily eval-driven memory improvement loop.",
+    "- end-of-task reflection: classify new lessons into norms, skills, tasks, knowledge, or nowhere permanent.",
+    "",
+    "## Architecture Change Rule",
+    "",
+    "If a change alters where memory belongs, how it is indexed, how project/research memory is structured, how memory improvement loops operate, or what conventions future Sable instances should inherit, update this file and append to `memory/knowledge/projects/memory/ARCHITECTURE_LOG.md` in the same pass.",
+    "",
+  ].join("\n");
+}
+
+function renderMemoryArchitectureLog() {
+  return [
+    "# Memory Architecture Log",
+    "",
+    "This log records changes to the memory architecture itself: structure, indexing rules, templates, scheduled improvement loops, and conventions that should carry forward to future Sable instances.",
+    "",
+    "## Initial",
+    "",
+    "- Instance initialized with markdown-first memory layers, seed memory evals, default dreaming, default memory eval, and the architecture change rule.",
     "",
   ].join("\n");
 }
@@ -389,6 +465,8 @@ module.exports = {
   initInstance,
   parseArgs,
   renderInstanceEnv,
+  renderMemoryArchitecture,
+  renderMemoryArchitectureLog,
   renderMemoryEvalSuite,
   renderMemoryReadme,
   renderMemoryTaskFile,
