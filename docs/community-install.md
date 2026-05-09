@@ -11,7 +11,7 @@ This is the shortest path for a trusted early user who wants a real local Sable 
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.2
+git checkout v0.1.3
 npm install
 npm run init:instance -- --instance-home "$HOME/sable-instance"
 cp apps/signal-bridge/.env.example apps/signal-bridge/.env
@@ -85,7 +85,7 @@ Choose your own repo location:
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.2
+git checkout v0.1.3
 npm install
 ```
 

@@ -1,6 +1,6 @@
-# Sable v0.1.2 Developer Preview
+# Sable v0.1.3 Developer Preview
 
-Release: `v0.1.2`
+Release: `v0.1.3`
 
 This is the first developer-preview handoff for trusted early users.
 
@@ -34,7 +34,7 @@ This is the first developer-preview handoff for trusted early users.
 
 ## Compatibility Promise
 
-For `v0.1.2`, the compatibility promise is narrow:
+For `v0.1.3`, the compatibility promise is narrow:
 
 - Private instance state should stay outside the repo and should not be overwritten by upgrades.
 - Local plugins under `<instance-home>/plugins/local-*` should survive repo pulls.
