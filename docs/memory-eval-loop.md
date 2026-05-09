@@ -76,3 +76,21 @@ Do not perform broad rewrites or deletion in the daily loop. Escalate risky chan
 ## Default Schedule
 
 New Sable instances include a silent default scheduled workflow, `default-memory-eval`, which runs daily after the conservative dreaming pass.
+
+## Health Check Tool
+
+The deterministic health check is:
+
+```bash
+npm run memory:health -- --write-dir memory/knowledge/projects/memory/metrics
+```
+
+It reports:
+
+- completed autoresearch runs still under `active/`
+- stale active files
+- oversized active files without summaries
+- broken local markdown/wiki links
+- missing memory architecture files
+
+The daily eval loop should read this report before choosing its one low-risk improvement.

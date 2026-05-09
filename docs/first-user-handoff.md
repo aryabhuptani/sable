@@ -1,6 +1,6 @@
 # First User Handoff
 
-Use release tag: `v0.1.3`
+Use release tag: `v0.1.4`
 
 This page is intentionally short. The canonical install and upgrade instructions live elsewhere so we do not maintain three subtly different setup rituals. Subtle drift is how software grows little teeth.
 
@@ -19,7 +19,7 @@ Recommended clone command:
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.3
+git checkout v0.1.4
 ```
 
 Then follow `docs/community-install.md`.
@@ -29,8 +29,8 @@ Then follow `docs/community-install.md`.
 - Signal account registration may need human verification.
 - Codex CLI must already be installed and authenticated.
 - Home Assistant, Telegram, calendar, and other integrations may require manual auth or local tokens.
-- Local plugins are intentionally basic in `v0.1.3`.
-- `main` may move faster than release tags; use `v0.1.3` for the first install.
+- Local plugins are intentionally basic in `v0.1.4`.
+- `main` may move faster than release tags; use `v0.1.4` for the first install.
 
 ## Feedback to Send Back
 

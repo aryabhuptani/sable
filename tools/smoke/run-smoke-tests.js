@@ -30,6 +30,7 @@ const suites = [
       "tests/init-instance.test.js",
       "tests/job-control.test.js",
       "tests/live-update-channel.test.js",
+      "tests/memory-health.test.js",
       "tests/obsidian-ensure-serve.test.js",
       "tests/obsidian-link-plugin.test.js",
       "tests/plugin-auth-manager.test.js",

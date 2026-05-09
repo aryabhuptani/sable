@@ -2,6 +2,25 @@
 
 Sable uses named developer-preview tags and GitHub Releases for user-facing patch notes. This file is the repo-local changelog.
 
+## v0.1.4 - 2026-05-09
+
+### Added
+
+- Added `npm run memory:health`, a deterministic markdown memory health checker.
+- Added report artifacts under `memory/knowledge/projects/memory/metrics/` when run with `--write-dir`.
+- Added daily memory-eval prompt guidance to run the health check before choosing one low-risk improvement.
+- Added smoke coverage for memory health checks.
+
+### Fixed
+
+- Local link measurement now handles Obsidian wiki-style notes and line-suffixed file references, reducing false broken-link noise.
+
+### Validation
+
+- `npm run test:memory`
+- `npm run memory:health -- --memory-root <instance-home>/memory --write-dir <instance-home>/memory/knowledge/projects/memory/metrics --format text`
+- `npm run test:community`
+
 ## v0.1.3 - 2026-05-09
 
 ### Added
