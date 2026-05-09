@@ -14,7 +14,7 @@ npm run init:instance -- --instance-home "$HOME/sable-instance"
 npm run sable:doctor -- --home-dir "$HOME/sable-instance"
 ```
 
-For fresh local setup, see `docs/community-install.md`. For what Sable can do out of the box, see `docs/capabilities.md`. For the markdown-first memory architecture, see `docs/memory-architecture.md` and `docs/memory-eval-loop.md`. For first-user handoff, see `docs/first-user-handoff.md`. For upgrades, see `docs/upgrade.md`. For contributing, see `CONTRIBUTING.md`. For release status, see `DEVELOPER_PREVIEW.md`.
+For fresh local setup, see `docs/community-install.md`. For what Sable can do out of the box, see `docs/capabilities.md`. For the markdown-first memory architecture, see `docs/memory-architecture.md` and `docs/memory-eval-loop.md`. For first-user handoff, see `docs/first-user-handoff.md`. For upgrades, see `docs/upgrade.md`. For contributing, see `CONTRIBUTING.md`. For release status, see `DEVELOPER_PREVIEW.md`; for patch notes, see `CHANGELOG.md`.
 
 ## Layout
 
