@@ -167,8 +167,11 @@ test("autoresearch monitor sends per-run and all-complete notices", async () => 
     assert.equal(replies[0].sender, "+15551112222");
     assert.match(replies[0].message, /Autoresearch completed for Darkbloom\./);
     assert.match(replies[0].message, /Response confidentiality is still the weakest live boundary/);
-    assert.match(replies[0].message, new RegExp(`Run log: ${runRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/LOG\\.md`));
+    const archivedRunRoot = runRoot.replace(`${path.sep}active${path.sep}`, `${path.sep}archive${path.sep}`);
+    assert.match(replies[0].message, new RegExp(`Run log: ${archivedRunRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/LOG\\.md`));
     assert.match(replies[1].message, /All active autoresearch work is complete for Darkbloom\./);
+    await assert.rejects(fs.stat(runRoot), { code: "ENOENT" });
+    await fs.stat(archivedRunRoot);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

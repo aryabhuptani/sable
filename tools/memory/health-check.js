@@ -148,7 +148,7 @@ function findCompletedRunsInActive(memoryRoot) {
       path: statePath,
       run_dir: path.dirname(statePath),
       status: state.status,
-      recommendation: "Move completed run from active to archive while preserving provenance.",
+      recommendation: "Run `npm run autoresearch:archive-completed` from the Sable repo root to move completed runs from active to archive while preserving provenance.",
     });
   }
   return findings;

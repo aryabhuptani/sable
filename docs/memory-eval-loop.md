@@ -82,6 +82,7 @@ New Sable instances include a silent default scheduled workflow, `default-memory
 The deterministic health check is:
 
 ```bash
+npm run autoresearch:archive-completed
 npm run memory:health -- --write-dir memory/knowledge/projects/memory/metrics
 ```
 
@@ -94,3 +95,5 @@ It reports:
 - missing memory architecture files
 
 The daily eval loop should read this report before choosing its one low-risk improvement.
+
+Completed autoresearch runs should leave `active/` automatically after completion notices are prepared. The archive command is also run at the start of the daily memory loop as a catch-up finalizer for older completed runs.

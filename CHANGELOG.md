@@ -2,6 +2,24 @@
 
 Sable uses named developer-preview tags and GitHub Releases for user-facing patch notes. This file is the repo-local changelog.
 
+## v0.1.5 - 2026-05-09
+
+### Added
+
+- Added `npm run autoresearch:archive-completed`, a deterministic finalizer that moves completed autoresearch runs from `active/` to `archive/` while preserving state and run logs.
+- Wired the Signal bridge autoresearch monitor to archive completed runs after completion notices are prepared.
+- Wired the daily memory eval prompt to run the archive finalizer before measuring memory health.
+
+### Changed
+
+- Completion notices now rewrite run-log paths to the archived location when a run is archived during notice handling.
+
+### Validation
+
+- `npm run test:kb`
+- `node --test tests/autoresearch-monitor.test.js tests/memory-health.test.js`
+- `npm run test:community`
+
 ## v0.1.4 - 2026-05-09
 
 ### Added

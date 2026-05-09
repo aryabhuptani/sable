@@ -3,9 +3,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const {
+  archiveCompletedAutoresearchRuns,
+} = require("../../tools/knowledge-base/archive-completed-autoresearch-runs");
+
 function createAutoresearchMonitor({
   logger = console,
   researchRoot,
+  archiveCompletedRuns = true,
+  archiveCompletedRunsFn = archiveCompletedAutoresearchRuns,
   stalledRunThresholdMs = 6 * 60 * 60 * 1000,
   timestamp = defaultTimestamp,
 } = {}) {
@@ -236,13 +242,37 @@ function createAutoresearchMonitor({
   async function sendCompletionNotices(beforeRuns, sender, sendReply) {
     const afterRuns = snapshotRuns();
     const completedRuns = collectCompletedRuns(beforeRuns, afterRuns);
+    const completionNotices = completedRuns.map((completedRun) => ({
+      runRoot: completedRun.runRoot,
+      message: formatCompletionNotice(completedRun),
+    }));
+    const allCompleteNotice = didFrontierDrain(beforeRuns, afterRuns)
+      ? formatAllCompleteNotice(beforeRuns, afterRuns)
+      : "";
+    const archiveResult = archiveCompletedRuns
+      ? await archiveFinishedRunsAfterNoticePreparation()
+      : null;
 
-    for (const completedRun of completedRuns) {
-      await sendReply(sender, formatCompletionNotice(completedRun));
+    for (const notice of completionNotices) {
+      await sendReply(sender, applyArchivePathRewrites(notice.message, archiveResult));
     }
 
-    if (didFrontierDrain(beforeRuns, afterRuns)) {
-      await sendReply(sender, formatAllCompleteNotice(beforeRuns, afterRuns));
+    if (allCompleteNotice) {
+      await sendReply(sender, allCompleteNotice);
+    }
+  }
+
+  async function archiveFinishedRunsAfterNoticePreparation() {
+    if (!root) {
+      return null;
+    }
+    try {
+      return await archiveCompletedRunsFn({ researchRoot: root });
+    } catch (error) {
+      logger.error?.(
+        `[${timestamp()}] Failed archiving completed autoresearch runs: ${error.message}`
+      );
+      return null;
     }
   }
 
@@ -255,6 +285,20 @@ function createAutoresearchMonitor({
     snapshotRuns,
     summarizeRuns,
   };
+}
+
+function applyArchivePathRewrites(message, archiveResult) {
+  if (!archiveResult?.archived?.length) {
+    return message;
+  }
+  let rewritten = message;
+  for (const run of archiveResult.archived) {
+    if (!run.runRoot || !run.destination) {
+      continue;
+    }
+    rewritten = rewritten.split(run.runRoot).join(run.destination);
+  }
+  return rewritten;
 }
 
 function collectCompletedRuns(beforeRuns, afterRuns) {
@@ -437,5 +481,6 @@ module.exports = {
   collectCompletedRuns,
   createAutoresearchMonitor,
   didFrontierDrain,
+  applyArchivePathRewrites,
   summarizeAutoresearchRuns,
 };

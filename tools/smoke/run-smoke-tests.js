@@ -16,6 +16,7 @@ const suites = [
       "tests/app-server-turn-runner.test.js",
       "tests/background-job.test.js",
       "tests/bridge-config.test.js",
+      "tests/autoresearch-archive.test.js",
       "tests/autoresearch-monitor.test.js",
       "tests/bridge-codex-client.test.js",
       "tests/bridge-lifecycle.test.js",

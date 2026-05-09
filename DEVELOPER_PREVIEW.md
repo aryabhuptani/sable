@@ -1,6 +1,6 @@
-# Sable v0.1.4 Developer Preview
+# Sable v0.1.5 Developer Preview
 
-Release: `v0.1.4`
+Release: `v0.1.5`
 
 This is the first developer-preview handoff for trusted early users.
 
@@ -20,6 +20,7 @@ This is the first developer-preview handoff for trusted early users.
 - Split default scheduled workflows from local/personal scheduled workflows.
 - Default daily memory eval workflow for incremental markdown-memory improvement.
 - Deterministic memory health reports for stale active files, completed active research runs, broken local links, oversized notes, and missing architecture files.
+- Automatic autoresearch archival after completion notices, plus a catch-up `npm run autoresearch:archive-completed` finalizer.
 - `/help` command for live slash-command discovery.
 - First-run identity/avatar setup prompts.
 - Capability docs for what Sable can do out of the box.
@@ -35,7 +36,7 @@ This is the first developer-preview handoff for trusted early users.
 
 ## Compatibility Promise
 
-For `v0.1.4`, the compatibility promise is narrow:
+For `v0.1.5`, the compatibility promise is narrow:
 
 - Private instance state should stay outside the repo and should not be overwritten by upgrades.
 - Local plugins under `<instance-home>/plugins/local-*` should survive repo pulls.

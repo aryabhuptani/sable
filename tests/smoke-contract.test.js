@@ -26,7 +26,7 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:instance:py"], "python3 -m unittest tests/test_instance_config.py");
   assert.equal(pkg.scripts["test:plugins"], "node --test tests/plugin-manifest.test.js tests/plugin-runtime.test.js tests/plugin-create.test.js");
   assert.equal(pkg.scripts["test:scheduler"], "node --test tests/scheduler-cli.test.js");
-  assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js");
+  assert.equal(pkg.scripts["test:kb"], "node --test tests/knowledge-base-init.test.js tests/autoresearch-init.test.js tests/autoresearch-archive.test.js");
   assert.equal(pkg.scripts["test:autotweet"], "node --test tests/autotweet.test.js");
   assert.equal(pkg.scripts["test:homeassistant"], "python3 -m unittest tests/test_homeassistant_plugin.py tests/test_homeassistant_cli.py");
   assert.equal(pkg.scripts["test:humidifier"], "python3 -m unittest tests/test_humidifier_low_water_signal.py");
