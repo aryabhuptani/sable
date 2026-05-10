@@ -7,6 +7,7 @@ const { execFile } = require("node:child_process");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(PROJECT_ROOT, "apps", "signal-bridge", "scheduler_cli.js");
+const { createDefaultScheduledWorkflowJobs } = require("../apps/signal-bridge/scheduler");
 
 function runCli(args, env = {}) {
   return new Promise((resolve, reject) => {
@@ -137,6 +138,23 @@ test("scheduler cli default jobs path follows instance config", async () => {
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("default memory eval archives completed autoresearch before health checks", () => {
+  const jobs = createDefaultScheduledWorkflowJobs({
+    now: new Date("2026-05-10T00:00:00.000Z"),
+  });
+
+  const memoryEval = jobs.find((job) => job.id === "default-memory-eval");
+
+  assert.equal(memoryEval.replyMode, "silent");
+  assert.match(memoryEval.workflowPrompt, /npm run autoresearch:archive-completed/);
+  assert.match(memoryEval.workflowPrompt, /npm run memory:health -- --write-dir memory\/knowledge\/projects\/memory\/metrics/);
+  assert.ok(
+    memoryEval.workflowPrompt.indexOf("npm run autoresearch:archive-completed") <
+      memoryEval.workflowPrompt.indexOf("npm run memory:health"),
+    "completed autoresearch runs should be archived before memory health metrics are generated"
+  );
 });
 
 test("scheduler cli lists default and local scheduled workflows separately", async () => {
