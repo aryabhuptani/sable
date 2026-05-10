@@ -4,10 +4,10 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
+const { createDefaultScheduledWorkflowJobs } = require("../apps/signal-bridge/scheduler");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(PROJECT_ROOT, "apps", "signal-bridge", "scheduler_cli.js");
-const { createDefaultScheduledWorkflowJobs } = require("../apps/signal-bridge/scheduler");
 
 function runCli(args, env = {}) {
   return new Promise((resolve, reject) => {
