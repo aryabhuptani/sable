@@ -1,9 +1,9 @@
-const test = require("node:test");
 const assert = require("node:assert/strict");
+const { execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
+const test = require("node:test");
 const { createDefaultScheduledWorkflowJobs } = require("../apps/signal-bridge/scheduler");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
