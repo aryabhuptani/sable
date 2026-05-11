@@ -120,6 +120,7 @@ test("local durable operating docs exist outside the shareable runtime", () => {
   [
     instance.agentsPath,
     instance.todoPath,
+    path.join(instance.skillsRoot, "INDEX.md"),
     path.join(instance.skillsRoot, "home-assistant-management", "SKILL.md"),
     path.join(instance.skillsRoot, "telegram-review", "SKILL.md"),
     path.join(instance.skillsRoot, "tweet-ideas", "SKILL.md"),
