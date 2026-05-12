@@ -9,6 +9,7 @@ const { createInstanceConfig } = require("../instance/instance-config");
 
 const DEFAULT_TRIAGE_LIMIT = 25;
 const DEFAULT_STALE_DAYS = 21;
+const DEFAULT_READY_TIMEOUT_MS = 5 * 60 * 1000;
 
 function defaultApprovedChatsPath(env = process.env) {
   const explicit = normalizeText(env.SABLE_WHATSAPP_APPROVED_CHATS_PATH);
@@ -198,8 +199,22 @@ async function commandTriage(args, env = process.env) {
   const staleDays = normalizeInteger(args["stale-days"], DEFAULT_STALE_DAYS);
   const chats = args["input-json"]
     ? JSON.parse(fs.readFileSync(args["input-json"], "utf8"))
-    : await fetchWhatsAppChats({ env });
+    : await fetchWhatsAppChats({ env, args });
   console.log(formatTriageReport(chats, { approvedChats, limit, staleDays }));
+  return 0;
+}
+
+async function commandListChats(args, env = process.env) {
+  const limit = normalizeInteger(args.limit, 50);
+  const chats = args["input-json"]
+    ? JSON.parse(fs.readFileSync(args["input-json"], "utf8"))
+    : await fetchWhatsAppChats({ env, args });
+  for (const chat of chats.map(normalizeSnapshot).slice(0, limit)) {
+    const unread = chat.unreadCount ? ` unread=${chat.unreadCount}` : "";
+    const group = chat.isGroup ? " group" : "";
+    const muted = chat.isMuted ? " muted" : "";
+    console.log(`${chat.name || "(unnamed)"} | ${chat.id}${group}${muted}${unread}`);
+  }
   return 0;
 }
 
@@ -227,7 +242,7 @@ function commandInitConfig(args, env = process.env) {
   return 0;
 }
 
-async function fetchWhatsAppChats({ env = process.env } = {}) {
+async function fetchWhatsAppChats({ env = process.env, args = {} } = {}) {
   let whatsapp;
   try {
     whatsapp = require("whatsapp-web.js");
@@ -238,6 +253,11 @@ async function fetchWhatsAppChats({ env = process.env } = {}) {
   }
   const { Client, LocalAuth } = whatsapp;
   const sessionPath = defaultSessionPath(env);
+  const readyTimeoutMs = normalizeInteger(
+    args["ready-timeout-ms"] || env.SABLE_WHATSAPP_READY_TIMEOUT_MS,
+    DEFAULT_READY_TIMEOUT_MS
+  );
+  const qrFile = normalizeText(args["qr-file"] || env.SABLE_WHATSAPP_QR_FILE);
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: sessionPath }),
     puppeteer: {
@@ -245,6 +265,11 @@ async function fetchWhatsAppChats({ env = process.env } = {}) {
     },
   });
   client.on("qr", (qr) => {
+    if (qrFile) {
+      fs.mkdirSync(path.dirname(path.resolve(qrFile)), { recursive: true });
+      fs.writeFileSync(qrFile, `${qr}\n`, "utf8");
+      console.error(`WhatsApp QR raw payload written to ${qrFile}`);
+    }
     try {
       require("qrcode-terminal").generate(qr, { small: true });
     } catch {
@@ -252,7 +277,7 @@ async function fetchWhatsAppChats({ env = process.env } = {}) {
     }
   });
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Timed out waiting for WhatsApp Web to become ready.")), 60_000);
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for WhatsApp Web to become ready.")), readyTimeoutMs);
     client.once("ready", () => {
       clearTimeout(timer);
       resolve();
@@ -291,6 +316,9 @@ async function asyncMain(argv = process.argv.slice(2), env = process.env) {
   if (args.command === "triage") {
     return commandTriage(args, env);
   }
+  if (args.command === "list-chats") {
+    return commandListChats(args, env);
+  }
   if (args.command === "init-config") {
     return commandInitConfig(args, env);
   }
@@ -302,7 +330,8 @@ function printUsage() {
   console.error([
     "Usage:",
     "  whatsapp_cli.js init-config [--file path] [--force true]",
-    "  whatsapp_cli.js triage [--limit 25] [--stale-days 21] [--approved-chats path] [--input-json path]",
+    "  whatsapp_cli.js list-chats [--limit 50] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
+    "  whatsapp_cli.js triage [--limit 25] [--stale-days 21] [--approved-chats path] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
   ].join("\n"));
 }
 
@@ -359,4 +388,5 @@ module.exports = {
   loadApprovedChats,
   normalizeSnapshot,
   parseArgs,
+  commandListChats,
 };
