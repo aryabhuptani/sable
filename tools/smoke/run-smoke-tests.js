@@ -30,6 +30,7 @@ const suites = [
       "tests/browser-ops-plugin.test.js",
       "tests/codex-session-reader.test.js",
       "tests/fresh-clone-sim.test.js",
+      "tests/gocardless-probe.test.js",
       "tests/init-instance.test.js",
       "tests/job-control.test.js",
       "tests/live-update-channel.test.js",
@@ -121,6 +122,11 @@ const suites = [
     name: "Browser CLI",
     command: "npm",
     args: ["run", "test:browser"],
+  },
+  {
+    name: "Finance CLI",
+    command: "npm",
+    args: ["run", "test:finance"],
   },
 ];
 
