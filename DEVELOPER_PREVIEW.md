@@ -1,6 +1,6 @@
-# Sable v0.1.6 Developer Preview
+# Sable v0.1.7 Developer Preview
 
-Release: `v0.1.6`
+Release: `v0.1.7`
 
 This is the first developer-preview handoff for trusted early users.
 
@@ -25,6 +25,7 @@ This is the first developer-preview handoff for trusted early users.
 - `/help` command for live slash-command discovery.
 - First-run `SETUP.md` identity/avatar/help/scheduler checklist.
 - Capability docs for what Sable can do out of the box.
+- Experimental `/whatsapp` review for explicitly approved WhatsApp chats.
 
 ## What Is Not Stable Yet
 
@@ -32,12 +33,12 @@ This is the first developer-preview handoff for trusted early users.
 - The bridge is still Signal-first.
 - Local plugin API v1 is intentionally small.
 - Official plugins are still mostly manifest-described boundaries over existing tools.
-- Some integrations require manual account setup, especially Signal, Telegram, Home Assistant, and connector auth.
+- Some integrations require manual account setup, especially Signal, Telegram, WhatsApp Web, Home Assistant, and connector auth.
 - Main may move quickly between named releases.
 
 ## Compatibility Promise
 
-For `v0.1.6`, the compatibility promise is narrow:
+For `v0.1.7`, the compatibility promise is narrow:
 
 - Private instance state should stay outside the repo and should not be overwritten by upgrades.
 - Local plugins under `<instance-home>/plugins/local-*` should survive repo pulls.

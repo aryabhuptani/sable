@@ -11,7 +11,7 @@ This is the shortest path for a trusted early user who wants a real local Sable 
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.6
+git checkout v0.1.7
 npm install
 npm run init:instance -- --instance-home "$HOME/sable-instance"
 cp apps/signal-bridge/.env.example apps/signal-bridge/.env
@@ -85,7 +85,7 @@ Choose your own repo location:
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.6
+git checkout v0.1.7
 npm install
 ```
 
@@ -168,6 +168,32 @@ SABLE_TELEGRAM_SESSION_PATH=/home/example/sable-instance/.local/state/sable-tele
 ```
 
 Use `tools/telegram/.env.example` as the starting point.
+
+Enable WhatsApp only if you want Sable to review a small approved subset of chats through WhatsApp Web:
+
+```bash
+npm install whatsapp-web.js qrcode-terminal
+npm run whatsapp:cli -- init-config
+```
+
+Edit the generated approved-chat config so it contains only the chat ids or exact chat names Sable may surface:
+
+```json
+{
+  "approvedChats": [
+    { "id": "1234567890@c.us", "name": "Example Person" },
+    { "id": "1234567890-1234567890@g.us", "name": "Example Group" }
+  ]
+}
+```
+
+Then run:
+
+```bash
+npm run whatsapp:cli -- triage --limit 5
+```
+
+The first live run may print a WhatsApp Web QR login. Sable stores the session under `<instance-home>/.local/state/sable-whatsapp` by default. The Signal command is `/whatsapp [limit]`, and it refuses to surface unapproved chats.
 
 For Home Assistant and Typefully, prefer process environment or a private secret manager:
 

@@ -16,6 +16,7 @@ test("parseCommand recognizes bridge control commands", () => {
   assert.deepEqual(parseCommand("/authresume"), { type: "auth-resume" });
   assert.deepEqual(parseCommand("/plugins"), { type: "plugin-status" });
   assert.deepEqual(parseCommand("/pluginstatus"), { type: "plugin-status" });
+  assert.deepEqual(parseCommand("/whatsapp"), { type: "whatsapp-triage", limit: 25 });
 });
 
 test("formatHelp includes built-in and runtime plugin commands", () => {
@@ -79,6 +80,21 @@ test("parseCommand parses telegram triage limits", () => {
   assert.deepEqual(parseCommand("/telegram nope", { telegramTriageLimit: 25 }), {
     type: "telegram-triage",
     limit: 25,
+  });
+});
+
+test("parseCommand parses WhatsApp triage limits", () => {
+  assert.deepEqual(parseCommand("/whatsapp", { whatsappTriageLimit: 15 }), {
+    type: "whatsapp-triage",
+    limit: 15,
+  });
+  assert.deepEqual(parseCommand("/whatsapp 4", { whatsappTriageLimit: 15 }), {
+    type: "whatsapp-triage",
+    limit: 4,
+  });
+  assert.deepEqual(parseCommand("/whatsapp nope", { whatsappTriageLimit: 15 }), {
+    type: "whatsapp-triage",
+    limit: 15,
   });
 });
 

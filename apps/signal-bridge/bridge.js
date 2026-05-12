@@ -46,6 +46,7 @@ const { createSignalProfilePlugin } = require("./signal-profile-plugin");
 const { createSignalReplyChannel } = require("./signal-reply-channel");
 const { createSignalRpcSession } = require("./signal-rpc-session");
 const { createTelegramReviewPlugin } = require("./telegram-review-plugin");
+const { createWhatsAppReviewPlugin } = require("./whatsapp-review-plugin");
 const { createVoiceNotePlugin } = require("./voice-note-plugin");
 const {
   delay,
@@ -147,6 +148,13 @@ const telegramReview = createTelegramReviewPlugin({
   truncateText,
 });
 const TELEGRAM_TRIAGE_LIMIT = telegramReview.triageLimit;
+const whatsappReview = createWhatsAppReviewPlugin({
+  execFile,
+  env: process.env,
+  instanceConfig: INSTANCE_CONFIG,
+  truncateText,
+});
+const WHATSAPP_TRIAGE_LIMIT = whatsappReview.triageLimit;
 const obsidianLinks = createObsidianLinkPlugin({
   env: process.env,
   instanceConfig: INSTANCE_CONFIG,
@@ -353,6 +361,7 @@ queueRuntime = createBridgeQueueRuntime({
   signalAttachments,
   signalInbound,
   telegramTriageLimit: TELEGRAM_TRIAGE_LIMIT,
+  whatsappTriageLimit: WHATSAPP_TRIAGE_LIMIT,
   timestamp,
   voiceNotes,
 });
@@ -438,6 +447,7 @@ jobRuntime = createBridgeJobRuntime({
   getPendingPluginAuth: () => state.pendingPluginAuth,
   getSessionId: (key) => state[key],
   getTelegramTriageReport,
+  getWhatsAppTriageReport,
   formatHelp,
   mergePromptSegments,
   normalizeText,
@@ -690,6 +700,10 @@ function getSystemdUnitSummary(unitName) {
 
 function getTelegramTriageReport(limit = TELEGRAM_TRIAGE_LIMIT) {
   return telegramReview.getTriageReport(limit);
+}
+
+function getWhatsAppTriageReport(limit = WHATSAPP_TRIAGE_LIMIT) {
+  return whatsappReview.getTriageReport(limit);
 }
 
 async function sendReply(recipient, text) {

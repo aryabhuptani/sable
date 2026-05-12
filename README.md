@@ -2,7 +2,7 @@
 
 Sable is Arya's local-first automation and messaging stack on the minipc.
 
-Current status: `v0.1.6` developer preview. Sable is still a single repo with private instance state kept outside the checkout, a Signal-first bridge, Codex CLI under the hood, and plugin API v1 for local command plugins. Trusted friends can start running it now, but it is still an early local-first system rather than a polished package.
+Current status: `v0.1.7` developer preview. Sable is still a single repo with private instance state kept outside the checkout, a Signal-first bridge, Codex CLI under the hood, and plugin API v1 for local command plugins. Trusted friends can start running it now, but it is still an early local-first system rather than a polished package.
 
 Runtime paths are centralized through `tools/instance/instance-config.js` and can be overridden with environment variables. The `/home/arya/...` paths below document Arya's current minipc layout; they are examples, not assumptions every install must inherit.
 

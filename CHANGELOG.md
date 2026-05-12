@@ -2,6 +2,28 @@
 
 Sable uses named developer-preview tags and GitHub Releases for user-facing patch notes. This file is the repo-local changelog.
 
+## v0.1.7 - 2026-05-12
+
+### Added
+
+- Added experimental WhatsApp review support through WhatsApp Web.
+- Added `/whatsapp [limit]` to surface approved WhatsApp chats without starting a Codex turn.
+- Added `npm run whatsapp:cli` with `init-config` and `triage` commands.
+- Added an approved-chat allowlist config so WhatsApp triage surfaces only explicitly approved chat ids or exact chat names.
+- Added the `whatsapp-review` plugin manifest and setup docs.
+
+### Compatibility
+
+- WhatsApp support is opt-in and does not add `whatsapp-web.js` to the default install path. Users who enable it should run `npm install whatsapp-web.js qrcode-terminal` locally.
+- WhatsApp session data and approved-chat config stay in private instance state, outside the repo.
+
+### Validation
+
+- `npm run test:whatsapp`
+- `node --test tests/e2e/bridge.commands.e2e.test.js`
+- `npm run test:plugins`
+- `npm run test:community`
+
 ## v0.1.6 - 2026-05-12
 
 ### Added

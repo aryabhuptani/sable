@@ -34,6 +34,7 @@ function createRuntime(overrides = {}) {
     getPendingPluginAuth: () => null,
     getSessionId: (key) => sessions[key],
     getTelegramTriageReport: async () => "telegram report",
+    getWhatsAppTriageReport: async () => "whatsapp report",
     formatHelp: () => "help text",
     mergePromptSegments: (...segments) => segments.filter(Boolean).join("\n"),
     normalizeText: (value) => (typeof value === "string" && value.trim() ? value.trim() : ""),
@@ -123,6 +124,13 @@ test("job runtime handles plugin status and plugin command dispatch without Code
     "plugin status",
     "plugin /hello",
   ]);
+});
+
+test("job runtime handles WhatsApp triage without Codex", async () => {
+  const { replies, runtime } = createRuntime();
+  await runtime.processJob({ sender: "+1555", command: { type: "whatsapp-triage", limit: 3 } });
+
+  assert.deepEqual(replies.map((reply) => reply.message), ["whatsapp report"]);
 });
 
 test("job runtime runs prompt jobs, stores session ids, and cleans materialized paths", async () => {

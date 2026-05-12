@@ -1,0 +1,55 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "whatsapp-review",
+  "name": "WhatsApp Review",
+  "version": "0.1.0",
+  "pluginApiVersion": 1,
+  "status": "experimental",
+  "category": "communications",
+  "description": "Read-first WhatsApp triage through WhatsApp Web with an approved-chat allowlist.",
+  "runtime": {
+    "type": "node-cli",
+    "currentEntryPoints": [
+      "tools/whatsapp/whatsapp_cli.js",
+      "apps/signal-bridge/whatsapp-review-plugin.js",
+      "apps/signal-bridge/bridge-commands.js"
+    ]
+  },
+  "capabilities": [
+    "commands.whatsapp.triage",
+    "triage.approved_chat_filter",
+    "triage.read_first"
+  ],
+  "commands": [
+    {
+      "name": "/whatsapp",
+      "description": "Surface approved WhatsApp chats into Signal without starting a Codex turn."
+    }
+  ],
+  "requiredConfig": [
+    {
+      "name": "SABLE_WHATSAPP_APPROVED_CHATS_PATH",
+      "required": false,
+      "description": "Path to the approved WhatsApp chats JSON allowlist."
+    },
+    {
+      "name": "SABLE_WHATSAPP_SESSION_PATH",
+      "required": false,
+      "description": "Path to the local WhatsApp Web session directory."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "approved chat config",
+      "type": "cli",
+      "command": "node tools/whatsapp/whatsapp_cli.js init-config"
+    },
+    {
+      "name": "triage dry run",
+      "type": "cli",
+      "command": "node tools/whatsapp/whatsapp_cli.js triage --limit 5"
+    }
+  ],
+  "privateDataPolicy": "Do not store WhatsApp session files, contact names, chat ids, message text, or approved-chat allowlists in the plugin manifest."
+}

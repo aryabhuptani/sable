@@ -12,6 +12,7 @@ function createBridgeJobRuntime(options = {}) {
     getPendingPluginAuth,
     getSessionId,
     getTelegramTriageReport,
+    getWhatsAppTriageReport,
     formatHelp,
     mergePromptSegments,
     normalizeText,
@@ -156,6 +157,11 @@ function createBridgeJobRuntime(options = {}) {
 
     if (job.command.type === "telegram-triage") {
       await sendJobReply(job, await getTelegramTriageReport(job.command.limit));
+      return;
+    }
+
+    if (job.command.type === "whatsapp-triage") {
+      await sendJobReply(job, await getWhatsAppTriageReport(job.command.limit));
       return;
     }
 

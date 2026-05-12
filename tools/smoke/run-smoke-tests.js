@@ -45,8 +45,10 @@ const suites = [
       "tests/signal-reply-channel.test.js",
       "tests/signal-rpc-session.test.js",
       "tests/telegram-review-plugin.test.js",
+      "tests/whatsapp-review-plugin.test.js",
       "tests/voice-note-plugin.test.js",
       "tests/test_bridge_commands.js",
+      "tests/test_whatsapp_cli.js",
       "tests/test_signal_attachment_cli.js",
       "tests/shareability-check.test.js",
       "tests/upgrade.test.js",
@@ -107,6 +109,11 @@ const suites = [
     name: "Telegram CLI",
     command: "npm",
     args: ["run", "test:telegram"],
+  },
+  {
+    name: "WhatsApp CLI",
+    command: "npm",
+    args: ["run", "test:whatsapp"],
   },
 ];
 

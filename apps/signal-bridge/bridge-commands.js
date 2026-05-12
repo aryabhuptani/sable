@@ -10,6 +10,7 @@ const BUILT_IN_COMMANDS = [
   ["/schedules", "List recurring Sable workflows."],
   ["/unschedule <id>", "Remove a recurring workflow by id."],
   ["/telegram [limit]", "Review Telegram inbound queue when Telegram is configured."],
+  ["/whatsapp [limit]", "Review approved WhatsApp chats when WhatsApp is configured."],
   ["/setavatar", "Use the first attached image as Sable's Signal profile picture."],
   ["/removeavatar", "Remove Sable's Signal profile picture."],
   ["/authstatus", "Show pending plugin connector auth state."],
@@ -25,6 +26,7 @@ function parseCommand(
     hasFiles = false,
     pluginRuntime = null,
     telegramTriageLimit = 25,
+    whatsappTriageLimit = 25,
   } = {}
 ) {
   const trimmed = normalizeText(text).trim();
@@ -86,6 +88,19 @@ function parseCommand(
     return {
       type: "telegram-triage",
       limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : telegramTriageLimit,
+    };
+  }
+
+  if (trimmed === "/whatsapp") {
+    return { type: "whatsapp-triage", limit: whatsappTriageLimit };
+  }
+
+  if (trimmed.startsWith("/whatsapp ")) {
+    const rawLimit = trimmed.slice("/whatsapp ".length).trim();
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    return {
+      type: "whatsapp-triage",
+      limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : whatsappTriageLimit,
     };
   }
 

@@ -20,6 +20,7 @@ test("current plugin manifests are valid and have stable IDs", () => {
     "memory-obsidian",
     "signal-transport",
     "telegram-review",
+    "whatsapp-review",
   ]);
 
   assert.deepEqual(validatePluginRegistry(entries), []);

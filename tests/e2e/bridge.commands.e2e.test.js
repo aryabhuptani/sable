@@ -34,6 +34,7 @@ test("/help returns the live command list without starting a Codex turn", async 
         request.params.message.includes("Sable commands:") &&
         request.params.message.includes("/ops - Show bridge, scheduler, research") &&
         request.params.message.includes("/plugins - Show discovered official/local plugins") &&
+        request.params.message.includes("/whatsapp [limit] - Review approved WhatsApp chats") &&
         request.params.message.includes("/setavatar - Use the first attached image"),
       "help reply"
     );
@@ -289,6 +290,43 @@ test("/telegram uses instance repo defaults for the Telegram CLI cwd", async () 
     assert.equal(invocation[0], repoRoot);
     assert.equal(invocation[1], path.join(repoRoot, "tools", "telegram", "telegram_cli.py"));
     assert.deepEqual(invocation.slice(2), ["triage", "--limit", "7", "--stale-days", "21"]);
+    await assertNoCodexTurnStarted(harness);
+  } finally {
+    await harness.shutdown();
+  }
+});
+
+test("/whatsapp returns approved-chat triage output without starting a Codex turn", async () => {
+  const harness = await startBridgeScenario({
+    signalScenario: {
+      receive: [
+        {
+          delayMs: 50,
+          sender: "+15551112222",
+          message: "/whatsapp",
+        },
+      ],
+    },
+    codexScenario: { turns: [] },
+    extraEnv: {
+      SABLE_E2E_WHATSAPP_TRIAGE_OUTPUT: [
+        "WhatsApp queue review: 1 approved chat surfaced.",
+        "Needs reply now: 1",
+        "- Close Friend unread=1 - landing soon?",
+      ].join("\n"),
+    },
+  });
+
+  try {
+    const reply = await harness.waitForSignalRequest(
+      (request) =>
+        request.method === "send" &&
+        typeof request.params?.message === "string" &&
+        request.params.message.includes("WhatsApp queue review: 1 approved chat surfaced."),
+      "whatsapp triage reply"
+    );
+
+    assert.match(reply.params.message, /Close Friend/);
     await assertNoCodexTurnStarted(harness);
   } finally {
     await harness.shutdown();

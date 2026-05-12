@@ -37,6 +37,7 @@ New instances get a private `memory/README.md`, seed memory evals, and a memory 
 ## Optional Integrations
 
 - Telegram review and reply drafting, when Telegram credentials/session are configured.
+- WhatsApp review through WhatsApp Web, when the local session is configured. This is allowlist-first: `/whatsapp` only surfaces chats listed in the approved-chat config.
 - Home Assistant inspection, device control, and local automation management, when Home Assistant URL/token are configured.
 - Autotweet editorial suggestion and Typefully draft workflows, when Typefully credentials are configured.
 - Google Calendar connector workflows when the connector is available in the active Codex environment.
@@ -55,6 +56,7 @@ Send `/help` to Sable for the live command list. The core commands are:
 - `/schedules`
 - `/unschedule <id>`
 - `/telegram [limit]`
+- `/whatsapp [limit]`
 - `/setavatar`
 - `/removeavatar`
 - `/authstatus`

@@ -18,6 +18,7 @@ function createBridgeQueueRuntime({
   signalAttachments,
   signalInbound,
   telegramTriageLimit,
+  whatsappTriageLimit,
   timestamp,
   voiceNotes,
 }) {
@@ -78,6 +79,7 @@ function createBridgeQueueRuntime({
         hasFiles: fileAttachments.length > 0,
         pluginRuntime,
         telegramTriageLimit,
+        whatsappTriageLimit,
       }
     );
 
