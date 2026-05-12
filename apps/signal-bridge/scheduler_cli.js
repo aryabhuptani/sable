@@ -62,10 +62,20 @@ function main() {
 
   if (command === "remove") {
     const id = normalizeText(args.id);
+    const includeDefaults = normalizeText(args["include-defaults"]).toLowerCase() === "true";
     const defaultJobs = loadSchedulerJobs(defaultFilePath);
-    const nextDefaultJobs = defaultJobs.filter((job) => job.id !== id);
+    const matchedDefault = defaultJobs.some((job) => job.id === id);
+    const nextDefaultJobs = includeDefaults
+      ? defaultJobs.filter((job) => job.id !== id)
+      : defaultJobs;
     const nextJobs = jobs.filter((job) => job.id !== id);
     if (nextJobs.length === jobs.length && nextDefaultJobs.length === defaultJobs.length) {
+      if (matchedDefault && !includeDefaults) {
+        console.error(
+          `Refusing to remove default workflow ${id}. Pass --include-defaults true if you intentionally want to edit default scheduler state.`
+        );
+        process.exit(1);
+      }
       console.error(`No scheduled workflow matched ${id || "that id"}.`);
       process.exit(1);
     }
@@ -103,7 +113,7 @@ function printUsage() {
       "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--file path]",
       "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--file path]",
       "  scheduler_cli.js list [--file path] [--default-file path]",
-      "  scheduler_cli.js remove --id sched-abc [--file path] [--default-file path]",
+      "  scheduler_cli.js remove --id sched-abc [--file path] [--default-file path] [--include-defaults true]",
     ].join("\n")
   );
 }

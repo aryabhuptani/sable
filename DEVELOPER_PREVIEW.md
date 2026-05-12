@@ -1,6 +1,6 @@
-# Sable v0.1.5 Developer Preview
+# Sable v0.1.6 Developer Preview
 
-Release: `v0.1.5`
+Release: `v0.1.6`
 
 This is the first developer-preview handoff for trusted early users.
 
@@ -18,11 +18,12 @@ This is the first developer-preview handoff for trusted early users.
 - Guarded upgrades through `npm run upgrade:check` and `npm run upgrade`.
 - Shareability scan for obvious private-state leaks.
 - Split default scheduled workflows from local/personal scheduled workflows.
+- Normal `/unschedule` only removes local workflows; default workflows require intentional default-scheduler edits.
 - Default daily memory eval workflow for incremental markdown-memory improvement.
 - Deterministic memory health reports for stale active files, completed active research runs, broken local links, oversized notes, and missing architecture files.
 - Automatic autoresearch archival after completion notices, plus a catch-up `npm run autoresearch:archive-completed` finalizer.
 - `/help` command for live slash-command discovery.
-- First-run identity/avatar setup prompts.
+- First-run `SETUP.md` identity/avatar/help/scheduler checklist.
 - Capability docs for what Sable can do out of the box.
 
 ## What Is Not Stable Yet
@@ -36,7 +37,7 @@ This is the first developer-preview handoff for trusted early users.
 
 ## Compatibility Promise
 
-For `v0.1.5`, the compatibility promise is narrow:
+For `v0.1.6`, the compatibility promise is narrow:
 
 - Private instance state should stay outside the repo and should not be overwritten by upgrades.
 - Local plugins under `<instance-home>/plugins/local-*` should survive repo pulls.

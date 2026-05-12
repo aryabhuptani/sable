@@ -97,12 +97,14 @@ function createBridgeJobRuntime(options = {}) {
     }
 
     if (job.command.type === "unschedule") {
-      const removed = schedulerRuntime.removeScheduledJob(job.command.scheduleId);
+      const result = schedulerRuntime.removeScheduledJob(job.command.scheduleId);
       await sendReply(
         job.sender,
-        removed
+        result.removed
           ? `Removed scheduled workflow ${job.command.scheduleId}.`
-          : `No scheduled workflow matched ${job.command.scheduleId || "that id"}.`
+          : result.protectedDefault
+            ? `Default workflow ${job.command.scheduleId} is managed by Sable's default scheduler file. Disable or edit it there instead of using /unschedule.`
+            : `No local scheduled workflow matched ${job.command.scheduleId || "that id"}.`
       );
       return;
     }

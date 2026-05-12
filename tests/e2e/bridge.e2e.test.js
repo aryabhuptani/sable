@@ -67,14 +67,14 @@ test("/schedules lists persisted recurring workflows", async () => {
       (request) =>
         request.method === "send" &&
         typeof request.params?.message === "string" &&
-        request.params.message.includes("sched-daily-brief: every day at 8:00 AM"),
+        request.params.message.includes("sched-daily-brief [local]: every day at 8:00 AM"),
       "schedule listing"
     );
 
     assert.match(listing.params.message, /Give me a daily briefing of my day/);
     assert.match(
       listing.params.message,
-      /sched-background-maintenance: every 5 minutes \[silent\]/
+      /sched-background-maintenance \[local\]: every 5 minutes \[silent\]/
     );
     assert.match(listing.params.message, /reply mode: silent/);
     assert.match(listing.params.message, /Run passive background maintenance/);

@@ -149,11 +149,7 @@ function createObsidianLinkPlugin({
   }
 
   function buildObsidianUriForRelativePath(relativePath) {
-    const params = new URLSearchParams({
-      vault: vaultName,
-      file: relativePath,
-    });
-    return `obsidian://open?${params.toString()}`;
+    return buildObsidianUri(vaultName, relativePath);
   }
 
   function normalizeObsidianNotePath(filePath) {
@@ -296,6 +292,12 @@ function discoverObsidianVaultName(vaultRoot, { logger = console } = {}) {
   return "";
 }
 
+function buildObsidianUri(vaultName, relativePath) {
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(
+    relativePath
+  )}`;
+}
+
 function parseMarkdownFileTarget(target) {
   const normalizedTarget = normalizeText(target);
   if (!normalizedTarget || !normalizedTarget.startsWith("/")) {
@@ -401,6 +403,7 @@ function timestamp() {
 }
 
 module.exports = {
+  buildObsidianUri,
   createObsidianLinkPlugin,
   discoverObsidianVaultName,
   discoverTailscaleMagicDnsBaseUrl,

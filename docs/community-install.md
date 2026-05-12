@@ -11,7 +11,7 @@ This is the shortest path for a trusted early user who wants a real local Sable 
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.5
+git checkout v0.1.6
 npm install
 npm run init:instance -- --instance-home "$HOME/sable-instance"
 cp apps/signal-bridge/.env.example apps/signal-bridge/.env
@@ -85,7 +85,7 @@ Choose your own repo location:
 ```bash
 git clone <sable-repo-url> ~/projects/sable
 cd ~/projects/sable
-git checkout v0.1.5
+git checkout v0.1.6
 npm install
 ```
 
@@ -118,7 +118,7 @@ $HOME/sable-instance/.config/sable/sable.env
 
 For a persistent install, the user-level service loads that env file. Do not bake private paths or secrets into tracked repo files.
 
-Before starting the bridge, open `<instance-home>/AGENTS.md` and choose Sable's local identity/personality. After Signal is running, send `/setavatar` with an attached image to set Sable's profile picture.
+Before starting the bridge, open `<instance-home>/SETUP.md` and `<instance-home>/AGENTS.md`. The setup checklist walks through first-run identity, runtime, scheduling, and memory checks; `AGENTS.md` is where the user chooses Sable's local identity/personality. After Signal is running, send `/setavatar` with an attached image to set Sable's profile picture, then send `/help` to verify the live command list.
 
 Instance config currently recognizes these path overrides:
 
@@ -137,6 +137,8 @@ Instance config currently recognizes these path overrides:
 - `SABLE_OBSIDIAN_VAULT_ROOT`
 - `SABLE_OBSIDIAN_VAULT_NAME`
 - `VOICE_NOTES_MODEL_PATH`
+
+Default scheduled workflows belong in `SABLE_DEFAULT_SCHEDULER_JOBS_PATH`; personal/local workflows belong in `SABLE_SCHEDULER_JOBS_PATH`. The Signal `/unschedule` command removes local workflows only. If you intentionally need to change defaults, edit the default scheduler file directly or use the scheduler CLI with `--include-defaults true`.
 
 ## Configure Private Secrets
 

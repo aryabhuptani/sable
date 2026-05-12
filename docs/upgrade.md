@@ -2,7 +2,7 @@
 
 Sable uses a guarded upgrade flow so upstream code can move forward without overwriting private instance state or local plugins.
 
-For first users, start from a named release tag such as `v0.1.5`. Track `main` only if you are intentionally testing fast-moving development.
+For first users, start from a named release tag such as `v0.1.6`. Track `main` only if you are intentionally testing fast-moving development.
 
 ## Normal Flow
 

@@ -23,7 +23,11 @@ function runCli(args, env = {}) {
       },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(stderr || error.message));
+          const failure = new Error(stderr || error.message);
+          failure.stdout = stdout;
+          failure.stderr = stderr;
+          failure.code = error.code;
+          reject(failure);
           return;
         }
 
@@ -196,8 +200,62 @@ test("scheduler cli lists default and local scheduled workflows separately", asy
     ]);
 
     const listResult = await runCli(["list", "--file", filePath, "--default-file", defaultFilePath]);
-    assert.match(listResult.stdout, /default-dreaming/);
+    assert.match(listResult.stdout, /default-dreaming \[default\]/);
+    assert.match(listResult.stdout, /sched-.+ \[local\]/);
     assert.match(listResult.stdout, /Run the morning brief/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("scheduler cli protects default workflows unless explicitly included", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-default-protect-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+  const defaultFilePath = path.join(tempDir, "default-scheduler-jobs.json");
+
+  try {
+    await fs.writeFile(
+      defaultFilePath,
+      JSON.stringify({
+        jobs: [
+          {
+            id: "default-dreaming",
+            active: true,
+            recurrence: { type: "daily" },
+            time: { text: "3:30 AM" },
+            nextRunAt: "2999-01-01T00:00:00.000Z",
+            replyMode: "silent",
+            workflowPrompt: "Run dreaming",
+            scheduleKind: "default",
+          },
+        ],
+      }),
+      "utf8"
+    );
+    await fs.writeFile(filePath, "{\"jobs\":[]}\n", "utf8");
+
+    await assert.rejects(
+      runCli(["remove", "--file", filePath, "--default-file", defaultFilePath, "--id", "default-dreaming"]),
+      /Refusing to remove default workflow default-dreaming/
+    );
+
+    const afterRejected = JSON.parse(await fs.readFile(defaultFilePath, "utf8"));
+    assert.equal(afterRejected.jobs.length, 1);
+
+    await runCli([
+      "remove",
+      "--file",
+      filePath,
+      "--default-file",
+      defaultFilePath,
+      "--id",
+      "default-dreaming",
+      "--include-defaults",
+      "true",
+    ]);
+
+    const afterIncluded = JSON.parse(await fs.readFile(defaultFilePath, "utf8"));
+    assert.equal(afterIncluded.jobs.length, 0);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

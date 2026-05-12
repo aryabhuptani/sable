@@ -2,6 +2,23 @@
 
 Sable uses named developer-preview tags and GitHub Releases for user-facing patch notes. This file is the repo-local changelog.
 
+## v0.1.6 - 2026-05-12
+
+### Added
+
+- Added a generated `<instance-home>/SETUP.md` first-run checklist covering identity/personality, Signal avatar, `/help`, runtime, scheduling, and memory setup.
+
+### Changed
+
+- Schedule listings now label workflows as `[default]` or `[local]`.
+- Normal `/unschedule` and scheduler CLI removal protect default workflows; the CLI requires `--include-defaults true` for intentional default scheduler edits.
+
+### Validation
+
+- `node --test tests/scheduler-cli.test.js tests/bridge-scheduler-runtime.test.js tests/bridge-job-runtime.test.js tests/init-instance.test.js tests/test_bridge_commands.js`
+- `node --test tests/e2e/bridge.e2e.test.js`
+- `npm run test:community`
+
 ## v0.1.5 - 2026-05-09
 
 ### Added

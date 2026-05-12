@@ -11,6 +11,7 @@ Sable is a local-first personal agent runtime. The useful mental model is: you t
   - default workflows live in `SABLE_DEFAULT_SCHEDULER_JOBS_PATH`;
   - local workflows created by the user live in `SABLE_SCHEDULER_JOBS_PATH`.
   - default workflows include conservative dreaming and the daily memory eval loop.
+  - `/unschedule` only removes local workflows; default workflows must be edited intentionally in the default scheduler file.
 - Discover official and local plugins with `/plugins`.
 - Add private local plugins under `<instance-home>/plugins/local-*` without forking Sable.
 - Maintain local markdown memory and produce phone-openable Obsidian links when configured.
@@ -64,4 +65,4 @@ Runtime plugin commands, if any, appear after the core commands.
 
 ## First-Run Personalization
 
-`npm run init:instance` creates private instance instructions at `<instance-home>/AGENTS.md`. Edit that file to choose Sable's name/personality/norms. After the Signal bridge is running, send `/setavatar` with an attached image to set Sable's Signal profile picture.
+`npm run init:instance` creates private instance instructions at `<instance-home>/AGENTS.md` and a first-run checklist at `<instance-home>/SETUP.md`. Edit `AGENTS.md` to choose Sable's name/personality/norms. After the Signal bridge is running, send `/setavatar` with an attached image to set Sable's Signal profile picture, then send `/help` to verify the command surface.

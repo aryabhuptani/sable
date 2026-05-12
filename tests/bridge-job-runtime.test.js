@@ -55,7 +55,7 @@ function createRuntime(overrides = {}) {
     },
     schedulerRuntime: {
       listSchedules: () => "schedule list",
-      removeScheduledJob: () => true,
+      removeScheduledJob: () => ({ removed: true, protectedDefault: false }),
     },
     scheduledNoReplyMarker: "__NO_REPLY__",
     sendReply: async (sender, message) => replies.push({ sender, message }),
@@ -95,6 +95,20 @@ test("job runtime handles status, ops, and schedule commands without running Cod
     "ops report",
     "schedule list",
   ]);
+});
+
+test("job runtime reports protected default scheduled workflows clearly", async () => {
+  const { replies, runtime } = createRuntime({
+    schedulerRuntime: {
+      listSchedules: () => "schedule list",
+      removeScheduledJob: () => ({ removed: false, protectedDefault: true }),
+    },
+  });
+
+  await runtime.processJob({ sender: "+1555", command: { type: "unschedule", scheduleId: "default-dreaming" } });
+
+  assert.match(replies[0].message, /Default workflow default-dreaming/);
+  assert.match(replies[0].message, /default scheduler file/);
 });
 
 test("job runtime handles plugin status and plugin command dispatch without Codex", async () => {

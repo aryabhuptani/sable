@@ -145,6 +145,7 @@ function initInstance({
       "",
     ].join("\n")
   );
+  writeFile(path.join(instance.homeDir, "SETUP.md"), renderSetupChecklist(instance));
   writeFile(path.join(instance.memoryRoot, "README.md"), renderMemoryReadme());
   writeFile(
     path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE.md"),
@@ -242,6 +243,38 @@ function renderMemoryReadme() {
     "- `memory/knowledge/projects/memory/ARCHITECTURE_LOG.md`",
     "",
     "If a change alters where memory belongs, how it should be indexed, what templates future projects should use, or how maintenance/eval loops operate, update both the architecture record and the log in the same pass.",
+    "",
+  ].join("\n");
+}
+
+function renderSetupChecklist(instance) {
+  return [
+    "# Sable First-Run Setup",
+    "",
+    "Use this checklist before treating this instance as ready for daily use.",
+    "",
+    "## Identity",
+    "",
+    "- [ ] Edit `AGENTS.md` and choose the assistant name, personality, tone, and operating norms you want.",
+    "- [ ] Start the Signal bridge and send `/setavatar` with an attached image to set the Signal profile picture.",
+    "- [ ] Send `/help` over Signal and confirm the command list works.",
+    "",
+    "## Runtime",
+    "",
+    "- [ ] Fill private Signal settings in the bridge `.env` file.",
+    "- [ ] Run `npm run sable:doctor -- --home-dir " + instance.homeDir + "` from the Sable repo.",
+    "- [ ] Install and start the user service if this should run continuously.",
+    "",
+    "## Scheduling",
+    "",
+    "- [ ] Review default workflows in `memory/tasks/projects/sable/default-scheduler-jobs.json`.",
+    "- [ ] Add personal/local recurring workflows to `memory/tasks/projects/sable/scheduler-jobs.json`.",
+    "- [ ] Keep default workflows separate from local workflows so upgrades can refresh Sable defaults without trampling personal routines.",
+    "",
+    "## Memory",
+    "",
+    "- [ ] Add any private starting context to `TODO.md`, `memory/tasks/`, and `memory/knowledge/`.",
+    "- [ ] Keep code in project repos and durable knowledge in markdown memory.",
     "",
   ].join("\n");
 }
@@ -465,6 +498,7 @@ module.exports = {
   initInstance,
   parseArgs,
   renderInstanceEnv,
+  renderSetupChecklist,
   renderMemoryArchitecture,
   renderMemoryArchitectureLog,
   renderMemoryEvalSuite,

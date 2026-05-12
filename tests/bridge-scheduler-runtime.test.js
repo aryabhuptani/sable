@@ -81,10 +81,28 @@ test("scheduler runtime removes jobs and formats refreshed listings", () => {
   const { runtime, getSaved } = createRuntime(jobs, defaultJobs);
 
   assert.equal(runtime.listSchedules(), "schedules:3:default,local,local");
-  assert.equal(runtime.removeScheduledJob(" remove-me "), true);
+  assert.deepEqual(runtime.removeScheduledJob(" remove-me "), {
+    removed: true,
+    protectedDefault: false,
+  });
   assert.deepEqual(getSaved()["/tmp/jobs.json"].map((job) => job.id), ["keep"]);
   assert.deepEqual(getSaved()["/tmp/default-jobs.json"].map((job) => job.id), ["default-dreaming"]);
-  assert.equal(runtime.removeScheduledJob("missing"), false);
+  assert.deepEqual(runtime.removeScheduledJob("missing"), {
+    removed: false,
+    protectedDefault: false,
+  });
+});
+
+test("scheduler runtime protects default workflows from normal removal", () => {
+  const jobs = [{ id: "local", active: true }];
+  const defaultJobs = [{ id: "default-dreaming", active: true }];
+  const { runtime, getSaved } = createRuntime(jobs, defaultJobs);
+
+  assert.deepEqual(runtime.removeScheduledJob("default-dreaming"), {
+    removed: false,
+    protectedDefault: true,
+  });
+  assert.deepEqual(getSaved(), {});
 });
 
 test("scheduler runtime queues default jobs with configured sender and persists default state separately", async () => {

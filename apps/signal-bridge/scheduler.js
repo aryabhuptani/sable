@@ -229,11 +229,16 @@ function formatScheduleList(jobs) {
     return "No recurring Sable workflows are scheduled.";
   }
 
-  return jobs
+  const activeJobs = jobs.filter((job) => job.active !== false);
+  if (activeJobs.length === 0) {
+    return "No active recurring Sable workflows are scheduled.";
+  }
+
+  return activeJobs
     .filter((job) => job.active !== false)
     .map((job) =>
       [
-        `${job.id}: ${formatScheduleHeadline(job)}`,
+        `${job.id} [${formatScheduleKind(job)}]: ${formatScheduleHeadline(job)}`,
         `next: ${formatTimestamp(job.nextRunAt)}`,
         `reply mode: ${formatReplyMode(job.replyMode)}`,
         `workflow: ${job.workflowPrompt}`,
@@ -329,12 +334,17 @@ function withReplyModeSuffix(headline, replyMode) {
   return formatReplyMode(replyMode) === "silent" ? `${headline} [silent]` : headline;
 }
 
+function formatScheduleKind(job) {
+  return job?.scheduleKind === "default" ? "default" : "local";
+}
+
 module.exports = {
   createDefaultScheduledWorkflowJobs,
   createScheduledWorkflowJob,
   computeFollowingRunAt,
   dayNameToIndex,
   formatScheduleConfirmation,
+  formatScheduleKind,
   formatScheduleList,
   loadSchedulerJobs,
   parseTimeText,

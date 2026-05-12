@@ -45,20 +45,19 @@ function createBridgeSchedulerRuntime(options = {}) {
     refreshJobs();
     const normalizedId = normalizeText(scheduleId);
     if (!normalizedId) {
-      return false;
+      return { removed: false, protectedDefault: false };
     }
 
-    const defaultLength = defaultSchedulerJobs.length;
+    const protectedDefault = defaultSchedulerJobs.some((job) => job.id === normalizedId);
     const localLength = localSchedulerJobs.length;
-    defaultSchedulerJobs = defaultSchedulerJobs.filter((job) => job.id !== normalizedId);
     localSchedulerJobs = localSchedulerJobs.filter((job) => job.id !== normalizedId);
-    if (defaultSchedulerJobs.length === defaultLength && localSchedulerJobs.length === localLength) {
-      return false;
+    if (localSchedulerJobs.length === localLength) {
+      return { removed: false, protectedDefault };
     }
 
     persistJobs();
     schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
-    return true;
+    return { removed: true, protectedDefault: false };
   }
 
   function listSchedules() {

@@ -26,6 +26,7 @@ test("init instance creates private state and generated env without overwriting"
 
     for (const targetPath of [
       instance.agentsPath,
+      path.join(instance.homeDir, "SETUP.md"),
       instance.todoPath,
       instance.projectTasksPath,
       path.join(instance.memoryRoot, "README.md"),
@@ -44,13 +45,16 @@ test("init instance creates private state and generated env without overwriting"
     }
 
     await fs.writeFile(instance.todoPath, "custom todo\n", "utf8");
+    await fs.writeFile(path.join(instance.homeDir, "SETUP.md"), "custom setup\n", "utf8");
     const second = initInstance({
       homeDir: tempHome,
       logger: null,
       repoRoot: tempRepo,
     });
     assert.equal(await fs.readFile(instance.todoPath, "utf8"), "custom todo\n");
+    assert.equal(await fs.readFile(path.join(instance.homeDir, "SETUP.md"), "utf8"), "custom setup\n");
     assert.ok(second.skipped.some((entry) => entry.endsWith("TODO.md")));
+    assert.ok(second.skipped.some((entry) => entry.endsWith("SETUP.md")));
     assert.equal(second.overwritten.length, 0);
   } finally {
     await fs.rm(tempHome, { recursive: true, force: true });
@@ -98,6 +102,23 @@ test("rendered instance env points runtime paths at the private instance", () =>
   assert.match(env, /SABLE_DEFAULT_SCHEDULER_JOBS_PATH=\/srv\/sable-user\/memory\/tasks\/projects\/sable\/default-scheduler-jobs\.json/);
   assert.match(env, /SABLE_PLUGIN_PATHS=\/srv\/sable-user\/plugins/);
   assert.match(env, /CODEX_HOME=\/srv\/sable-user\/\.codex-bridge/);
+});
+
+test("first-run setup checklist prompts for personality, avatar, help, and scheduler review", async () => {
+  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "sable-instance-"));
+
+  try {
+    const result = initInstance({ homeDir: tempHome, logger: null });
+    const setup = await fs.readFile(path.join(result.instance.homeDir, "SETUP.md"), "utf8");
+
+    assert.match(setup, /choose the assistant name, personality, tone, and operating norms/);
+    assert.match(setup, /\/setavatar/);
+    assert.match(setup, /\/help/);
+    assert.match(setup, /default-scheduler-jobs\.json/);
+    assert.match(setup, /scheduler-jobs\.json/);
+  } finally {
+    await fs.rm(tempHome, { recursive: true, force: true });
+  }
 });
 
 test("init instance parser supports home, repo, and overwrite flags", () => {

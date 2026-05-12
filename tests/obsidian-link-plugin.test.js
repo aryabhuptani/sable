@@ -3,6 +3,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  buildObsidianUri,
   createObsidianLinkPlugin,
   parseMarkdownFileTarget,
 } = require("../apps/signal-bridge/obsidian-link-plugin");
@@ -90,4 +91,47 @@ test("parseMarkdownFileTarget supports markdown paths with optional line hints",
   });
   assert.equal(parseMarkdownFileTarget("relative.md"), null);
   assert.equal(parseMarkdownFileTarget("/tmp/not-markdown.txt"), null);
+});
+
+test("obsidian URI uses percent encoding for vault names with spaces", () => {
+  const relativeNotePath = "knowledge/projects/travel/kb/2026-05-california/README.md";
+  const expectedUri =
+    "obsidian://open?vault=Sable%20Memory&file=knowledge%2Fprojects%2Ftravel%2Fkb%2F2026-05-california%2FREADME.md";
+
+  assert.equal(
+    buildObsidianUri("Sable Memory", relativeNotePath),
+    expectedUri
+  );
+});
+
+test("obsidian redirect page uses percent-encoded vault name in launch URI", () => {
+  const plugin = createObsidianLinkPlugin({
+    env: {
+      SABLE_OBSIDIAN_BASE_URL: "https://sable.test.ts.net",
+      SABLE_OBSIDIAN_VAULT_NAME: "Sable Memory",
+    },
+    instanceConfig: createInstance(),
+  });
+  let statusCode = 0;
+  let body = "";
+  const res = {
+    writeHead(code) {
+      statusCode = code;
+    },
+    end(output = "") {
+      body = output;
+    },
+  };
+
+  plugin.handleRequest(
+    {
+      method: "GET",
+      url: `/obsidian/open?path=${encodeURIComponent("/srv/sable-user/memory/folder/note.md")}`,
+    },
+    res
+  );
+
+  assert.equal(statusCode, 200);
+  assert.match(body, /obsidian:\/\/open\?vault=Sable%20Memory&amp;file=folder%2Fnote\.md/);
+  assert.doesNotMatch(body, /Sable\+Memory/);
 });
