@@ -3,11 +3,15 @@
 
 const {
   createScheduledWorkflowJob,
+  computeFollowingRunAt,
   dayNameToIndex,
   formatScheduleConfirmation,
   formatScheduleList,
   loadSchedulerJobs,
+  loadSchedulerState,
   saveSchedulerJobs,
+  saveSchedulerState,
+  isValidTimeZone,
 } = require("./scheduler");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
 
@@ -17,6 +21,9 @@ const DEFAULT_SCHEDULER_JOBS_PATH =
 const DEFAULT_DEFAULT_SCHEDULER_JOBS_PATH =
   process.env.SABLE_DEFAULT_SCHEDULER_JOBS_PATH ||
   createInstanceConfig().defaultSchedulerJobsPath;
+const DEFAULT_SCHEDULER_STATE_PATH =
+  process.env.SABLE_SCHEDULER_STATE_PATH ||
+  createInstanceConfig().schedulerStatePath;
 const DEFAULT_SENDER =
   String(process.env.ALLOWED_NUMBERS || "")
     .split(",")
@@ -28,6 +35,7 @@ function main() {
   const args = parseArgs(rest);
   const filePath = args.file || DEFAULT_SCHEDULER_JOBS_PATH;
   const defaultFilePath = args["default-file"] || DEFAULT_DEFAULT_SCHEDULER_JOBS_PATH;
+  const statePath = args["state-file"] || DEFAULT_SCHEDULER_STATE_PATH;
   const jobs = loadSchedulerJobs(filePath);
 
   if (command === "add") {
@@ -48,6 +56,13 @@ function main() {
       workflowPrompt: args.prompt,
       replyMode,
     });
+    if (job.time && job.timezone === "active") {
+      const state = loadSchedulerState(statePath);
+      job.scheduledTimezone = state.activeTimezone;
+      job.nextRunAt = computeFollowingRunAt(job, new Date(), {
+        timezone: state.activeTimezone,
+      });
+    }
 
     jobs.push(job);
     saveSchedulerJobs(filePath, jobs);
@@ -56,7 +71,31 @@ function main() {
   }
 
   if (command === "list") {
-    console.log(formatScheduleList([...loadSchedulerJobs(defaultFilePath), ...jobs]));
+    const state = loadSchedulerState(statePath);
+    console.log([
+      `Active timezone: ${state.activeTimezone}`,
+      formatScheduleList([...loadSchedulerJobs(defaultFilePath), ...jobs]),
+    ].join("\n\n"));
+    return;
+  }
+
+  if (command === "timezone") {
+    const timezone = normalizeText(args.set);
+    if (!timezone) {
+      const state = loadSchedulerState(statePath);
+      console.log(`Active timezone: ${state.activeTimezone}`);
+      return;
+    }
+    if (!isValidTimeZone(timezone)) {
+      console.error(`Invalid IANA timezone: ${timezone}`);
+      process.exit(1);
+    }
+    saveSchedulerState(statePath, {
+      activeTimezone: timezone,
+      updatedAt: new Date().toISOString(),
+      source: normalizeText(args.source) || "scheduler-cli",
+    });
+    console.log(`Active timezone set to ${timezone}.`);
     return;
   }
 
@@ -113,6 +152,7 @@ function printUsage() {
       "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--file path]",
       "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--file path]",
       "  scheduler_cli.js list [--file path] [--default-file path]",
+      "  scheduler_cli.js timezone [--set Europe/Lisbon] [--state-file path] [--source note]",
       "  scheduler_cli.js remove --id sched-abc [--file path] [--default-file path] [--include-defaults true]",
     ].join("\n")
   );

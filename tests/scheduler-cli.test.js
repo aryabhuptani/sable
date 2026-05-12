@@ -4,7 +4,10 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { createDefaultScheduledWorkflowJobs } = require("../apps/signal-bridge/scheduler");
+const {
+  computeNextRunAt,
+  createDefaultScheduledWorkflowJobs,
+} = require("../apps/signal-bridge/scheduler");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(PROJECT_ROOT, "apps", "signal-bridge", "scheduler_cli.js");
@@ -256,6 +259,44 @@ test("scheduler cli protects default workflows unless explicitly included", asyn
 
     const afterIncluded = JSON.parse(await fs.readFile(defaultFilePath, "utf8"));
     assert.equal(afterIncluded.jobs.length, 0);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("scheduler computes active-timezone wall-clock schedules", () => {
+  const nextRun = computeNextRunAt(
+    { type: "daily" },
+    { hour: 0, minute: 15, text: "12:15 AM" },
+    new Date("2026-05-12T23:33:00.000Z"),
+    { timezone: "America/Los_Angeles" }
+  );
+
+  assert.equal(nextRun, "2026-05-13T07:15:00.000Z");
+});
+
+test("scheduler cli can read and update active timezone state", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-timezone-"));
+  const statePath = path.join(tempDir, "scheduler-state.json");
+
+  try {
+    const setResult = await runCli([
+      "timezone",
+      "--state-file",
+      statePath,
+      "--set",
+      "America/Los_Angeles",
+      "--source",
+      "test",
+    ]);
+    assert.match(setResult.stdout, /Active timezone set to America\/Los_Angeles/);
+
+    const stored = JSON.parse(await fs.readFile(statePath, "utf8"));
+    assert.equal(stored.activeTimezone, "America/Los_Angeles");
+    assert.equal(stored.source, "test");
+
+    const getResult = await runCli(["timezone", "--state-file", statePath]);
+    assert.match(getResult.stdout, /Active timezone: America\/Los_Angeles/);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

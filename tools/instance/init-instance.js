@@ -169,6 +169,19 @@ function initInstance({
     { generated: true }
   );
   writeFile(instance.schedulerJobsPath, '{"jobs":[]}\n', { generated: true });
+  writeFile(
+    instance.schedulerStatePath,
+    `${JSON.stringify(
+      {
+        activeTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        updatedAt: new Date().toISOString(),
+        source: "init-instance",
+      },
+      null,
+      2
+    )}\n`,
+    { generated: true }
+  );
   writeFile(getInstanceEnvPath(instance), renderInstanceEnv(instance), {
     generated: true,
   });
@@ -203,6 +216,7 @@ function renderInstanceEnv(instance) {
     `SABLE_CODEX_CWD=${shellValue(instance.homeDir)}`,
     `SABLE_DEFAULT_SCHEDULER_JOBS_PATH=${shellValue(instance.defaultSchedulerJobsPath)}`,
     `SABLE_SCHEDULER_JOBS_PATH=${shellValue(instance.schedulerJobsPath)}`,
+    `SABLE_SCHEDULER_STATE_PATH=${shellValue(instance.schedulerStatePath)}`,
     `SABLE_PLUGIN_PATHS=${shellValue(path.join(instance.homeDir, "plugins"))}`,
     `CODEX_HOME=${shellValue(path.join(instance.homeDir, ".codex-bridge"))}`,
     "",

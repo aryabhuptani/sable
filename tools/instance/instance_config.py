@@ -28,6 +28,7 @@ class InstanceConfig:
     project_tasks_path: str
     default_scheduler_jobs_path: str
     scheduler_jobs_path: str
+    scheduler_state_path: str
 
     def as_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -95,6 +96,10 @@ def create_instance_config(
         _env_value(active_env, "SABLE_SCHEDULER_JOBS_PATH")
         or Path(tasks_root) / "projects" / "sable" / "scheduler-jobs.json"
     )
+    scheduler_state_path = _resolve(
+        _env_value(active_env, "SABLE_SCHEDULER_STATE_PATH")
+        or Path(tasks_root) / "projects" / "sable" / "scheduler-state.json"
+    )
     default_scheduler_jobs_path = _resolve(
         _env_value(active_env, "SABLE_DEFAULT_SCHEDULER_JOBS_PATH")
         or Path(tasks_root) / "projects" / "sable" / "default-scheduler-jobs.json"
@@ -116,6 +121,7 @@ def create_instance_config(
         project_tasks_path=project_tasks_path,
         default_scheduler_jobs_path=default_scheduler_jobs_path,
         scheduler_jobs_path=scheduler_jobs_path,
+        scheduler_state_path=scheduler_state_path,
     )
 
 

@@ -49,6 +49,10 @@ class InstanceConfigTests(unittest.TestCase):
             config.default_scheduler_jobs_path,
             "/home/arya/memory/tasks/projects/sable/default-scheduler-jobs.json",
         )
+        self.assertEqual(
+            config.scheduler_state_path,
+            "/home/arya/memory/tasks/projects/sable/scheduler-state.json",
+        )
 
     def test_supports_non_arya_env_overrides(self):
         config = instance_config.create_instance_config(
@@ -69,6 +73,7 @@ class InstanceConfigTests(unittest.TestCase):
                 "SABLE_PROJECT_TASKS_PATH": "/data/alex/projects/sable/tasks.md",
                 "SABLE_DEFAULT_SCHEDULER_JOBS_PATH": "/data/alex/projects/sable/default-scheduler.json",
                 "SABLE_SCHEDULER_JOBS_PATH": "/data/alex/projects/sable/scheduler.json",
+                "SABLE_SCHEDULER_STATE_PATH": "/data/alex/projects/sable/scheduler-state.json",
             },
         )
 
@@ -93,6 +98,7 @@ class InstanceConfigTests(unittest.TestCase):
             "/data/alex/projects/sable/default-scheduler.json",
         )
         self.assertEqual(config.scheduler_jobs_path, "/data/alex/projects/sable/scheduler.json")
+        self.assertEqual(config.scheduler_state_path, "/data/alex/projects/sable/scheduler-state.json")
 
     def test_explicit_home_dir_wins_over_env_home(self):
         config = instance_config.create_instance_config(

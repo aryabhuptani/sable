@@ -7,6 +7,8 @@ const {
   computeFollowingRunAt,
   formatScheduleList,
   loadSchedulerJobs,
+  loadSchedulerState,
+  normalizeJobTimezoneMode,
   saveSchedulerJobs,
 } = require("./scheduler");
 const { formatHelp, parseCommand } = require("./bridge-commands");
@@ -119,6 +121,7 @@ const {
   SCHEDULED_NO_REPLY_MARKER,
   SCHEDULER_JOBS_PATH,
   SCHEDULER_POLL_INTERVAL_MS,
+  SCHEDULER_STATE_PATH,
   SIGNAL_BRIDGE_DIR_ENV,
   SIGNAL_REPLY_TO_ENV,
   STATE_PATH,
@@ -217,11 +220,14 @@ const schedulerRuntime = createBridgeSchedulerRuntime({
     scheduledAttachmentDiscovery.discoverImageAttachments(prompt),
   formatScheduleList,
   loadSchedulerJobs,
+  loadSchedulerState,
   normalizeText,
+  normalizeJobTimezoneMode,
   saveSchedulerJobs,
   defaultSchedulerJobsPath: DEFAULT_SCHEDULER_JOBS_PATH,
   defaultScheduledSender: [...allowedNumbers][0] || [...allowedSenders][0] || "",
   schedulerJobsPath: SCHEDULER_JOBS_PATH,
+  schedulerStatePath: SCHEDULER_STATE_PATH,
   timestamp,
 });
 const appServerMessages = createAppServerMessageHelpers({

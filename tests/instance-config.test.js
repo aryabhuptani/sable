@@ -27,6 +27,7 @@ test("instance config defaults to Arya's current local layout", () => {
     "/home/arya/memory/tasks/projects/sable/default-scheduler-jobs.json"
   );
   assert.equal(config.schedulerJobsPath, "/home/arya/memory/tasks/projects/sable/scheduler-jobs.json");
+  assert.equal(config.schedulerStatePath, "/home/arya/memory/tasks/projects/sable/scheduler-state.json");
 });
 
 test("instance config supports future non-Arya install paths through env overrides", () => {
@@ -59,6 +60,7 @@ test("instance config supports future non-Arya install paths through env overrid
     "/data/alex/memory/tasks/projects/sable/default-scheduler-jobs.json"
   );
   assert.equal(config.schedulerJobsPath, "/data/alex/memory/tasks/projects/sable/scheduler-jobs.json");
+  assert.equal(config.schedulerStatePath, "/data/alex/memory/tasks/projects/sable/scheduler-state.json");
 });
 
 test("instance config supports explicit home dir over env defaults", () => {

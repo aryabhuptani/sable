@@ -114,6 +114,9 @@ The service reads the same `.env` file in this app directory, so changing number
 - Use Google Calendar / Tasks for ordinary reminders and todos.
 - Scheduler jobs are persisted at `SABLE_SCHEDULER_JOBS_PATH` when set; otherwise the path comes from instance config. Arya's current default is:
   `/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
+- User-facing recurring workflows follow Sable's active timezone state, stored at `SABLE_SCHEDULER_STATE_PATH` when set or the instance default:
+  `/home/arya/memory/tasks/projects/sable/scheduler-state.json`
+- Silent maintenance workflows default to host time. Set a job's `timezone` to `active` or `host` to override that default.
 - Due jobs are picked up by the bridge heartbeat and executed through the normal Codex/Signal queue.
 - Management escape hatches:
   - `/schedules`
@@ -121,6 +124,7 @@ The service reads the same `.env` file in this app directory, so changing number
 - Local CLI:
   - `node scheduler_cli.js add --recurrence daily --time 8:00AM --prompt "Give me a daily briefing of my day"`
   - `node scheduler_cli.js add --recurrence weekly --day monday --time 9:00AM --prompt "Generate a grocery list for me"`
+  - `node scheduler_cli.js timezone --set America/Los_Angeles`
   - `node scheduler_cli.js list`
   - `node scheduler_cli.js remove --id <schedule-id>`
 - Natural-language scheduling is intended to route through the recurring-workflow scheduling skill, which should call the CLI and persist the job file rather than relying on the bridge to regex-parse English.
@@ -169,6 +173,7 @@ Runtime defaults come from `tools/instance/instance-config.js` first, with `.env
 - `SABLE_REPO_ROOT`: repo root; current default `/home/arya/projects/sable`
 - `SABLE_CODEX_CWD`: Codex working directory; current default `/home/arya`
 - `SABLE_SCHEDULER_JOBS_PATH`: scheduler persistence file; current default `/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
+- `SABLE_SCHEDULER_STATE_PATH`: scheduler active-timezone state file; current default `/home/arya/memory/tasks/projects/sable/scheduler-state.json`
 - `SABLE_RESEARCH_ROOT`: research KB root; current default `/home/arya/memory/knowledge/research`
 - `SABLE_TELEGRAM_CLI_PATH`: Telegram review CLI; current default `/home/arya/projects/sable/tools/telegram/telegram_cli.py`
 - `SABLE_OBSIDIAN_VAULT_ROOT` and `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian link target; current defaults `/home/arya/memory` and the discovered vault name, usually `memory`

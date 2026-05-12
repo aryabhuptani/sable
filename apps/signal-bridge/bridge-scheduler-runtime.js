@@ -8,15 +8,19 @@ function createBridgeSchedulerRuntime(options = {}) {
     discoverImageAttachments,
     formatScheduleList,
     loadSchedulerJobs,
+    loadSchedulerState = () => ({ activeTimezone: "" }),
     logger = console,
     normalizeText = defaultNormalizeText,
+    normalizeJobTimezoneMode = defaultNormalizeJobTimezoneMode,
     schedulerJobsPath,
+    schedulerStatePath = "",
     saveSchedulerJobs,
     timestamp = () => new Date().toISOString(),
   } = options;
 
   let defaultSchedulerJobs = loadDefaultJobs();
   let localSchedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+  let schedulerState = loadState();
   let schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
 
   function getJobs() {
@@ -34,9 +38,14 @@ function createBridgeSchedulerRuntime(options = {}) {
     saveSchedulerJobs(schedulerJobsPath, localSchedulerJobs);
   }
 
+  function loadState() {
+    return schedulerStatePath ? loadSchedulerState(schedulerStatePath) : { activeTimezone: "" };
+  }
+
   function refreshJobs() {
     defaultSchedulerJobs = loadDefaultJobs();
     localSchedulerJobs = loadSchedulerJobs(schedulerJobsPath);
+    schedulerState = loadState();
     schedulerJobs = mergeJobs(defaultSchedulerJobs, localSchedulerJobs);
     return schedulerJobs;
   }
@@ -84,6 +93,10 @@ function createBridgeSchedulerRuntime(options = {}) {
     const now = new Date();
     let changed = false;
 
+    if (refreshTimezoneSensitiveJobs(now)) {
+      changed = true;
+    }
+
     for (const scheduledJob of schedulerJobs) {
       if (!scheduledJob || scheduledJob.active === false) {
         continue;
@@ -96,7 +109,12 @@ function createBridgeSchedulerRuntime(options = {}) {
 
       enqueueBackgroundJob(queueScheduledWorkflowRun(scheduledJob));
       scheduledJob.lastRunAt = now.toISOString();
-      scheduledJob.nextRunAt = computeFollowingRunAt(scheduledJob, now);
+      scheduledJob.nextRunAt = computeFollowingRunAt(
+        scheduledJob,
+        now,
+        getComputeOptionsForJob(scheduledJob)
+      );
+      scheduledJob.scheduledTimezone = getScheduledTimezoneForJob(scheduledJob);
       scheduledJob.updatedAt = timestamp();
       changed = true;
     }
@@ -105,6 +123,62 @@ function createBridgeSchedulerRuntime(options = {}) {
       persistJobs();
       ensureBackgroundProcessing();
     }
+  }
+
+  function refreshTimezoneSensitiveJobs(now) {
+    let timezoneChanged = false;
+
+    for (const scheduledJob of schedulerJobs) {
+      if (!scheduledJob || scheduledJob.active === false || !scheduledJob.time) {
+        continue;
+      }
+      if (scheduledJob.recurrence?.type === "interval") {
+        continue;
+      }
+
+      const scheduledTimezone = getScheduledTimezoneForJob(scheduledJob);
+      if (!scheduledTimezone || scheduledJob.scheduledTimezone === scheduledTimezone) {
+        continue;
+      }
+
+      const nextRunMs = Date.parse(scheduledJob.nextRunAt);
+      const isDue = !Number.isNaN(nextRunMs) && nextRunMs <= now.getTime();
+      if (isDue && !scheduledJob.scheduledTimezone) {
+        continue;
+      }
+
+      scheduledJob.timezone = getTimezoneModeForJob(scheduledJob);
+      scheduledJob.scheduledTimezone = scheduledTimezone;
+      scheduledJob.nextRunAt = computeFollowingRunAt(
+        scheduledJob,
+        now,
+        getComputeOptionsForJob(scheduledJob)
+      );
+      scheduledJob.updatedAt = timestamp();
+      timezoneChanged = true;
+    }
+
+    return timezoneChanged;
+  }
+
+  function getComputeOptionsForJob(job) {
+    const timezone = getScheduledTimezoneForJob(job);
+    return timezone ? { timezone } : {};
+  }
+
+  function getTimezoneModeForJob(job) {
+    return normalizeJobTimezoneMode(job?.timezone, job?.replyMode);
+  }
+
+  function getScheduledTimezoneForJob(job) {
+    const mode = getTimezoneModeForJob(job);
+    if (mode === "active") {
+      return normalizeText(schedulerState?.activeTimezone);
+    }
+    if (mode === "host") {
+      return "";
+    }
+    return "";
   }
 
   function queueScheduledWorkflowRun(scheduledJob) {
@@ -165,6 +239,14 @@ function tagJobs(jobs, scheduleKind) {
 
 function defaultNormalizeText(text) {
   return typeof text === "string" && text.trim() ? text.trim() : "";
+}
+
+function defaultNormalizeJobTimezoneMode(timezone, replyMode) {
+  const normalized = defaultNormalizeText(timezone).toLowerCase();
+  if (normalized === "active" || normalized === "host") {
+    return normalized;
+  }
+  return replyMode === "silent" ? "host" : "active";
 }
 
 module.exports = {

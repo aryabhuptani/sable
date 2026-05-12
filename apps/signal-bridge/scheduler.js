@@ -26,6 +26,42 @@ function loadSchedulerJobs(filePath) {
   }
 }
 
+function loadSchedulerState(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return normalizeSchedulerState(parsed);
+  } catch (error) {
+    if (error && error.code !== "ENOENT") {
+      throw error;
+    }
+    return createDefaultSchedulerState();
+  }
+}
+
+function saveSchedulerState(filePath, state) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(normalizeSchedulerState(state), null, 2)}\n`, "utf8");
+}
+
+function createDefaultSchedulerState() {
+  return {
+    activeTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    updatedAt: "",
+    source: "host-default",
+  };
+}
+
+function normalizeSchedulerState(state) {
+  const fallback = createDefaultSchedulerState();
+  const activeTimezone = normalizeText(state?.activeTimezone);
+  return {
+    activeTimezone: isValidTimeZone(activeTimezone) ? activeTimezone : fallback.activeTimezone,
+    updatedAt: normalizeText(state?.updatedAt),
+    source: normalizeText(state?.source) || fallback.source,
+  };
+}
+
 function saveSchedulerJobs(filePath, jobs) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify({ jobs }, null, 2)}\n`, "utf8");
@@ -48,6 +84,7 @@ function createDefaultScheduledWorkflowJobs({ now = new Date() } = {}) {
       replyMode: "silent",
       workflowPrompt:
         "Run Sable's conservative dreaming workflow: review AGENTS.md, TODO.md, skills, and task files for duplicates, drift, and safe consolidation opportunities. Keep the pass silent unless there is a final user-facing output or a real blocker.",
+      timezone: "host",
       nextRunAt: computeNextRunAt(recurrence, dreamingTime, now),
       lastRunAt: "",
       scheduleKind: "default",
@@ -63,6 +100,7 @@ function createDefaultScheduledWorkflowJobs({ now = new Date() } = {}) {
       replyMode: "silent",
       workflowPrompt:
         "Run Sable's daily memory eval loop. First run `npm run autoresearch:archive-completed` from the Sable repo root if the repo and research paths are available, then run `npm run memory:health -- --write-dir memory/knowledge/projects/memory/metrics` from the repo root if the memory project path is available. Read the instance memory architecture and eval suite if present. Test 3-5 memory capability probes across source-of-truth recovery, procedure activation, current-state recovery, task continuity, research synthesis reuse, staleness detection, contradiction handling, and generalization after fixes. Score retrieval and application, append a concise metrics entry under the memory project metrics/history if available, update latest metrics, then make at most one low-risk memory improvement that improves a reusable protocol/template/index/skill convention before making a one-off note fix. Keep the run silent unless human judgment is required.",
+      timezone: "host",
       nextRunAt: computeNextRunAt(recurrence, memoryEvalTime, now),
       lastRunAt: "",
       scheduleKind: "default",
@@ -78,6 +116,7 @@ function createScheduledWorkflowJob({
   timeText,
   workflowPrompt,
   replyMode = "default",
+  timezone = "",
   now = new Date(),
 }) {
   const recurrence = buildRecurrence(recurrenceType, dayOfWeek, intervalMinutes);
@@ -105,6 +144,7 @@ function createScheduledWorkflowJob({
     recurrence,
     time,
     replyMode: normalizedReplyMode,
+    timezone: normalizeJobTimezoneMode(timezone, replyMode),
     workflowPrompt: cleanedPrompt,
     nextRunAt: computeNextRunAt(recurrence, time, now),
     lastRunAt: "",
@@ -174,9 +214,14 @@ function parseTimeText(text) {
   };
 }
 
-function computeNextRunAt(recurrence, time, now = new Date()) {
+function computeNextRunAt(recurrence, time, now = new Date(), options = {}) {
   if (recurrence.type === "interval") {
     return computeNextIntervalRunAt(recurrence.intervalMinutes, now);
+  }
+
+  const timezone = normalizeText(options.timezone);
+  if (timezone && isValidTimeZone(timezone)) {
+    return computeNextRunAtInTimeZone(recurrence, time, now, timezone);
   }
 
   const base = new Date(now);
@@ -211,8 +256,126 @@ function computeNextRunAt(recurrence, time, now = new Date()) {
   return "";
 }
 
-function computeFollowingRunAt(job, now = new Date()) {
-  return computeNextRunAt(job.recurrence, job.time, now);
+function computeFollowingRunAt(job, now = new Date(), options = {}) {
+  return computeNextRunAt(job.recurrence, job.time, now, options);
+}
+
+function computeNextRunAtInTimeZone(recurrence, time, now, timezone) {
+  const base = getZonedParts(now, timezone);
+
+  for (let offset = 0; offset < 14; offset += 1) {
+    const date = new Date(Date.UTC(base.year, base.month - 1, base.day + offset, 12, 0, 0));
+    const candidateParts = {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: time.hour,
+      minute: time.minute,
+      second: 0,
+    };
+    const candidate = zonedTimeToUtc(candidateParts, timezone);
+
+    if (candidate <= now) {
+      continue;
+    }
+
+    if (recurrence.type === "daily") {
+      return candidate.toISOString();
+    }
+
+    if (recurrence.type === "weekday") {
+      const day = date.getUTCDay();
+      if (day >= 1 && day <= 5) {
+        return candidate.toISOString();
+      }
+      continue;
+    }
+
+    if (recurrence.type === "weekly" && date.getUTCDay() === recurrence.dayOfWeek) {
+      return candidate.toISOString();
+    }
+  }
+
+  return "";
+}
+
+function zonedTimeToUtc(parts, timezone) {
+  const desiredUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second || 0
+  );
+  let candidate = new Date(desiredUtc);
+
+  for (let index = 0; index < 3; index += 1) {
+    const actual = getZonedParts(candidate, timezone);
+    const actualUtc = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second || 0
+    );
+    const delta = desiredUtc - actualUtc;
+    if (delta === 0) {
+      return candidate;
+    }
+    candidate = new Date(candidate.getTime() + delta);
+  }
+
+  return candidate;
+}
+
+function getZonedParts(date, timezone) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour12: false,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number.parseInt(part.value, 10)])
+  );
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+  };
+}
+
+function isValidTimeZone(timezone) {
+  if (!timezone) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function normalizeJobTimezoneMode(timezone, replyMode = "") {
+  const normalized = normalizeText(timezone).toLowerCase();
+  if (normalized === "host" || normalized === "active") {
+    return normalized;
+  }
+  return replyMode === "silent" ? "host" : "active";
 }
 
 function formatScheduleConfirmation(job) {
@@ -342,11 +505,16 @@ module.exports = {
   createDefaultScheduledWorkflowJobs,
   createScheduledWorkflowJob,
   computeFollowingRunAt,
+  computeNextRunAt,
   dayNameToIndex,
   formatScheduleConfirmation,
   formatScheduleKind,
   formatScheduleList,
+  isValidTimeZone,
   loadSchedulerJobs,
+  loadSchedulerState,
+  normalizeJobTimezoneMode,
   parseTimeText,
   saveSchedulerJobs,
+  saveSchedulerState,
 };

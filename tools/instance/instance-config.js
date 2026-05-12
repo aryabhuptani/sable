@@ -47,6 +47,7 @@ function createInstanceConfig({
       "default-scheduler-jobs.json"
     ),
     schedulerJobsPath: path.join(tasksRoot, "projects", "sable", "scheduler-jobs.json"),
+    schedulerStatePath: path.join(tasksRoot, "projects", "sable", "scheduler-state.json"),
   };
 }
 

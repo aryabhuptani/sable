@@ -27,6 +27,9 @@ function createBridgeConfig({
   const DEFAULT_SCHEDULER_JOBS_PATH =
     normalizeText(env.SABLE_DEFAULT_SCHEDULER_JOBS_PATH) ||
     instanceConfig.defaultSchedulerJobsPath;
+  const SCHEDULER_STATE_PATH =
+    normalizeText(env.SABLE_SCHEDULER_STATE_PATH) ||
+    instanceConfig.schedulerStatePath;
   const RESEARCH_ROOT =
     normalizeText(env.SABLE_RESEARCH_ROOT) ||
     instanceConfig.researchRoot;
@@ -163,6 +166,7 @@ function createBridgeConfig({
     SCHEDULED_NO_REPLY_MARKER: "__SABLE_NO_REPLY__",
     SCHEDULER_JOBS_PATH,
     SCHEDULER_POLL_INTERVAL_MS,
+    SCHEDULER_STATE_PATH,
     SIGNAL_BRIDGE_DIR_ENV: "SABLE_SIGNAL_BRIDGE_DIR",
     SIGNAL_REPLY_TO_ENV: "SABLE_SIGNAL_REPLY_TO",
     STATE_PATH,
