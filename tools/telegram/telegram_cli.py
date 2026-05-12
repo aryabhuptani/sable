@@ -70,6 +70,43 @@ PROMO_DIRECT_KEYWORDS = (
     "promo",
     "token trading smoothly",
 )
+MARKET_MAKING_SOLICITATION_PHRASES = (
+    "affordable market making",
+    "market making service",
+    "market making services",
+    "market making solution",
+    "market making solutions",
+    "market maker service",
+    "market maker services",
+    "market makers for your token",
+    "token trading smoothly",
+)
+EXCHANGE_LISTING_SOLICITATION_PHRASES = (
+    "cex listing",
+    "cex listings",
+    "exchange listing service",
+    "exchange listing services",
+    "exchange listing support",
+    "exchange listings service",
+    "exchange listings services",
+    "get listed on",
+    "listing on binance",
+    "listing on kucoin",
+    "listing on mexc",
+    "listing on okx",
+    "list your token",
+)
+SOLICITATION_CONTEXT_PHRASES = (
+    "free trial",
+    "happy to run",
+    "help your project",
+    "if you are interested",
+    "our service",
+    "our services",
+    "we can help",
+    "we offer",
+    "we provide",
+)
 ALWAYS_IGNORED_CONTENT_KEYWORDS = (
     "exchange delisting",
     "exchange delistings",
@@ -264,6 +301,25 @@ def looks_like_spam(dialog: DialogSnapshot) -> bool:
     if dialog.is_channel and dialog.unread_count >= 10 and keyword_hits >= 1:
         return True
     return False
+
+
+def is_auto_cleanup_solicitation(dialog: DialogSnapshot) -> bool:
+    """Return true only for narrow direct market-making/listing service spam."""
+    if not (dialog.is_user or dialog.is_bot):
+        return False
+    if dialog.last_message_outgoing:
+        return False
+    text = " ".join([dialog.title, dialog.snippet]).lower()
+    direct_phrase = any(
+        phrase in text
+        for phrase in MARKET_MAKING_SOLICITATION_PHRASES + EXCHANGE_LISTING_SOLICITATION_PHRASES
+    )
+    if direct_phrase:
+        return True
+    has_market_making = "market making" in text or "market maker" in text
+    has_exchange_listing = "exchange listing" in text or "cex listing" in text
+    has_solicitation_context = any(phrase in text for phrase in SOLICITATION_CONTEXT_PHRASES)
+    return bool((has_market_making or has_exchange_listing) and has_solicitation_context)
 
 
 def is_telegram_system_chat(dialog: DialogSnapshot) -> bool:
@@ -512,36 +568,44 @@ async def fetch_dialogs(config: TelegramConfig, limit: int) -> list[DialogSnapsh
 async def fetch_dialogs_from_client(client: Any, limit: int) -> list[DialogSnapshot]:
     snapshots: list[DialogSnapshot] = []
     async for dialog in client.iter_dialogs(limit=limit, ignore_pinned=False):
-        entity = dialog.entity
-        title = (
-            dialog.name
-            or getattr(entity, "title", None)
-            or getattr(entity, "first_name", None)
-        )
-        snippet = ""
-        if dialog.message is not None:
-            snippet = getattr(dialog.message, "message", None) or getattr(
-                dialog.message, "raw_text", ""
-            )
-        snapshots.append(
-            DialogSnapshot(
-                title=truncate_text(title or "Untitled chat", 80),
-                dialog_id=getattr(dialog, "id", None),
-                username=normalize_text(getattr(entity, "username", None)) or "",
-                unread_count=int(dialog.unread_count or 0),
-                unread_mentions_count=int(dialog.unread_mentions_count or 0),
-                last_message_at=getattr(dialog.message, "date", None),
-                snippet=snippet or "",
-                last_message_outgoing=bool(getattr(dialog.message, "out", False)),
-                is_user=bool(getattr(entity, "bot", False) is False and dialog.is_user),
-                is_group=bool(dialog.is_group),
-                is_channel=bool(dialog.is_channel),
-                is_bot=bool(getattr(entity, "bot", False)),
-                is_muted=detect_muted(dialog),
-                archived=bool(getattr(dialog, "folder_id", None) == 1),
-            )
-        )
+        snapshots.append(snapshot_from_dialog(dialog))
     return snapshots
+
+
+def snapshot_from_dialog(dialog: Any) -> DialogSnapshot:
+    entity = dialog.entity
+    title = (
+        dialog.name
+        or getattr(entity, "title", None)
+        or getattr(entity, "first_name", None)
+    )
+    snippet = ""
+    if dialog.message is not None:
+        snippet = getattr(dialog.message, "message", None) or getattr(
+            dialog.message, "raw_text", ""
+        )
+    return DialogSnapshot(
+        title=truncate_text(title or "Untitled chat", 80),
+        dialog_id=getattr(dialog, "id", None),
+        username=normalize_text(getattr(entity, "username", None)) or "",
+        unread_count=int(dialog.unread_count or 0),
+        unread_mentions_count=int(dialog.unread_mentions_count or 0),
+        last_message_at=getattr(dialog.message, "date", None),
+        snippet=snippet or "",
+        last_message_outgoing=bool(getattr(dialog.message, "out", False)),
+        is_user=bool(getattr(entity, "bot", False) is False and dialog.is_user),
+        is_group=bool(dialog.is_group),
+        is_channel=bool(dialog.is_channel),
+        is_bot=bool(getattr(entity, "bot", False)),
+        is_muted=detect_muted(dialog),
+        archived=bool(getattr(dialog, "folder_id", None) == 1),
+    )
+
+
+async def block_entity(client: Any, entity: Any) -> None:
+    from telethon import functions  # type: ignore
+
+    await client(functions.contacts.BlockRequest(entity))
 
 
 def normalize_target(value: str) -> str:
@@ -657,6 +721,55 @@ async def command_mark_read(args: argparse.Namespace) -> int:
     return 0
 
 
+async def command_cleanup_solicitations(args: argparse.Namespace) -> int:
+    config = load_config()
+    if not has_required_config(config):
+        raise SystemExit(
+            "Missing Telegram config. Set SABLE_TELEGRAM_API_ID, "
+            "SABLE_TELEGRAM_API_HASH, and SABLE_TELEGRAM_PHONE first."
+        )
+
+    client = await build_client(config)
+    await client.connect()
+    cleaned = []
+    skipped = []
+    try:
+        if not await client.is_user_authorized():
+            raise SystemExit(
+                "Telegram session is not authorized yet. Run:\n"
+                "python3 tools/telegram/telegram_cli.py login"
+            )
+
+        async for dialog in client.iter_dialogs(limit=args.limit, ignore_pinned=False):
+            snapshot = snapshot_from_dialog(dialog)
+            if not is_auto_cleanup_solicitation(snapshot):
+                continue
+            title = snapshot.title
+            if args.dry_run:
+                cleaned.append({"title": title, "action": "would_block_and_delete"})
+                continue
+            try:
+                await block_entity(client, dialog.entity)
+                await client.delete_dialog(dialog.entity, revoke=False)
+                cleaned.append({"title": title, "action": "blocked_and_deleted"})
+            except Exception as error:  # pragma: no cover - depends on Telegram remote state
+                skipped.append({"title": title, "error": str(error)})
+    finally:
+        await client.disconnect()
+
+    payload = {
+        "ok": True,
+        "dry_run": bool(args.dry_run),
+        "limit": args.limit,
+        "cleaned_count": len(cleaned),
+        "skipped_count": len(skipped),
+        "cleaned": cleaned,
+        "skipped": skipped,
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 async def command_send(args: argparse.Namespace) -> int:
     config = load_config()
     if not has_required_config(config):
@@ -731,6 +844,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mark_read_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
 
+    cleanup_parser = subparsers.add_parser(
+        "cleanup-solicitations",
+        help="Block and delete direct market-making or exchange-listing solicitation spam.",
+    )
+    cleanup_parser.add_argument("--limit", type=int, default=DEFAULT_TRIAGE_LIMIT)
+    cleanup_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print matched cleanup targets without blocking or deleting.",
+    )
+
     send_parser = subparsers.add_parser(
         "send", help="Send a message and optional attachments to a Telegram dialog."
     )
@@ -765,6 +889,8 @@ async def async_main(argv: list[str] | None = None) -> int:
         return await command_triage(args)
     if args.command == "mark-read":
         return await command_mark_read(args)
+    if args.command == "cleanup-solicitations":
+        return await command_cleanup_solicitations(args)
     if args.command == "send":
         return await command_send(args)
     parser.error(f"Unknown command {args.command}")

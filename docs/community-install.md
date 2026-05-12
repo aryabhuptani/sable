@@ -369,6 +369,7 @@ python3 -m pip install telethon
 npm run telegram:cli -- doctor
 npm run telegram:cli -- login
 npm run telegram:cli -- triage --limit 30
+npm run telegram:cli -- cleanup-solicitations --limit 50 --dry-run
 ```
 
 Secrets can live in `tools/telegram/.env` or process env:
@@ -379,6 +380,8 @@ Secrets can live in `tools/telegram/.env` or process env:
 - optional `SABLE_TELEGRAM_SESSION_PATH`
 - optional bridge-side `SABLE_TELEGRAM_CLI_PATH`
 - optional bridge-side `SABLE_TELEGRAM_PYTHON_BIN`
+- optional `SABLE_TELEGRAM_AUTO_CLEANUP_SOLICITATIONS=true` to run narrow direct market-making/exchange-listing solicitation cleanup before bridge-side triage
+- optional `SABLE_TELEGRAM_AUTO_CLEANUP_LIMIT=50`
 
 Keep the Telethon session under your instance home, not in the repo.
 

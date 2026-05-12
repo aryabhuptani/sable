@@ -6,7 +6,7 @@
   "pluginApiVersion": 1,
   "status": "descriptive",
   "category": "communications",
-  "description": "Telegram triage, drafting support, send support, and bounded mark-read workflows.",
+  "description": "Telegram triage, drafting support, send support, bounded mark-read workflows, and narrow solicitation cleanup.",
   "runtime": {
     "type": "python-cli",
     "currentEntryPoints": [
@@ -19,6 +19,7 @@
     "commands.telegram.triage",
     "actions.telegram.send",
     "actions.telegram.mark_read",
+    "actions.telegram.cleanup_solicitations",
     "triage.ignore_rules"
   ],
   "commands": [
@@ -32,6 +33,16 @@
       "name": "SABLE_TELEGRAM_PYTHON_BIN",
       "required": false,
       "description": "Optional Python executable override for Telegram CLI calls."
+    },
+    {
+      "name": "SABLE_TELEGRAM_AUTO_CLEANUP_SOLICITATIONS",
+      "required": false,
+      "description": "When true, bridge-side Telegram triage first runs narrow direct market-making/exchange-listing solicitation cleanup."
+    },
+    {
+      "name": "SABLE_TELEGRAM_AUTO_CLEANUP_LIMIT",
+      "required": false,
+      "description": "Optional dialog scan limit for bridge-side solicitation cleanup."
     }
   ],
   "requiredSecrets": [
@@ -51,6 +62,11 @@
       "name": "triage dry run",
       "type": "cli",
       "command": "python3 tools/telegram/telegram_cli.py triage --limit 5"
+    },
+    {
+      "name": "solicitation cleanup dry run",
+      "type": "cli",
+      "command": "python3 tools/telegram/telegram_cli.py cleanup-solicitations --limit 25 --dry-run"
     }
   ],
   "privateDataPolicy": "Do not store session files, dialog snapshots, phone numbers, drafts, or message text in the plugin manifest."

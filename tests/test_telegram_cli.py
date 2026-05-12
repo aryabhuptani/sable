@@ -112,6 +112,44 @@ class TelegramCliTests(unittest.TestCase):
         )
         self.assertEqual(telegram_cli.classify_dialog(dialog, now=self.now), "ignored")
 
+    def test_auto_cleanup_solicitation_matches_direct_market_making_services(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            snippet="We offer market making services for your token and can help your project.",
+        )
+        self.assertTrue(telegram_cli.is_auto_cleanup_solicitation(dialog))
+
+    def test_auto_cleanup_solicitation_matches_direct_exchange_listing_services(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            snippet="Hi, we provide CEX listing support and can get listed on MEXC or KuCoin.",
+        )
+        self.assertTrue(telegram_cli.is_auto_cleanup_solicitation(dialog))
+
+    def test_auto_cleanup_solicitation_does_not_match_group_or_non_solicit_request(self):
+        group_dialog = self.build_dialog(
+            is_user=False,
+            is_group=True,
+            snippet="Anyone know good market making benchmarks for a research doc?",
+        )
+        normal_dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            snippet="Can you intro me to a market maker you trust?",
+        )
+        outgoing_dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            last_message_outgoing=True,
+            snippet="We offer market making services.",
+        )
+
+        self.assertFalse(telegram_cli.is_auto_cleanup_solicitation(group_dialog))
+        self.assertFalse(telegram_cli.is_auto_cleanup_solicitation(normal_dialog))
+        self.assertFalse(telegram_cli.is_auto_cleanup_solicitation(outgoing_dialog))
+
     def test_classify_compliment_only_as_ignored(self):
         dialog = self.build_dialog(
             is_user=True,
@@ -214,6 +252,30 @@ class TelegramCliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(captured, {"command": "mark-read", "limit": 3})
+
+    def test_cleanup_solicitations_command_dispatches_with_limit_and_dry_run(self):
+        captured = {}
+        original = telegram_cli.command_cleanup_solicitations
+
+        async def fake_cleanup(args):
+            captured["command"] = args.command
+            captured["limit"] = args.limit
+            captured["dry_run"] = args.dry_run
+            return 0
+
+        telegram_cli.command_cleanup_solicitations = fake_cleanup
+        try:
+            result = asyncio.run(
+                telegram_cli.async_main(["cleanup-solicitations", "--limit", "11", "--dry-run"])
+            )
+        finally:
+            telegram_cli.command_cleanup_solicitations = original
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            captured,
+            {"command": "cleanup-solicitations", "limit": 11, "dry_run": True},
+        )
 
 
 if __name__ == "__main__":

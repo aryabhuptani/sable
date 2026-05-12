@@ -56,6 +56,59 @@ test("telegram review plugin invokes the configured CLI with bounded args", asyn
   assert.equal(invocation.options.timeout, 30_000);
 });
 
+test("telegram review plugin can cleanup solicitation spam before triage", async () => {
+  const invocations = [];
+  const plugin = createTelegramReviewPlugin({
+    execFile: (command, args, options, callback) => {
+      invocations.push({ command, args, options });
+      if (args.includes("cleanup-solicitations")) {
+        callback(null, JSON.stringify({ ok: true, cleaned_count: 2, skipped_count: 0 }), "");
+        return;
+      }
+      callback(null, "Telegram queue review: 1 dialog\n", "");
+    },
+    env: {
+      SABLE_TELEGRAM_AUTO_CLEANUP_SOLICITATIONS: "true",
+      SABLE_TELEGRAM_AUTO_CLEANUP_LIMIT: "44",
+    },
+    instanceConfig: createInstance(),
+  });
+
+  const report = await plugin.getTriageReport(7);
+
+  assert.match(report, /blocked\/deleted 2 market-making\/listing spam chat/);
+  assert.match(report, /Telegram queue review: 1 dialog/);
+  assert.deepEqual(invocations.map((invocation) => invocation.args.slice(1)), [
+    ["cleanup-solicitations", "--limit", "44"],
+    ["triage", "--limit", "7", "--stale-days", "21"],
+  ]);
+  assert.equal(plugin.autoCleanupSolicitations, true);
+  assert.equal(plugin.cleanupLimit, 44);
+});
+
+test("telegram review plugin reports cleanup failures and still triages", async () => {
+  let count = 0;
+  const plugin = createTelegramReviewPlugin({
+    execFile: (command, args, options, callback) => {
+      count += 1;
+      if (count === 1) {
+        callback(new Error("failed"), "", "cleanup bad");
+        return;
+      }
+      callback(null, "Telegram queue review: 3 dialogs\n", "");
+    },
+    env: {
+      SABLE_TELEGRAM_AUTO_CLEANUP_SOLICITATIONS: "1",
+    },
+    instanceConfig: createInstance(),
+  });
+
+  const report = await plugin.getTriageReport(7);
+
+  assert.match(report, /Telegram solicitation cleanup failed: cleanup bad/);
+  assert.match(report, /Telegram queue review: 3 dialogs/);
+});
+
 test("telegram review plugin defaults to instance repo CLI and normalizes bad limits", async () => {
   let invocation = null;
   const plugin = createTelegramReviewPlugin({
