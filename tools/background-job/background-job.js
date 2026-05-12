@@ -10,6 +10,8 @@ const { execFile, spawn } = require("node:child_process");
 const { createInstanceConfig } = require("../instance/instance-config");
 
 const DEFAULT_RECENT_LOG_LINES = 80;
+const DEFAULT_CLAUDE_PERMISSION_MODE = "acceptEdits";
+const DEFAULT_CLAUDE_OUTPUT_FORMAT = "json";
 
 function parseArgs(argv) {
   const first = argv[0] || "list";
@@ -22,10 +24,19 @@ function parseArgs(argv) {
     promptFile: "",
     jobsRoot: "",
     dryRun: false,
+    runner: process.env.SABLE_BACKGROUND_RUNNER || "codex",
+    runnerBin: "",
+    runnerHome: "",
     codex: process.env.CODEX_BIN || "codex",
     codexHome: process.env.CODEX_HOME || defaultCodexHome(),
+    claude: process.env.CLAUDE_BIN || "claude",
+    claudeHome: process.env.CLAUDE_CONFIG_DIR || defaultClaudeHome(),
     callbackCommand: "",
     model: "",
+    permissionMode: process.env.SABLE_BACKGROUND_CLAUDE_PERMISSION_MODE || DEFAULT_CLAUDE_PERMISSION_MODE,
+    allowedTools: process.env.SABLE_BACKGROUND_CLAUDE_ALLOWED_TOOLS || "",
+    disallowedTools: process.env.SABLE_BACKGROUND_CLAUDE_DISALLOWED_TOOLS || "",
+    outputFormat: process.env.SABLE_BACKGROUND_CLAUDE_OUTPUT_FORMAT || DEFAULT_CLAUDE_OUTPUT_FORMAT,
     recentLines: DEFAULT_RECENT_LOG_LINES,
     worktreeBase: "HEAD",
     worktreeBranch: "",
@@ -47,14 +58,32 @@ function parseArgs(argv) {
       options.promptFile = path.resolve(expandHome(argv[++index] || ""));
     } else if (arg === "--jobs-root") {
       options.jobsRoot = path.resolve(expandHome(argv[++index] || ""));
+    } else if (arg === "--runner") {
+      options.runner = argv[++index] || options.runner;
+    } else if (arg === "--runner-bin") {
+      options.runnerBin = argv[++index] || "";
+    } else if (arg === "--runner-home") {
+      options.runnerHome = path.resolve(expandHome(argv[++index] || ""));
     } else if (arg === "--codex") {
       options.codex = argv[++index] || options.codex;
     } else if (arg === "--codex-home") {
       options.codexHome = path.resolve(expandHome(argv[++index] || ""));
+    } else if (arg === "--claude") {
+      options.claude = argv[++index] || options.claude;
+    } else if (arg === "--claude-home" || arg === "--claude-config-dir") {
+      options.claudeHome = path.resolve(expandHome(argv[++index] || ""));
     } else if (arg === "--callback-command") {
       options.callbackCommand = argv[++index] || "";
     } else if (arg === "--model") {
       options.model = argv[++index] || "";
+    } else if (arg === "--permission-mode") {
+      options.permissionMode = argv[++index] || options.permissionMode;
+    } else if (arg === "--allowed-tools") {
+      options.allowedTools = argv[++index] || "";
+    } else if (arg === "--disallowed-tools") {
+      options.disallowedTools = argv[++index] || "";
+    } else if (arg === "--output-format") {
+      options.outputFormat = argv[++index] || options.outputFormat;
     } else if (arg === "--recent-lines") {
       options.recentLines = parsePositiveInteger(argv[++index], DEFAULT_RECENT_LOG_LINES);
     } else if (arg === "--worktree-from") {
@@ -79,6 +108,48 @@ function parseArgs(argv) {
 
 function defaultCodexHome({ env = process.env } = {}) {
   return path.join(createInstanceConfig({ env }).homeDir, ".codex-bridge");
+}
+
+function defaultClaudeHome({ env = process.env } = {}) {
+  return path.join(createInstanceConfig({ env }).homeDir, ".claude");
+}
+
+function normalizeRunner(value) {
+  const runner = String(value || "codex").trim().toLowerCase();
+  if (!["codex", "claude"].includes(runner)) {
+    throw new Error(`Unsupported background job runner: ${value}`);
+  }
+  return runner;
+}
+
+function buildRunnerConfig(options = {}, job = {}) {
+  const runner = normalizeRunner(options.runner || job.runner || "codex");
+  if (runner === "claude") {
+    return {
+      type: "claude",
+      bin: options.runnerBin || options.claude || job.runnerBin || job.claude || "claude",
+      home:
+        options.runnerHome ||
+        options.claudeHome ||
+        job.runnerHome ||
+        job.claudeHome ||
+        defaultClaudeHome(),
+      model: options.model || job.model || "",
+      permissionMode:
+        options.permissionMode ||
+        job.permissionMode ||
+        DEFAULT_CLAUDE_PERMISSION_MODE,
+      allowedTools: options.allowedTools || job.allowedTools || "",
+      disallowedTools: options.disallowedTools || job.disallowedTools || "",
+      outputFormat: options.outputFormat || job.outputFormat || DEFAULT_CLAUDE_OUTPUT_FORMAT,
+    };
+  }
+  return {
+    type: "codex",
+    bin: options.runnerBin || options.codex || job.runnerBin || job.codex || "codex",
+    home: options.runnerHome || options.codexHome || job.runnerHome || job.codexHome || defaultCodexHome(),
+    model: options.model || job.model || "",
+  };
 }
 
 function parsePositiveInteger(value, fallback) {
@@ -178,18 +249,28 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
 
   await fsp.mkdir(jobDir, { recursive: true });
   await fsp.writeFile(paths.promptPath, prompt, "utf8");
+  const runnerConfig = buildRunnerConfig(options);
 
   const status = {
     id,
     name: options.name,
     cwd,
     callbackCommand: options.callbackCommand || "",
-    codex: options.codex,
-    codexHome: options.codexHome,
+    codex: runnerConfig.type === "codex" ? runnerConfig.bin : options.codex || "",
+    codexHome: runnerConfig.type === "codex" ? runnerConfig.home : options.codexHome || "",
+    claude: runnerConfig.type === "claude" ? runnerConfig.bin : options.claude || "",
+    claudeHome: runnerConfig.type === "claude" ? runnerConfig.home : options.claudeHome || "",
     createdAt: now.toISOString(),
     dryRun: Boolean(options.dryRun),
     jobDir,
     model: options.model || "",
+    runner: runnerConfig.type,
+    runnerBin: runnerConfig.bin,
+    runnerHome: runnerConfig.home,
+    permissionMode: runnerConfig.permissionMode || "",
+    allowedTools: runnerConfig.allowedTools || "",
+    disallowedTools: runnerConfig.disallowedTools || "",
+    outputFormat: runnerConfig.outputFormat || "",
     pid: null,
     status: options.dryRun ? "prepared" : "starting",
     updatedAt: now.toISOString(),
@@ -210,11 +291,17 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
       jobsRoot,
       "--id",
       id,
-      "--codex",
-      options.codex,
-      "--codex-home",
-      options.codexHome,
-      ...(options.model ? ["--model", options.model] : []),
+      "--runner",
+      runnerConfig.type,
+      "--runner-bin",
+      runnerConfig.bin,
+      "--runner-home",
+      runnerConfig.home,
+      ...(runnerConfig.model ? ["--model", runnerConfig.model] : []),
+      ...(runnerConfig.permissionMode ? ["--permission-mode", runnerConfig.permissionMode] : []),
+      ...(runnerConfig.allowedTools ? ["--allowed-tools", runnerConfig.allowedTools] : []),
+      ...(runnerConfig.disallowedTools ? ["--disallowed-tools", runnerConfig.disallowedTools] : []),
+      ...(runnerConfig.outputFormat ? ["--output-format", runnerConfig.outputFormat] : []),
     ],
     {
       detached: true,
@@ -266,43 +353,42 @@ async function createGitWorktree(worktree, execFileFn = execFile) {
 async function runWorker(options) {
   const job = await loadJob(options);
   const paths = jobPaths(job.jobDir);
+  const runnerConfig = buildRunnerConfig(options, job);
   await updateStatus(paths.statusPath, {
     startedAt: new Date().toISOString(),
+    runner: runnerConfig.type,
+    runnerBin: runnerConfig.bin,
+    runnerHome: runnerConfig.home,
     status: "running",
     workerPid: process.pid,
   });
 
   const stdout = fs.openSync(paths.stdoutPath, "a");
   const stderr = fs.openSync(paths.stderrPath, "a");
-  const args = [
-    "exec",
-    "--json",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--cd",
-    job.cwd,
-    "-o",
-    paths.lastMessagePath,
-    "-",
-  ];
-  if (options.model || job.model) {
-    args.splice(1, 0, "--model", options.model || job.model);
-  }
+  const invocation = buildRunnerInvocation(runnerConfig, job, paths);
+  const prompt = await fsp.readFile(paths.promptPath, "utf8");
 
-  const child = spawn(options.codex || job.codex || "codex", args, {
+  const child = spawn(invocation.bin, invocation.args, {
     cwd: job.cwd,
     env: {
       ...process.env,
-      CODEX_HOME: options.codexHome || job.codexHome || DEFAULT_CODEX_HOME,
+      ...invocation.env,
     },
     stdio: ["pipe", stdout, stderr],
   });
 
   await updateStatus(paths.statusPath, {
-    codexPid: child.pid,
-    codexStartedAt: new Date().toISOString(),
+    runnerPid: child.pid,
+    runnerStartedAt: new Date().toISOString(),
+    ...(runnerConfig.type === "codex"
+      ? { codexPid: child.pid, codexStartedAt: new Date().toISOString() }
+      : {}),
+    ...(runnerConfig.type === "claude"
+      ? { claudePid: child.pid, claudeStartedAt: new Date().toISOString() }
+      : {}),
   });
 
-  child.stdin.end(await fsp.readFile(paths.promptPath, "utf8"));
+  child.stdin.end(invocation.stdinPrefix ? `${invocation.stdinPrefix}\n\n${prompt}` : prompt);
 
   const exit = await new Promise((resolve) => {
     child.on("exit", (code, signal) => resolve({ code, signal }));
@@ -311,6 +397,10 @@ async function runWorker(options) {
 
   fs.closeSync(stdout);
   fs.closeSync(stderr);
+
+  if (typeof invocation.afterExit === "function") {
+    await invocation.afterExit(exit);
+  }
 
   await updateStatus(paths.statusPath, {
     completedAt: new Date().toISOString(),
@@ -322,6 +412,129 @@ async function runWorker(options) {
 
   if (job.callbackCommand) {
     await runCompletionCallback(job, paths, exit);
+  }
+}
+
+function buildRunnerInvocation(runnerConfig, job, paths) {
+  if (runnerConfig.type === "claude") {
+    return buildClaudeInvocation(runnerConfig, job, paths);
+  }
+  return buildCodexInvocation(runnerConfig, job, paths);
+}
+
+function buildCodexInvocation(runnerConfig, job, paths) {
+  const args = [
+    "exec",
+    "--json",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--cd",
+    job.cwd,
+    "-o",
+    paths.lastMessagePath,
+    "-",
+  ];
+  if (runnerConfig.model) {
+    args.splice(1, 0, "--model", runnerConfig.model);
+  }
+  return {
+    args,
+    bin: runnerConfig.bin,
+    env: {
+      CODEX_HOME: runnerConfig.home,
+    },
+  };
+}
+
+function buildClaudeInvocation(runnerConfig, job, paths) {
+  const args = [
+    "-p",
+    "Execute the Sable background job described on stdin. Work only inside the requested scope, then return a concise final report.",
+    "--output-format",
+    runnerConfig.outputFormat || DEFAULT_CLAUDE_OUTPUT_FORMAT,
+    "--permission-mode",
+    runnerConfig.permissionMode || DEFAULT_CLAUDE_PERMISSION_MODE,
+  ];
+  if (runnerConfig.model) {
+    args.push("--model", runnerConfig.model);
+  }
+  if (runnerConfig.allowedTools) {
+    args.push("--allowedTools", runnerConfig.allowedTools);
+  }
+  if (runnerConfig.disallowedTools) {
+    args.push("--disallowedTools", runnerConfig.disallowedTools);
+  }
+  return {
+    args,
+    bin: runnerConfig.bin,
+    env: {
+      CLAUDE_CONFIG_DIR: runnerConfig.home,
+    },
+    afterExit: async () => {
+      const stdoutText = fs.existsSync(paths.stdoutPath)
+        ? await fsp.readFile(paths.stdoutPath, "utf8")
+        : "";
+      const result = extractClaudeResult(stdoutText);
+      if (result.trim()) {
+        await fsp.writeFile(paths.lastMessagePath, `${result.trim()}\n`, "utf8");
+      }
+    },
+  };
+}
+
+function extractClaudeResult(stdoutText) {
+  const text = String(stdoutText || "").trim();
+  if (!text) {
+    return "";
+  }
+  const whole = parseJson(text);
+  const wholeResult = extractClaudeResultFromJson(whole);
+  if (wholeResult) {
+    return wholeResult;
+  }
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  for (const line of [...lines].reverse()) {
+    const parsed = parseJson(line);
+    const result = extractClaudeResultFromJson(parsed);
+    if (result) {
+      return result;
+    }
+  }
+  return text;
+}
+
+function extractClaudeResultFromJson(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return "";
+  }
+  if (typeof parsed.result === "string") {
+    return parsed.result;
+  }
+  if (typeof parsed.text === "string") {
+    return parsed.text;
+  }
+  if (typeof parsed.message === "string") {
+    return parsed.message;
+  }
+  const content = parsed.message?.content || parsed.content;
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        return typeof item?.text === "string" ? item.text : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
 }
 
@@ -447,7 +660,7 @@ function formatJobList(rows) {
     return "No background jobs.";
   }
   return rows
-    .map((job) => `${job.id} [${job.status || "unknown"}] ${job.name || ""} ${job.cwd || ""}`.trim())
+    .map((job) => `${job.id} [${job.status || "unknown"}:${job.runner || "codex"}] ${job.name || ""} ${job.cwd || ""}`.trim())
     .join("\n");
 }
 
@@ -456,12 +669,13 @@ function usage() {
     "Usage:",
     "  npm run background-job -- start --name NAME --cwd DIR (--prompt TEXT | --prompt-file FILE)",
     "  npm run background-job -- start --name NAME --worktree-from REPO [--worktree-branch BRANCH] [--worktree-dir DIR] (--prompt TEXT | --prompt-file FILE)",
+    "  npm run background-job -- start --runner codex|claude --name NAME --cwd DIR (--prompt TEXT | --prompt-file FILE)",
     "  npm run background-job -- list",
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
     "  npm run background-job -- stop --id JOB_ID",
     "",
-    "Starts detached bounded Codex implementation jobs with durable logs/status.",
+    "Starts detached bounded background agent jobs with durable logs/status. Codex is the default runner; Claude Code can be selected with --runner claude.",
   ].join("\n");
 }
 
@@ -519,11 +733,16 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildRunnerConfig,
+  buildRunnerInvocation,
   createJobId,
+  defaultClaudeHome,
   defaultJobsRoot,
   defaultWorktreeDir,
+  extractClaudeResult,
   formatJobList,
   jobPaths,
+  normalizeRunner,
   parseArgs,
   resolveWorktreePlan,
   startJob,

@@ -15,7 +15,7 @@ Sable is a local-first personal agent runtime. The useful mental model is: you t
 - Discover official and local plugins with `/plugins`.
 - Add private local plugins under `<instance-home>/plugins/local-*` without forking Sable.
 - Maintain local markdown memory and produce phone-openable Obsidian links when configured.
-- Run bounded background Codex jobs through the background-job harness.
+- Run bounded background agent jobs through the background-job harness, with Codex as the default runner and Claude Code available for selected implementation/UI artifact work when configured.
 - Run guarded upgrades with `npm run upgrade:check` and `npm run upgrade`.
 
 ## Memory And Knowledge

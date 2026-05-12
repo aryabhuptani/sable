@@ -72,6 +72,7 @@ Install these first:
 - Python 3.11 or newer with `venv` and `pip`.
 - `git`.
 - Codex CLI on `PATH`; run `codex --version` to confirm.
+- Optional for Claude Code background jobs: Claude Code CLI on `PATH`; run `claude --version` to confirm, then complete `claude auth login`.
 - Optional for Signal: `signal-cli` on `PATH` and a Signal number you can register.
 - Optional for Telegram: Telegram API credentials from `https://my.telegram.org`.
 - Optional for Home Assistant: a reachable Home Assistant instance and a long-lived access token.
@@ -148,6 +149,8 @@ Create bridge config at `apps/signal-bridge/.env` only if you are enabling Signa
 PHONE_NUMBER=+15550000000
 ALLOWED_NUMBERS=+15551112222
 CODEX_HOME=/home/example/sable-instance/.codex-bridge
+# Optional Claude Code runner state for background jobs.
+CLAUDE_CONFIG_DIR=/home/example/sable-instance/.claude
 SABLE_INSTANCE_HOME=/home/example/sable-instance
 SABLE_REPO_ROOT=/home/example/projects/sable
 SABLE_CODEX_CWD=/home/example/sable-instance
