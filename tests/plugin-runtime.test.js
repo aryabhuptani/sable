@@ -57,6 +57,11 @@ test("plugin runtime loads a local command and dispatches it", async () => {
   const handled = await runtime.dispatch({ sender: "+1555", command });
   assert.equal(handled, true);
   assert.deepEqual(replies, [{ recipient: "+1555", text: "hello Chris" }]);
+  assert.match(runtime.formatStatus(), /Active plugins: 1/);
+  assert.match(
+    runtime.formatStatus(),
+    /Local Hello \(local-hello, local, experimental\/local\) - commands: \/hello/
+  );
   assert.match(runtime.formatStatus(), /\/hello \(local-hello\)/);
 });
 
@@ -93,4 +98,6 @@ test("plugin runtime rejects local plugins that shadow official ids", () => {
   });
 
   assert.ok(runtime.validationErrors.some((error) => error.includes("shadows official plugin")));
+  assert.match(runtime.formatStatus(), /Active plugins: 1/);
+  assert.match(runtime.formatStatus(), /Telegram Review \(telegram-review, official, descriptive\/test\)/);
 });

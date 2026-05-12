@@ -183,10 +183,28 @@ function createPluginRuntime({
   }
 
   function formatStatus() {
+    const activeEntries = entries
+      .filter((entry) => !entryHasValidationError(entry))
+      .sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
+    const commandsByPlugin = buildCommandsByPlugin(commands);
     const lines = [
       `Plugins: ${entries.length} discovered (${officialEntries.length} official, ${localEntries.length} local).`,
+      `Active plugins: ${activeEntries.length}.`,
       `Plugin API: v${CURRENT_PLUGIN_API_VERSION}.`,
     ];
+    if (activeEntries.length > 0) {
+      lines.push("", "Active plugins:");
+      for (const entry of activeEntries) {
+        const manifest = entry.manifest;
+        const category = manifest.category ? `/${manifest.category}` : "";
+        const commandNames = commandsByPlugin.get(manifest.id) || [];
+        const commandsLabel =
+          commandNames.length > 0 ? `commands: ${commandNames.join(", ")}` : "commands: none";
+        lines.push(
+          `- ${manifest.name} (${manifest.id}, ${entry.source}, ${manifest.status}${category}) - ${commandsLabel}`
+        );
+      }
+    }
     if (validationErrors.length > 0) {
       lines.push("", "Validation issues:");
       for (const error of validationErrors.slice(0, 8)) {
@@ -212,6 +230,10 @@ function createPluginRuntime({
     return lines.join("\n");
   }
 
+  function entryHasValidationError(entry) {
+    return validationErrors.some((error) => error.startsWith(`${entry.manifestPath}:`));
+  }
+
   return {
     commands,
     diagnostics,
@@ -222,6 +244,19 @@ function createPluginRuntime({
     parsePluginCommand,
     validationErrors,
   };
+}
+
+function buildCommandsByPlugin(commands) {
+  const commandsByPlugin = new Map();
+  for (const command of commands.values()) {
+    const current = commandsByPlugin.get(command.pluginId) || [];
+    current.push(command.commandName);
+    commandsByPlugin.set(command.pluginId, current);
+  }
+  for (const commandNames of commandsByPlugin.values()) {
+    commandNames.sort();
+  }
+  return commandsByPlugin;
 }
 
 function findCommandDescription(manifest, commandName) {
@@ -254,6 +289,7 @@ function splitList(value) {
 }
 
 module.exports = {
+  buildCommandsByPlugin,
   createPluginRuntime,
   getLocalPluginRoots,
   normalizeCommandName,
