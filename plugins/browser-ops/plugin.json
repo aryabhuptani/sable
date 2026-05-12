@@ -1,0 +1,52 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "browser-ops",
+  "name": "Browser Ops",
+  "version": "0.1.0",
+  "pluginApiVersion": 1,
+  "status": "experimental",
+  "category": "automation",
+  "description": "Local browser automation primitives for admin workflows, form filling, calendar-link management, downloads, and appointment booking with approval gates.",
+  "runtime": {
+    "type": "node-module",
+    "entry": "handler.js",
+    "currentEntryPoints": [
+      "tools/browser/browser_cli.js",
+      "plugins/browser-ops/handler.js"
+    ]
+  },
+  "capabilities": [
+    "browser.status",
+    "browser.persistent_profile",
+    "browser.screenshot",
+    "browser.calendar_link_plan",
+    "browser.approval_gates"
+  ],
+  "commands": [
+    {
+      "name": "/browser",
+      "description": "Internal/debug browser automation command surface; natural-language requests should normally use the browser-automation skill."
+    }
+  ],
+  "requiredConfig": [
+    {
+      "name": "SABLE_BROWSER_STATE_DIR",
+      "required": false,
+      "description": "Private root for browser profile, downloads, artifacts, and active task state."
+    },
+    {
+      "name": "SABLE_PRIMARY_BOOKING_LINK",
+      "required": false,
+      "description": "Primary public calendar booking link for calendar-link workflows."
+    }
+  ],
+  "requiredSecrets": [],
+  "diagnostics": [
+    {
+      "name": "browser status",
+      "type": "cli",
+      "command": "node tools/browser/browser_cli.js status"
+    }
+  ],
+  "privateDataPolicy": "Do not store browser cookies, downloaded files, screenshots, form contents, credentials, card details, or appointment details in the plugin manifest."
+}

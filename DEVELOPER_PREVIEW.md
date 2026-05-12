@@ -26,6 +26,7 @@ This is the first developer-preview handoff for trusted early users.
 - First-run `SETUP.md` identity/avatar/help/scheduler checklist.
 - Capability docs for what Sable can do out of the box.
 - Experimental `/whatsapp` review for explicitly approved WhatsApp chats.
+- Experimental `browser-ops` plugin and `npm run browser:cli` for approval-gated browser automation primitives.
 
 ## What Is Not Stable Yet
 
@@ -33,7 +34,7 @@ This is the first developer-preview handoff for trusted early users.
 - The bridge is still Signal-first.
 - Local plugin API v1 is intentionally small.
 - Official plugins are still mostly manifest-described boundaries over existing tools.
-- Some integrations require manual account setup, especially Signal, Telegram, WhatsApp Web, Home Assistant, and connector auth.
+- Some integrations require manual account setup, especially Signal, Telegram, WhatsApp Web, browser profile/Playwright setup, Home Assistant, and connector auth.
 - Main may move quickly between named releases.
 
 ## Compatibility Promise

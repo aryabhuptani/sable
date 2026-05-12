@@ -15,6 +15,7 @@ test("current plugin manifests are valid and have stable IDs", () => {
   assert.deepEqual(ids, [
     "autoresearch",
     "autotweet",
+    "browser-ops",
     "google-calendar",
     "home-assistant",
     "memory-obsidian",

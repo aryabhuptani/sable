@@ -38,6 +38,7 @@ New instances get a private `memory/README.md`, seed memory evals, and a memory 
 
 - Telegram review and reply drafting, when Telegram credentials/session are configured.
 - WhatsApp review through WhatsApp Web, when the local session is configured. This is allowlist-first: `/whatsapp` only surfaces chats listed in the approved-chat config.
+- Browser ops for local website automation, screenshots, calendar-link UI workflows, file/statement downloads, form filling, and appointment/class booking. This is approval-gated for irreversible actions and requires optional Playwright setup for live browser runs.
 - Home Assistant inspection, device control, and local automation management, when Home Assistant URL/token are configured.
 - Autotweet editorial suggestion and Typefully draft workflows, when Typefully credentials are configured.
 - Google Calendar connector workflows when the connector is available in the active Codex environment.

@@ -26,6 +26,8 @@ const suites = [
       "tests/bridge-state-store.test.js",
       "tests/bridge-test-support.test.js",
       "tests/bridge-utils.test.js",
+      "tests/browser-cli.test.js",
+      "tests/browser-ops-plugin.test.js",
       "tests/codex-session-reader.test.js",
       "tests/fresh-clone-sim.test.js",
       "tests/init-instance.test.js",
@@ -114,6 +116,11 @@ const suites = [
     name: "WhatsApp CLI",
     command: "npm",
     args: ["run", "test:whatsapp"],
+  },
+  {
+    name: "Browser CLI",
+    command: "npm",
+    args: ["run", "test:browser"],
   },
 ];
 

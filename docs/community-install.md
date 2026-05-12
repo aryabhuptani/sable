@@ -195,6 +195,22 @@ npm run whatsapp:cli -- triage --limit 5
 
 The first live run may print a WhatsApp Web QR login. Sable stores the session under `<instance-home>/.local/state/sable-whatsapp` by default. The Signal command is `/whatsapp [limit]`, and it refuses to surface unapproved chats.
 
+Enable browser automation only if you want Sable to operate a local browser for admin workflows such as form filling, booking links, downloads, or appointments:
+
+```bash
+npm run browser:cli -- init
+npm run browser:cli -- status
+```
+
+Live browser runs require Playwright and Chromium:
+
+```bash
+npm install --no-save playwright
+npx playwright install chromium
+```
+
+Browser state defaults to `<instance-home>/.local/state/sable-browser`. Treat it as private: the profile can contain cookies, screenshots, downloaded statements, and active task state. Irreversible actions should go through Sable's approval-gated workflow rather than being submitted blindly.
+
 For Home Assistant and Typefully, prefer process environment or a private secret manager:
 
 ```bash
