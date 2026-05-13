@@ -527,6 +527,70 @@ test("background job Claude run-worker parses JSON result into last message", as
   }
 });
 
+test("background job run-worker records missing runner binary as failed", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const cwd = path.join(tempDir, "workspace");
+  const jobsRoot = path.join(tempDir, "jobs");
+  const jobDir = path.join(jobsRoot, "job-missing-runner");
+  const missingRunner = path.join(tempDir, "missing-claude");
+  const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
+
+  await fs.mkdir(cwd, { recursive: true });
+  await fs.mkdir(jobDir, { recursive: true });
+  await fs.writeFile(path.join(jobDir, "prompt.md"), "Build the pretty thing.", "utf8");
+  await fs.writeFile(
+    path.join(jobDir, "status.json"),
+    `${JSON.stringify(
+      {
+        id: "job-missing-runner",
+        name: "Missing Runner Job",
+        cwd,
+        callbackCommand: "",
+        claude: missingRunner,
+        claudeHome: path.join(tempDir, "claude-home"),
+        createdAt: "2026-05-08T00:00:00.000Z",
+        dryRun: false,
+        jobDir,
+        model: "",
+        outputFormat: "json",
+        permissionMode: "acceptEdits",
+        pid: 12345,
+        runner: "claude",
+        runnerBin: missingRunner,
+        runnerHome: path.join(tempDir, "claude-home"),
+        status: "running",
+        updatedAt: "2026-05-08T00:00:00.000Z",
+        worktree: null,
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  try {
+    execFileSync(process.execPath, [
+      harness,
+      "run-worker",
+      "--jobs-root",
+      jobsRoot,
+      "--id",
+      "job-missing-runner",
+      "--runner",
+      "claude",
+      "--runner-bin",
+      missingRunner,
+    ]);
+
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    assert.equal(status.status, "failed");
+    assert.equal(status.exitCode, 1);
+    assert.match(status.error, /ENOENT/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("extractClaudeResult supports json, stream json, and plain text", () => {
   assert.equal(extractClaudeResult(JSON.stringify({ result: "final" })), "final");
   assert.equal(

@@ -377,23 +377,27 @@ async function runWorker(options) {
     stdio: ["pipe", stdout, stderr],
   });
 
-  await updateStatus(paths.statusPath, {
-    runnerPid: child.pid,
-    runnerStartedAt: new Date().toISOString(),
-    ...(runnerConfig.type === "codex"
-      ? { codexPid: child.pid, codexStartedAt: new Date().toISOString() }
-      : {}),
-    ...(runnerConfig.type === "claude"
-      ? { claudePid: child.pid, claudeStartedAt: new Date().toISOString() }
-      : {}),
-  });
-
-  child.stdin.end(invocation.stdinPrefix ? `${invocation.stdinPrefix}\n\n${prompt}` : prompt);
-
-  const exit = await new Promise((resolve) => {
+  const exitPromise = new Promise((resolve) => {
     child.on("exit", (code, signal) => resolve({ code, signal }));
     child.on("error", (error) => resolve({ code: 1, error: error.message, signal: null }));
   });
+
+  await updateStatus(paths.statusPath, {
+    ...(child.pid ? { runnerPid: child.pid } : {}),
+    runnerStartedAt: new Date().toISOString(),
+    ...(runnerConfig.type === "codex"
+      ? { ...(child.pid ? { codexPid: child.pid } : {}), codexStartedAt: new Date().toISOString() }
+      : {}),
+    ...(runnerConfig.type === "claude"
+      ? { ...(child.pid ? { claudePid: child.pid } : {}), claudeStartedAt: new Date().toISOString() }
+      : {}),
+  });
+
+  if (child.stdin) {
+    child.stdin.end(invocation.stdinPrefix ? `${invocation.stdinPrefix}\n\n${prompt}` : prompt);
+  }
+
+  const exit = await exitPromise;
 
   fs.closeSync(stdout);
   fs.closeSync(stderr);
