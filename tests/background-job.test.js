@@ -591,6 +591,40 @@ test("background job run-worker records missing runner binary as failed", async 
   }
 });
 
+test("background job stop tolerates already-exited worker pid", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const jobsRoot = path.join(tempDir, "jobs");
+  const jobDir = path.join(jobsRoot, "job-stale");
+  const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
+  await fs.mkdir(jobDir, { recursive: true });
+  await fs.writeFile(
+    path.join(jobDir, "status.json"),
+    `${JSON.stringify(
+      {
+        id: "job-stale",
+        name: "Stale Job",
+        cwd: tempDir,
+        jobDir,
+        pid: 99999999,
+        status: "running",
+        updatedAt: "2026-05-08T00:00:00.000Z",
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  try {
+    execFileSync(process.execPath, [harness, "stop", "--jobs-root", jobsRoot, "--id", "job-stale"]);
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    assert.equal(status.status, "stopping");
+    assert.match(status.stopError, /kill ESRCH/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("extractClaudeResult supports json, stream json, and plain text", () => {
   assert.equal(extractClaudeResult(JSON.stringify({ result: "final" })), "final");
   assert.equal(

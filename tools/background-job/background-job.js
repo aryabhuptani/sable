@@ -624,14 +624,26 @@ async function stopJob(options) {
     throw new Error(`Job has no process id: ${job.id}`);
   }
 
+  let stopError = "";
   try {
     process.kill(-targetPid, "SIGTERM");
-  } catch {
-    process.kill(targetPid, "SIGTERM");
+  } catch (error) {
+    try {
+      process.kill(targetPid, "SIGTERM");
+    } catch (fallbackError) {
+      if (fallbackError.code !== "ESRCH") {
+        throw fallbackError;
+      }
+      stopError = fallbackError.message;
+    }
+    if (!stopError && error.code !== "ESRCH") {
+      stopError = error.message;
+    }
   }
 
   await updateStatus(paths.statusPath, {
     status: "stopping",
+    stopError,
     stoppedAt: new Date().toISOString(),
   });
   return JSON.parse(await fsp.readFile(paths.statusPath, "utf8"));
