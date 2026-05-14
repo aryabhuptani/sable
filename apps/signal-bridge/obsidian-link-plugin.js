@@ -96,6 +96,27 @@ function createObsidianLinkPlugin({
       return;
     }
 
+    if (requestUrl.pathname === "/artifact/view") {
+      const requestedPath = normalizeText(requestUrl.searchParams.get("path"));
+      const normalizedArtifact = normalizeArtifactPath(requestedPath);
+      if (!normalizedArtifact) {
+        respondHtml(
+          res,
+          400,
+          buildObsidianRedirectPage({
+            title: "Invalid artifact path",
+            heading: "Invalid artifact path",
+            body: "<p>The requested artifact is missing, outside the vault, or not supported.</p>",
+          }),
+          method
+        );
+        return;
+      }
+
+      respondFile(res, normalizedArtifact.absolutePath, normalizedArtifact.contentType, method);
+      return;
+    }
+
     if (requestUrl.pathname !== "/obsidian/open") {
       respondHtml(
         res,
@@ -103,7 +124,7 @@ function createObsidianLinkPlugin({
         buildObsidianRedirectPage({
           title: "Not found",
           heading: "Not found",
-          body: "<p>This Sable link endpoint only serves Obsidian note redirects.</p>",
+          body: "<p>This Sable link endpoint only serves Obsidian note redirects and hosted artifacts.</p>",
         }),
         method
       );
@@ -177,6 +198,35 @@ function createObsidianLinkPlugin({
     };
   }
 
+  function normalizeArtifactPath(filePath) {
+    const normalized = normalizeText(filePath);
+    if (!normalized) {
+      return null;
+    }
+
+    const absolutePath = path.resolve(normalized);
+    const relativePath = path.relative(vaultRoot, absolutePath);
+    const normalizedRelativePath = relativePath.split(path.sep).join("/");
+    const extension = path.extname(absolutePath).toLowerCase();
+    const contentType = artifactContentType(extension);
+
+    if (
+      !contentType ||
+      relativePath.startsWith("..") ||
+      path.isAbsolute(relativePath) ||
+      !fs.existsSync(absolutePath) ||
+      !fs.statSync(absolutePath).isFile()
+    ) {
+      return null;
+    }
+
+    return {
+      absolutePath,
+      contentType,
+      relativePath: normalizedRelativePath,
+    };
+  }
+
   function buildSignalObsidianLink(filePath, line = "") {
     if (!enabled || !baseUrl) {
       return "";
@@ -193,6 +243,20 @@ function createObsidianLinkPlugin({
       params.set("line", lineText);
     }
     return `${baseUrl.replace(/\/+$/, "")}/obsidian/open?${params.toString()}`;
+  }
+
+  function buildSignalArtifactLink(filePath) {
+    if (!enabled || !baseUrl) {
+      return "";
+    }
+
+    const normalized = normalizeArtifactPath(filePath);
+    if (!normalized) {
+      return "";
+    }
+
+    const params = new URLSearchParams({ path: normalized.absolutePath });
+    return `${baseUrl.replace(/\/+$/, "")}/artifact/view?${params.toString()}`;
   }
 
   function rewriteMarkdownDocumentReferencesForSignal(text) {
@@ -220,12 +284,14 @@ function createObsidianLinkPlugin({
 
   return {
     baseUrl,
+    buildSignalArtifactLink,
     buildSignalObsidianLink,
     closeServer,
     enabled,
     getServerAddress,
     handleRequest,
     host,
+    normalizeArtifactPath,
     normalizeObsidianNotePath,
     port,
     rewriteMarkdownDocumentReferencesForSignal,
@@ -332,6 +398,38 @@ function respondHtml(res, statusCode, html, method = "GET") {
     return;
   }
   res.end(html);
+}
+
+function respondFile(res, filePath, contentType, method = "GET") {
+  res.writeHead(200, {
+    "Content-Type": contentType,
+    "Cache-Control": "private, max-age=300",
+    "X-Content-Type-Options": "nosniff",
+  });
+  if (method === "HEAD") {
+    res.end();
+    return;
+  }
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function artifactContentType(extension) {
+  return (
+    {
+      ".csv": "text/csv; charset=utf-8",
+      ".gif": "image/gif",
+      ".htm": "text/html; charset=utf-8",
+      ".html": "text/html; charset=utf-8",
+      ".jpeg": "image/jpeg",
+      ".jpg": "image/jpeg",
+      ".json": "application/json; charset=utf-8",
+      ".pdf": "application/pdf",
+      ".png": "image/png",
+      ".svg": "image/svg+xml; charset=utf-8",
+      ".txt": "text/plain; charset=utf-8",
+      ".webp": "image/webp",
+    }[extension] || ""
+  );
 }
 
 function buildObsidianRedirectPage({ title, heading, body, obsidianUri = "" }) {

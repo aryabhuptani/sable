@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
@@ -134,4 +136,77 @@ test("obsidian redirect page uses percent-encoded vault name in launch URI", () 
   assert.equal(statusCode, 200);
   assert.match(body, /obsidian:\/\/open\?vault=Sable%20Memory&amp;file=folder%2Fnote\.md/);
   assert.doesNotMatch(body, /Sable\+Memory/);
+});
+
+test("obsidian link plugin builds and serves hosted artifact links under the vault", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sable-artifact-link-"));
+  const artifactPath = path.join(tempDir, "knowledge", "projects", "darkbloom", "outputs", "report.html");
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  fs.writeFileSync(artifactPath, "<!doctype html><title>Report</title><h1>Report</h1>", "utf8");
+
+  try {
+    const plugin = createObsidianLinkPlugin({
+      env: {
+        SABLE_OBSIDIAN_BASE_URL: "https://sable.test.ts.net",
+      },
+      instanceConfig: createInstance({ memoryRoot: tempDir }),
+    });
+
+    assert.deepEqual(plugin.normalizeArtifactPath(artifactPath), {
+      absolutePath: artifactPath,
+      contentType: "text/html; charset=utf-8",
+      relativePath: "knowledge/projects/darkbloom/outputs/report.html",
+    });
+    assert.equal(
+      plugin.buildSignalArtifactLink(artifactPath),
+      `https://sable.test.ts.net/artifact/view?path=${encodeURIComponent(artifactPath)}`
+    );
+
+    let statusCode = 0;
+    let headers = {};
+    let body = "";
+    const res = {
+      writeHead(code, nextHeaders = {}) {
+        statusCode = code;
+        headers = nextHeaders;
+      },
+      end(output = "") {
+        body += output;
+      },
+      on() {},
+      once() {},
+      emit() {},
+      write(chunk) {
+        body += chunk;
+      },
+    };
+
+    await new Promise((resolve, reject) => {
+      res.end = (output = "") => {
+        body += output;
+        resolve();
+      };
+      res.emit = (event, error) => {
+        if (event === "error") {
+          reject(error);
+          return true;
+        }
+        return false;
+      };
+      plugin.handleRequest(
+        {
+          method: "GET",
+          url: `/artifact/view?path=${encodeURIComponent(artifactPath)}`,
+        },
+        res
+      );
+    });
+
+    assert.equal(statusCode, 200);
+    assert.equal(headers["Content-Type"], "text/html; charset=utf-8");
+    assert.match(body, /<h1>Report<\/h1>/);
+    assert.equal(plugin.buildSignalArtifactLink(path.join(os.tmpdir(), "outside.html")), "");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
