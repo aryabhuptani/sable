@@ -42,6 +42,7 @@
     "finance:gocardless": "node tools/finance/gocardless_probe.js",
     "signal:attach": "node tools/signal/send_attachment.js",
     "background-job": "node tools/background-job/background-job.js",
+    "background-batch-notify": "node tools/background-job/batch-notify.js",
     "memory:health": "node tools/memory/health-check.js",
     "obsidian:ensure-serve": "node tools/obsidian-link/ensure-serve.js",
     "shareability:check": "node tools/shareability/check.js",

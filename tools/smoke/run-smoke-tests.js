@@ -14,6 +14,7 @@ const suites = [
       "tests/smoke-contract.test.js",
       "tests/app-server-message-helpers.test.js",
       "tests/app-server-turn-runner.test.js",
+      "tests/background-job-batch-notify.test.js",
       "tests/background-job.test.js",
       "tests/bridge-config.test.js",
       "tests/autoresearch-archive.test.js",

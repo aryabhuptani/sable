@@ -683,15 +683,18 @@ function formatJobList(rows) {
 function usage() {
   return [
     "Usage:",
-    "  npm run background-job -- start --name NAME --cwd DIR (--prompt TEXT | --prompt-file FILE)",
-    "  npm run background-job -- start --name NAME --worktree-from REPO [--worktree-branch BRANCH] [--worktree-dir DIR] (--prompt TEXT | --prompt-file FILE)",
-    "  npm run background-job -- start --runner codex|claude --name NAME --cwd DIR (--prompt TEXT | --prompt-file FILE)",
+    "  npm run background-job -- start --name NAME [--id JOB_ID] --cwd DIR (--prompt TEXT | --prompt-file FILE)",
+    "  npm run background-job -- start --name NAME [--id JOB_ID] --worktree-from REPO [--worktree-branch BRANCH] [--worktree-dir DIR] (--prompt TEXT | --prompt-file FILE)",
+    "  npm run background-job -- start --runner codex|claude --name NAME [--id JOB_ID] --cwd DIR (--prompt TEXT | --prompt-file FILE)",
     "  npm run background-job -- list",
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
     "  npm run background-job -- stop --id JOB_ID",
+    "  node tools/background-job/batch-notify.js init --batch-file FILE --job JOB_ID [--job JOB_ID...]",
     "",
     "Starts detached bounded background agent jobs with durable logs/status. Codex is the default runner; Claude Code can be selected with --runner claude.",
+    "Pass --callback-command COMMAND to start so the worker runs COMMAND after completion with SABLE_BACKGROUND_JOB_* env vars.",
+    "For sibling batches, put the same callback on every job: node tools/background-job/batch-notify.js callback --batch-file FILE.",
   ].join("\n");
 }
 
