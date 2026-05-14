@@ -10,6 +10,9 @@ const { createInstanceConfig } = require("../instance/instance-config");
 const DEFAULT_TRIAGE_LIMIT = 25;
 const DEFAULT_STALE_DAYS = 21;
 const DEFAULT_READY_TIMEOUT_MS = 5 * 60 * 1000;
+const WHATSAPP_WEB_URL = "https://web.whatsapp.com/";
+const MODERN_CHROME_USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
 function defaultApprovedChatsPath(env = process.env) {
   const explicit = normalizeText(env.SABLE_WHATSAPP_APPROVED_CHATS_PATH);
@@ -218,6 +221,28 @@ async function commandListChats(args, env = process.env) {
   return 0;
 }
 
+async function commandExportApproved(args, env = process.env) {
+  const approvedChats = loadApprovedChats({
+    env,
+    filePath: args["approved-chats"] || defaultApprovedChatsPath(env),
+  });
+  if (!approvedChats.length) {
+    throw new Error(`No approved WhatsApp chats configured in ${defaultApprovedChatsPath(env)}.`);
+  }
+  const outputPath = path.resolve(expandHome(args.out || args.output || "whatsapp-approved-export.md"));
+  const exportResult = await exportApprovedChatsWithBrowser({
+    env,
+    approvedChats,
+    outputPath,
+    timeoutMs: normalizeInteger(args["ready-timeout-ms"], DEFAULT_READY_TIMEOUT_MS),
+  });
+  console.log(`Wrote WhatsApp approved-chat export: ${exportResult.outputPath}`);
+  for (const chat of exportResult.chats) {
+    console.log(`- ${chat.name}: ${chat.characters} characters`);
+  }
+  return 0;
+}
+
 function commandInitConfig(args, env = process.env) {
   const filePath = args.file || defaultApprovedChatsPath(env);
   if (fs.existsSync(filePath) && args.force !== "true") {
@@ -260,8 +285,12 @@ async function fetchWhatsAppChats({ env = process.env, args = {} } = {}) {
   const qrFile = normalizeText(args["qr-file"] || env.SABLE_WHATSAPP_QR_FILE);
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: sessionPath }),
+    // whatsapp-web.js still defaults to a Chrome 101 UA, which WhatsApp Web now rejects.
+    userAgent: MODERN_CHROME_USER_AGENT,
+    webVersionCache: { type: "none" },
     puppeteer: {
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     },
   });
   client.on("qr", (qr) => {
@@ -311,6 +340,92 @@ async function fetchWhatsAppChats({ env = process.env, args = {} } = {}) {
   }
 }
 
+async function exportApprovedChatsWithBrowser({
+  env = process.env,
+  approvedChats = [],
+  outputPath,
+  timeoutMs = DEFAULT_READY_TIMEOUT_MS,
+} = {}) {
+  let puppeteer;
+  try {
+    puppeteer = require("puppeteer");
+  } catch {
+    throw new Error(
+      "puppeteer is not installed. Install it in the Sable repo with `npm install puppeteer` before exporting WhatsApp messages."
+    );
+  }
+
+  const sessionDir = path.join(defaultSessionPath(env), "session");
+  clearChromiumSingletons(sessionDir);
+  const browser = await puppeteer.launch({
+    headless: "new",
+    userDataDir: sessionDir,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      `--user-agent=${MODERN_CHROME_USER_AGENT}`,
+    ],
+  });
+  const page = await browser.newPage();
+  await page.setUserAgent(MODERN_CHROME_USER_AGENT);
+  try {
+    await page.goto(WHATSAPP_WEB_URL, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForSelector("div[role=\"grid\"]", { timeout: timeoutMs });
+    const exported = [];
+    for (const approved of approvedChats) {
+      const chatName = approved.name || approved.id;
+      await openChatByTitle(page, chatName, timeoutMs);
+      await delay(4000);
+      const chat = await page.evaluate((name) => {
+        const main = document.querySelector("#main");
+        return {
+          name,
+          header: main?.querySelector("header")?.innerText || "",
+          text: main?.innerText || "",
+        };
+      }, chatName);
+      exported.push(chat);
+    }
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, formatApprovedChatExport(exported), "utf8");
+    return {
+      outputPath,
+      chats: exported.map((chat) => ({
+        name: chat.name,
+        characters: chat.text.length,
+      })),
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+async function openChatByTitle(page, chatName, timeoutMs) {
+  const selector = `span[title="${cssStringEscape(chatName)}"]`;
+  await page.waitForSelector(selector, { timeout: timeoutMs });
+  const handle = await page.$(selector);
+  if (!handle) {
+    throw new Error(`Approved WhatsApp chat not found in visible chat list: ${chatName}`);
+  }
+  await handle.click({ clickCount: 1 });
+}
+
+function formatApprovedChatExport(chats) {
+  return `${chats.map((chat) => {
+    return [
+      `# ${chat.name}`,
+      "",
+      `Header: ${chat.header}`,
+      "",
+      "```text",
+      chat.text.trim(),
+      "```",
+      "",
+    ].join("\n");
+  }).join("\n---\n")}\n`;
+}
+
 async function asyncMain(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   if (args.command === "triage") {
@@ -322,6 +437,9 @@ async function asyncMain(argv = process.argv.slice(2), env = process.env) {
   if (args.command === "init-config") {
     return commandInitConfig(args, env);
   }
+  if (args.command === "export-approved") {
+    return commandExportApproved(args, env);
+  }
   printUsage();
   return 1;
 }
@@ -332,7 +450,20 @@ function printUsage() {
     "  whatsapp_cli.js init-config [--file path] [--force true]",
     "  whatsapp_cli.js list-chats [--limit 50] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
     "  whatsapp_cli.js triage [--limit 25] [--stale-days 21] [--approved-chats path] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
+    "  whatsapp_cli.js export-approved --out path [--approved-chats path] [--ready-timeout-ms 300000]",
   ].join("\n"));
+}
+
+function clearChromiumSingletons(sessionDir) {
+  for (const name of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) {
+    try {
+      fs.rmSync(path.join(sessionDir, name), { force: true });
+    } catch {}
+  }
+}
+
+function cssStringEscape(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
 function normalizeText(value) {
@@ -371,6 +502,10 @@ function truncate(value, limit) {
   return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 if (require.main === module) {
   asyncMain().then((code) => process.exit(code)).catch((error) => {
     console.error(error.message);
@@ -389,4 +524,5 @@ module.exports = {
   normalizeSnapshot,
   parseArgs,
   commandListChats,
+  formatApprovedChatExport,
 };

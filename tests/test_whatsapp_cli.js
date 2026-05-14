@@ -106,3 +106,17 @@ test("whatsapp cli can triage a fixture with approved-chat config", async () => 
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("whatsapp approved-chat export formats bounded chat text", () => {
+  const output = whatsapp.formatApprovedChatExport([
+    {
+      name: "Arjun's passport application",
+      header: "Arjun's passport application\nAndreia, Dad, You",
+      text: "Today\nAndreia Cruz\nthank you\n09:59",
+    },
+  ]);
+
+  assert.match(output, /# Arjun's passport application/);
+  assert.match(output, /Header: Arjun's passport application/);
+  assert.match(output, /```text\nToday/);
+});
