@@ -145,7 +145,15 @@ test("obsidian serve helper can dry-run bridge restart before repairing serve", 
     assert.equal(result.ok, false);
     assert.deepEqual(result.actions, [
       {
-        command: "systemctl --user restart signal-codex-bridge.service",
+        command: "systemctl --user is-active --quiet signal-codex-bridge.service",
+        status: 0,
+      },
+      {
+        command: `write ${path.resolve(__dirname, "..", "apps", "signal-bridge", ".restart-requested")}`,
+        status: 0,
+      },
+      {
+        command: "systemctl --user start signal-codex-bridge.service",
         status: 0,
       },
       {

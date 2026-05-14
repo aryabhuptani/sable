@@ -8,6 +8,7 @@ const test = require("node:test");
 const { createInstanceConfig } = require("../tools/instance/instance-config");
 const {
   SERVICE_NAME,
+  getRestartRequestPath,
   getUserServicePath,
   parseArgs,
   renderUserServiceUnit,
@@ -93,22 +94,55 @@ test("service install writes unit and invokes user systemctl commands", async ()
   }
 });
 
-test("service control commands map to expected systemctl invocations", () => {
+test("service restart requests graceful bridge restart when service is active", async () => {
+  const tempRepo = await fsp.mkdtemp(path.join(os.tmpdir(), "sable-repo-"));
+  const calls = [];
+
+  try {
+    const result = runServiceCommand({
+      command: "restart",
+      homeDir: "/srv/sable-user",
+      repoRoot: tempRepo,
+      spawn: (command, args) => {
+        calls.push([command, args]);
+        return { status: 0 };
+      },
+    });
+
+    const restartRequestPath = getRestartRequestPath({ repoRoot: tempRepo });
+    assert.equal(result.status, 0);
+    assert.deepEqual(result.actions, [
+      `systemctl --user is-active --quiet ${SERVICE_NAME}`,
+      `write ${restartRequestPath}`,
+      `systemctl --user start ${SERVICE_NAME}`,
+    ]);
+    assert.deepEqual(calls, [
+      ["systemctl", ["--user", "is-active", "--quiet", SERVICE_NAME]],
+      ["systemctl", ["--user", "start", SERVICE_NAME]],
+    ]);
+    assert.equal(fs.existsSync(restartRequestPath), true);
+  } finally {
+    await fsp.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test("service restart falls back to systemctl restart when service is inactive", () => {
   const calls = [];
   const result = runServiceCommand({
     command: "restart",
-    dryRun: true,
     homeDir: "/srv/sable-user",
     repoRoot: "/opt/sable",
     spawn: (command, args) => {
       calls.push([command, args]);
-      return { status: 0 };
+      return args.includes("is-active") ? { status: 3 } : { status: 0 };
     },
   });
 
   assert.equal(result.status, 0);
-  assert.deepEqual(result.actions, [`systemctl --user restart ${SERVICE_NAME}`]);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(result.actions, [
+    `systemctl --user is-active --quiet ${SERVICE_NAME}`,
+    `systemctl --user restart ${SERVICE_NAME}`,
+  ]);
 });
 
 test("service parser supports command, instance home, dry-run, and systemctl override", () => {

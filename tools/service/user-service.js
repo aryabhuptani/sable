@@ -9,7 +9,7 @@ const { createInstanceConfig } = require("../instance/instance-config");
 const { getInstanceEnvPath } = require("../instance/init-instance");
 
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, "..", "..");
-const SERVICE_NAME = "sable-signal-bridge.service";
+const SERVICE_NAME = "signal-codex-bridge.service";
 
 function parseArgs(argv) {
   const options = {
@@ -97,6 +97,10 @@ function systemdEscape(value) {
   return text;
 }
 
+function getRestartRequestPath({ repoRoot = DEFAULT_REPO_ROOT } = {}) {
+  return path.join(repoRoot, "apps", "signal-bridge", ".restart-requested");
+}
+
 function runServiceCommand({
   command,
   dryRun = false,
@@ -152,8 +156,24 @@ function runServiceCommand({
     return { actions, instance, servicePath, status: result.status || 0, unit };
   }
 
+  if (command === "restart") {
+    const active = systemctlUser(["is-active", "--quiet", SERVICE_NAME]);
+    if ((active.status || 0) === 0) {
+      const restartRequestPath = getRestartRequestPath({ repoRoot: instance.repoRoot });
+      actions.push(`write ${restartRequestPath}`);
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(restartRequestPath), { recursive: true });
+        fs.writeFileSync(restartRequestPath, `${new Date().toISOString()}\n`, "utf8");
+      }
+      const result = systemctlUser(["start", SERVICE_NAME]);
+      return { actions, instance, servicePath, status: result.status || 0, unit };
+    }
+
+    const result = systemctlUser(["restart", SERVICE_NAME]);
+    return { actions, instance, servicePath, status: result.status || 0, unit };
+  }
+
   const commandMap = {
-    restart: ["restart", SERVICE_NAME],
     start: ["start", SERVICE_NAME],
     status: ["status", SERVICE_NAME],
     stop: ["stop", SERVICE_NAME],
@@ -209,6 +229,7 @@ if (require.main === module) {
 
 module.exports = {
   SERVICE_NAME,
+  getRestartRequestPath,
   getUserServicePath,
   parseArgs,
   renderUserServiceUnit,

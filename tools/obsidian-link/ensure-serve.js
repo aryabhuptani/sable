@@ -2,11 +2,14 @@
 "use strict";
 
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
 const { execFileSync, spawnSync } = require("node:child_process");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4111;
 const DEFAULT_HTTPS_PORT = "443";
+const DEFAULT_REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function parseArgs(argv) {
   const options = {
@@ -140,6 +143,41 @@ function run(command, args, { dryRun = false } = {}) {
   };
 }
 
+function writeRestartRequest({ dryRun = false, repoRoot = DEFAULT_REPO_ROOT } = {}) {
+  const restartRequestPath = path.join(repoRoot, "apps", "signal-bridge", ".restart-requested");
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(restartRequestPath), { recursive: true });
+    fs.writeFileSync(restartRequestPath, `${new Date().toISOString()}\n`, "utf8");
+  }
+  return { command: `write ${restartRequestPath}`, status: 0 };
+}
+
+function requestBridgeRestart(options) {
+  const active = run(
+    options.systemctl,
+    ["--user", "is-active", "--quiet", options.serviceName],
+    { dryRun: options.dryRun }
+  );
+  const actions = [active];
+
+  if ((active.status || 0) === 0) {
+    actions.push(writeRestartRequest({ dryRun: options.dryRun }));
+    actions.push(
+      run(options.systemctl, ["--user", "start", options.serviceName], {
+        dryRun: options.dryRun,
+      })
+    );
+    return actions;
+  }
+
+  actions.push(
+    run(options.systemctl, ["--user", "restart", options.serviceName], {
+      dryRun: options.dryRun,
+    })
+  );
+  return actions;
+}
+
 async function ensureObsidianServe(options) {
   const actions = [];
   const localHealth = await checkLocalHealth({
@@ -149,11 +187,9 @@ async function ensureObsidianServe(options) {
   });
 
   if (!localHealth.ok && options.restartBridge) {
-    const restart = run(options.systemctl, ["--user", "restart", options.serviceName], {
-      dryRun: options.dryRun,
-    });
-    actions.push(restart);
-    if ((restart.status || 0) === 0 && !options.dryRun) {
+    const restartActions = requestBridgeRestart(options);
+    actions.push(...restartActions);
+    if (restartActions.every((action) => (action.status || 0) === 0) && !options.dryRun) {
       await sleep(3_000);
       const retryHealth = await checkLocalHealth({
         host: options.host,
@@ -268,4 +304,5 @@ module.exports = {
   isServeConfigured,
   normalizeServeHostname,
   parseArgs,
+  requestBridgeRestart,
 };

@@ -43,7 +43,7 @@ Send a Signal message to the Sable number. Once it replies, check:
 If the bridge fails to start, read logs with:
 
 ```bash
-journalctl --user -u sable-signal-bridge.service -f
+journalctl --user -u signal-codex-bridge.service -f
 ```
 
 ## Current Shape
@@ -462,7 +462,7 @@ Operational commands:
 npm run service:restart -- --instance-home "$HOME/sable-instance"
 npm run service:stop -- --instance-home "$HOME/sable-instance"
 npm run uninstall:user-service -- --instance-home "$HOME/sable-instance"
-journalctl --user -u sable-signal-bridge.service -f
+journalctl --user -u signal-codex-bridge.service -f
 ```
 
 To inspect the generated unit without installing it:
