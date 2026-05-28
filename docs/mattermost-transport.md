@@ -11,6 +11,7 @@ MATTERMOST_TOKEN=example-token
 MATTERMOST_TEAM=example-team
 MATTERMOST_PARENT_CHANNEL=sable-control
 MATTERMOST_DM_USER_IDS=user-id-1,user-id-2
+MATTERMOST_CURSOR_PATH=/path/to/mattermost-cursors.json
 ```
 
 Tokens must be redacted from logs, `/ops`, `/plugins`, and doctor output.
@@ -48,3 +49,8 @@ Parent Sable can also poll direct-message channels with specific users. Set
 `MATTERMOST_DM_USER_IDS` to the allowed Mattermost user ids and keep
 `MATTERMOST_ALLOWED_USERS` scoped to the same ids. The transport resolves the
 bot/user DM channel at startup and routes replies back to that DM conversation.
+
+The transport persists per-channel poll cursors at `MATTERMOST_CURSOR_PATH` so
+bridge restarts do not replay older Mattermost posts. When a channel is first
+watched and no cursor exists, the cursor starts at bridge startup time; this
+avoids treating historical channel setup messages as fresh user requests.

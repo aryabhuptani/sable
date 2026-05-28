@@ -1,4 +1,7 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
 const { createMattermostTransport } = require("../apps/signal-bridge/mattermost-transport");
@@ -12,6 +15,7 @@ test("mattermost transport polls direct message channels", async () => {
     botUserId: "bot-user",
     dmUserIds: ["arya-user"],
     enabled: true,
+    skipExistingOnStart: false,
     token: "secret-token",
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
@@ -58,6 +62,52 @@ test("mattermost transport polls direct message channels", async () => {
   assert.equal(envelopes[0].channelKind, "direct");
   assert.equal(envelopes[0].text, "hello from dm");
   assert.equal(calls[0].url, "https://mattermost.example.test/api/v4/channels/direct");
+});
+
+test("mattermost transport persists cursors and skips old posts on first start", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sable-mm-cursor-"));
+  const cursorPath = path.join(root, "cursor.json");
+  const envelopes = [];
+  const transport = createMattermostTransport({
+    allowedUsers: ["arya-user"],
+    baseUrl: "https://mattermost.example.test",
+    botUserId: "bot-user",
+    cursorPath,
+    dmUserIds: ["arya-user"],
+    enabled: true,
+    token: "secret-token",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/api/v4/channels/direct")) {
+        return jsonResponse({ id: "dm-channel" });
+      }
+      if (url.includes("/api/v4/channels/dm-channel/posts")) {
+        return jsonResponse({
+          posts: {
+            "old-post": {
+              id: "old-post",
+              channel_id: "dm-channel",
+              user_id: "arya-user",
+              message: "historical setup chatter",
+              create_at: 1,
+            },
+          },
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    },
+    now: () => "unused",
+    onEnvelope: async (envelope) => envelopes.push(envelope),
+    setIntervalFn: () => 1,
+    clearIntervalFn: () => {},
+  });
+
+  assert.equal(await transport.start(), true);
+  await transport.poll();
+
+  assert.deepEqual(envelopes, []);
+  const persisted = JSON.parse(fs.readFileSync(cursorPath, "utf8"));
+  assert.equal(typeof persisted.channels["dm-channel"], "number");
+  assert.ok(persisted.channels["dm-channel"] > 1);
 });
 
 function jsonResponse(value) {

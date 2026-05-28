@@ -135,6 +135,9 @@ function createBridgeConfig({
     env.MATTERMOST_POLL_INTERVAL_MS,
     5_000
   );
+  const MATTERMOST_CURSOR_PATH =
+    normalizeText(env.MATTERMOST_CURSOR_PATH) ||
+    path.join(OPS_ROOT, "mattermost-cursors.json");
 
   return {
     APP_SERVER_CLIENT_VERSION: "1.1.0",
@@ -175,6 +178,7 @@ function createBridgeConfig({
     MATTERMOST_BASE_URL: normalizeText(env.MATTERMOST_BASE_URL),
     MATTERMOST_BOT_USER_ID: normalizeText(env.MATTERMOST_BOT_USER_ID),
     MATTERMOST_CHANNEL_ID: normalizeText(env.MATTERMOST_CHANNEL_ID),
+    MATTERMOST_CURSOR_PATH,
     MATTERMOST_DM_USER_IDS: splitList(env.MATTERMOST_DM_USER_IDS),
     MATTERMOST_ENABLED,
     MATTERMOST_PARENT_CHANNEL: normalizeText(env.MATTERMOST_PARENT_CHANNEL),

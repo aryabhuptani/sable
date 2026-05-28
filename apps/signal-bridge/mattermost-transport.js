@@ -1,5 +1,8 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const {
   createMattermostClient,
   normalizeMattermostPostEvent,
@@ -17,7 +20,10 @@ function createMattermostTransport({
   pollIntervalMs = 5000,
   allowedUsers = [],
   botUserId = "",
+  cursorPath = "",
+  skipExistingOnStart = true,
   fetchImpl = globalThis.fetch,
+  fsModule = fs,
   logger = console,
   onEnvelope = async () => {},
   setIntervalFn = setInterval,
@@ -30,6 +36,7 @@ function createMattermostTransport({
   let resolvedChannelId = parentChannelId || "";
   let watchedChannels = [];
   const lastCreateAtByChannel = new Map();
+  let cursorLoaded = false;
 
   function isEnabled() {
     return Boolean(
@@ -44,8 +51,11 @@ function createMattermostTransport({
     if (!isEnabled() || timer) {
       return false;
     }
+    loadCursors();
     watchedChannels = await resolveWatchedChannels();
     resolvedChannelId = watchedChannels[0]?.id || "";
+    seedNewChannelCursors();
+    saveCursors();
     timer = setIntervalFn(() => {
       void poll().catch((error) => {
         logger.error?.(`Mattermost poll failed: ${redactMattermostSecrets(error.message, token)}`);
@@ -78,7 +88,11 @@ function createMattermostTransport({
         if (created <= (lastCreateAtByChannel.get(channel.id) || 0)) {
           continue;
         }
-        lastCreateAtByChannel.set(channel.id, Math.max(lastCreateAtByChannel.get(channel.id) || 0, created));
+        lastCreateAtByChannel.set(
+          channel.id,
+          Math.max(lastCreateAtByChannel.get(channel.id) || 0, created)
+        );
+        saveCursors();
         const envelope = normalizeMattermostPostEvent({ post }, { botUserId });
         if (!envelope || !isAllowedSender(envelope.sender)) {
           continue;
@@ -117,6 +131,59 @@ function createMattermostTransport({
     return allowedUserSet.size === 0 || allowedUserSet.has(String(sender || ""));
   }
 
+  function loadCursors() {
+    if (cursorLoaded || !cursorPath) {
+      cursorLoaded = true;
+      return;
+    }
+    cursorLoaded = true;
+    try {
+      const parsed = JSON.parse(fsModule.readFileSync(cursorPath, "utf8"));
+      for (const [channelId, value] of Object.entries(parsed.channels || {})) {
+        const cursor = Number(value || 0);
+        if (channelId && Number.isFinite(cursor) && cursor > 0) {
+          lastCreateAtByChannel.set(channelId, cursor);
+        }
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        logger.warn?.(`Mattermost cursor load failed: ${error.message}`);
+      }
+    }
+  }
+
+  function seedNewChannelCursors() {
+    if (!skipExistingOnStart) {
+      return;
+    }
+    const startupCursor = Date.now();
+    for (const channel of watchedChannels) {
+      if (!lastCreateAtByChannel.has(channel.id)) {
+        lastCreateAtByChannel.set(channel.id, startupCursor);
+      }
+    }
+  }
+
+  function saveCursors() {
+    if (!cursorPath) {
+      return;
+    }
+    try {
+      fsModule.mkdirSync(path.dirname(cursorPath), { recursive: true });
+      const channels = {};
+      for (const [channelId, cursor] of lastCreateAtByChannel.entries()) {
+        channels[channelId] = cursor;
+      }
+      fsModule.writeFileSync(
+        cursorPath,
+        `${JSON.stringify({ version: 1, channels }, null, 2)}\n`,
+        "utf8"
+      );
+    } catch (error) {
+      logger.warn?.(`Mattermost cursor save failed: ${error.message}`);
+    }
+  }
+
   async function sendReply(target, text) {
     const channelId = parseMattermostTarget(target) || resolvedChannelId;
     if (!channelId) {
@@ -129,6 +196,7 @@ function createMattermostTransport({
     client,
     getChannelId: () => resolvedChannelId,
     getWatchedChannels: () => [...watchedChannels],
+    getCursors: () => Object.fromEntries(lastCreateAtByChannel.entries()),
     isEnabled,
     poll,
     sendReply,
