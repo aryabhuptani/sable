@@ -4,6 +4,8 @@
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 
+const { createMattermostClient } = require("./mattermost-client");
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const status = JSON.parse(fs.readFileSync(args.status, "utf8"));
@@ -42,13 +44,15 @@ async function main() {
   });
   fs.closeSync(stdout);
   fs.closeSync(stderr);
-  updateStatus(args.status, {
+  const finalPatch = {
     completedAt: new Date().toISOString(),
     error: exit.error || "",
     exitCode: exit.code,
     signal: exit.signal || "",
     status: exit.code === 0 ? "completed" : "failed",
-  });
+  };
+  updateStatus(args.status, finalPatch);
+  await maybePostMattermostCompletion({ ...status, ...finalPatch });
 }
 
 function parseArgs(argv) {
@@ -76,8 +80,40 @@ function updateStatus(statusPath, patch) {
   );
 }
 
+async function maybePostMattermostCompletion(status) {
+  const channelId = status.mattermostChannelId;
+  if (!channelId || !process.env.MATTERMOST_BASE_URL || !process.env.MATTERMOST_TOKEN) {
+    return;
+  }
+  let message = "";
+  try {
+    message = fs.readFileSync(status.lastMessagePath, "utf8").trim();
+  } catch {
+    message = "";
+  }
+  if (!message) {
+    message = status.status === "completed"
+      ? "Employee run completed without a final message."
+      : `Employee run failed${status.error ? `: ${status.error}` : "."}`;
+  }
+  const prefix = `[${status.employeeId || "employee"}:${status.id || "run"}]`;
+  const body = `${prefix}\n${truncateForMattermost(message)}`;
+  const client = createMattermostClient({
+    baseUrl: process.env.MATTERMOST_BASE_URL,
+    token: process.env.MATTERMOST_TOKEN,
+  });
+  await client.postMessage(channelId, body);
+}
+
+function truncateForMattermost(text, maxLength = 3500) {
+  const value = String(text || "");
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength - 20)}\n...[truncated]`;
+}
+
 main().catch((error) => {
   console.error(error.stack || error.message);
   process.exit(1);
 });
-
