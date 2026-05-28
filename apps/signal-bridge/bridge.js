@@ -101,6 +101,8 @@ const {
   DEFAULT_FILE_PROMPT,
   DEFAULT_IMAGE_PROMPT,
   DEFAULT_SCHEDULER_JOBS_PATH,
+  EMPLOYEE_CODEX_CREDENTIAL_FILES,
+  EMPLOYEE_CODEX_CREDENTIAL_SOURCE,
   EMPLOYEE_RUNTIME_ROOT,
   EMPLOYEES_ROOT,
   EXTRACT_PDF_SCRIPT_PATH,
@@ -226,6 +228,8 @@ const employeeStore = createEmployeeStore({
 const employeeRuntime = createEmployeeRuntime({
   employeeStore,
   repoRoot: INSTANCE_CONFIG.repoRoot,
+  codexCredentialFiles: EMPLOYEE_CODEX_CREDENTIAL_FILES,
+  codexCredentialSource: EMPLOYEE_CODEX_CREDENTIAL_SOURCE,
   dockerEnabled: normalizeBooleanEnv(process.env.SABLE_EMPLOYEE_DOCKER_ENABLED, true),
   dockerImage: normalizeText(process.env.SABLE_EMPLOYEE_DOCKER_IMAGE) || "node:22-bookworm",
 });

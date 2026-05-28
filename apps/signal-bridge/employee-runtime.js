@@ -10,6 +10,8 @@ function createEmployeeRuntime({
   dockerImage = "node:22-bookworm",
   dockerEnabled = true,
   codexModulePath = "/usr/lib/node_modules/@openai/codex",
+  codexCredentialSource = "",
+  codexCredentialFiles = ["auth.json", "config.toml", "installation_id"],
   codexBin = "codex",
   nodeBin = process.execPath,
   fsModule = fs,
@@ -75,6 +77,12 @@ function createEmployeeRuntime({
     const lastMessagePath = path.join(runDir, "last-message.md");
     const fullPrompt = buildEmployeePrompt(employee, prompt);
     fsModule.writeFileSync(promptPath, fullPrompt, "utf8");
+    const credentialFilesSeeded = seedCodexCredentials({
+      employee,
+      sourceRoot: options.codexCredentialSource ?? codexCredentialSource,
+      fileNames: options.codexCredentialFiles ?? codexCredentialFiles,
+      fsModule,
+    });
 
     const docker = buildDockerInvocation({
       dockerImage: options.dockerImage || dockerImage,
@@ -109,6 +117,7 @@ function createEmployeeRuntime({
       dockerEnabled: invocation.type === "docker",
       invocation,
       mattermostChannelId: employee.mattermost?.channelId || "",
+      credentialFilesSeeded,
       createdAt: now(),
       updatedAt: now(),
       status: options.dryRun ? "prepared" : "starting",
@@ -122,6 +131,63 @@ function createEmployeeRuntime({
     prepareEmployeeRun,
     startEmployeeRun,
   };
+}
+
+function seedCodexCredentials({ employee, sourceRoot = "", fileNames = [], fsModule = fs } = {}) {
+  const paths = employee.paths || {};
+  const destinationRoot = paths.codexHome || "";
+  const resolvedSourceRoot = sourceRoot ? path.resolve(sourceRoot) : "";
+  if (!resolvedSourceRoot || !destinationRoot) {
+    return [];
+  }
+  const copied = [];
+  fsModule.mkdirSync(destinationRoot, { recursive: true });
+  for (const fileName of fileNames || []) {
+    const relativeName = normalizeCredentialFileName(fileName);
+    if (!relativeName) {
+      continue;
+    }
+    const sourcePath = path.join(resolvedSourceRoot, relativeName);
+    const destinationPath = path.join(destinationRoot, relativeName);
+    try {
+      const sourceStat = fsModule.statSync(sourcePath);
+      if (!sourceStat.isFile()) {
+        continue;
+      }
+      const destinationStat = statOrNull(fsModule, destinationPath);
+      if (destinationStat && destinationStat.mtimeMs >= sourceStat.mtimeMs) {
+        continue;
+      }
+      fsModule.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fsModule.copyFileSync(sourcePath, destinationPath);
+      fsModule.chmodSync?.(destinationPath, sourceStat.mode & 0o777);
+      copied.push(relativeName);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  return copied;
+}
+
+function normalizeCredentialFileName(fileName) {
+  const value = String(fileName || "").trim();
+  if (!value || path.isAbsolute(value) || value.includes("..")) {
+    return "";
+  }
+  return value;
+}
+
+function statOrNull(fsModule, filePath) {
+  try {
+    return fsModule.statSync(filePath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
 }
 
 function buildEmployeePrompt(employee, prompt) {
@@ -248,4 +314,3 @@ module.exports = {
   buildHostInvocation,
   createEmployeeRuntime,
 };
-

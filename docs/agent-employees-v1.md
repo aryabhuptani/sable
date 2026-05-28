@@ -67,6 +67,21 @@ Employee runs should use Docker with:
 - explicit environment allowlist
 - optional worktree mount for code-editing tasks
 
+## Codex Auth Bootstrap
+
+Employee Codex homes are isolated, but they still need a narrow auth bootstrap
+before they can run Codex. The runtime can copy approved files from the parent
+Codex home into each employee Codex home before a run:
+
+```text
+SABLE_EMPLOYEE_CODEX_CREDENTIAL_SOURCE=/home/arya/.codex-bridge
+SABLE_EMPLOYEE_CODEX_CREDENTIAL_FILES=auth.json,config.toml,installation_id
+```
+
+Only relative file names are accepted. Missing files are skipped. This is the
+first credential-source pattern; later connectors should use the same idea with
+explicit allowlists instead of handing employees the whole parent environment.
+
 ## Transport
 
 Mattermost is added beside Signal. Inbound messages from both transports normalize into an internal envelope with transport/source metadata. Parent Sable may use one session across Signal and Mattermost; employee Sables should use separate sessions to avoid context pollution.
@@ -92,4 +107,3 @@ V1 is done when Arya can:
 - inspect its logs through parent Sable
 - schedule a recurring employee task
 - restart Sable without losing employee identity/state
-

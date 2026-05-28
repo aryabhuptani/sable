@@ -57,3 +57,36 @@ test("employee runtime can prepare host fallback runs", () => {
   assert.equal(status.invocation.env.SABLE_EMPLOYEE_ID, "reviewer");
 });
 
+test("employee runtime seeds approved Codex credentials", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "sable-employee-runtime-auth-"));
+  const codexSource = path.join(temp, "codex-source");
+  fs.mkdirSync(codexSource, { recursive: true });
+  fs.writeFileSync(path.join(codexSource, "auth.json"), "{\"token\":\"test\"}\n", "utf8");
+  fs.writeFileSync(path.join(codexSource, "config.toml"), "model = \"test\"\n", "utf8");
+  fs.writeFileSync(path.join(codexSource, "ignored.log"), "nope\n", "utf8");
+
+  const store = createEmployeeStore({
+    agentsRoot: path.join(temp, "agents"),
+    runtimeRoot: path.join(temp, "runtime"),
+  });
+  store.createEmployee({ id: "researcher" });
+  const runtime = createEmployeeRuntime({
+    codexCredentialFiles: ["auth.json", "config.toml", "../ignored.log", "/tmp/nope"],
+    codexCredentialSource: codexSource,
+    employeeStore: store,
+    repoRoot: "/repo/sable",
+  });
+
+  const status = runtime.startEmployeeRun("researcher", "Check auth.", {
+    dryRun: true,
+    runId: "run-auth",
+  });
+
+  assert.deepEqual(status.credentialFilesSeeded.sort(), ["auth.json", "config.toml"]);
+  const employee = store.getEmployee("researcher");
+  assert.equal(
+    fs.readFileSync(path.join(employee.paths.codexHome, "auth.json"), "utf8"),
+    "{\"token\":\"test\"}\n"
+  );
+  assert.equal(fs.existsSync(path.join(employee.paths.codexHome, "ignored.log")), false);
+});

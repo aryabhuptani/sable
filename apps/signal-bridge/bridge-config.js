@@ -130,6 +130,11 @@ function createBridgeConfig({
   const EMPLOYEE_RUNTIME_ROOT =
     normalizeText(env.SABLE_EMPLOYEE_RUNTIME_ROOT) ||
     path.join(instanceConfig.homeDir, ".sable", "employees");
+  const EMPLOYEE_CODEX_CREDENTIAL_SOURCE =
+    normalizeText(env.SABLE_EMPLOYEE_CODEX_CREDENTIAL_SOURCE) || CODEX_HOME_ROOT;
+  const EMPLOYEE_CODEX_CREDENTIAL_FILES = splitList(
+    env.SABLE_EMPLOYEE_CODEX_CREDENTIAL_FILES || "auth.json,config.toml,installation_id"
+  );
   const MATTERMOST_ENABLED = normalizeBooleanEnv(env.MATTERMOST_ENABLED, false);
   const MATTERMOST_POLL_INTERVAL_MS = normalizeIntegerEnv(
     env.MATTERMOST_POLL_INTERVAL_MS,
@@ -153,6 +158,8 @@ function createBridgeConfig({
     DEFAULT_FILE_PROMPT: "Please analyze the attached files.",
     DEFAULT_IMAGE_PROMPT: "Please analyze the attached image.",
     DEFAULT_SCHEDULER_JOBS_PATH,
+    EMPLOYEE_CODEX_CREDENTIAL_FILES,
+    EMPLOYEE_CODEX_CREDENTIAL_SOURCE,
     EMPLOYEE_RUNTIME_ROOT,
     EMPLOYEES_ROOT,
     EXTRACT_PDF_SCRIPT_PATH,
