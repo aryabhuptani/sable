@@ -82,7 +82,8 @@ function updateStatus(statusPath, patch) {
 
 async function maybePostMattermostCompletion(status) {
   const channelId = status.mattermostChannelId;
-  if (!channelId || !process.env.MATTERMOST_BASE_URL || !process.env.MATTERMOST_TOKEN) {
+  const token = readMattermostToken(status.mattermostTokenPath) || process.env.MATTERMOST_TOKEN;
+  if (!channelId || !process.env.MATTERMOST_BASE_URL || !token) {
     return;
   }
   let message = "";
@@ -100,9 +101,20 @@ async function maybePostMattermostCompletion(status) {
   const body = `${prefix}\n${truncateForMattermost(message)}`;
   const client = createMattermostClient({
     baseUrl: process.env.MATTERMOST_BASE_URL,
-    token: process.env.MATTERMOST_TOKEN,
+    token,
   });
   await client.postMessage(channelId, body);
+}
+
+function readMattermostToken(tokenPath) {
+  if (!tokenPath) {
+    return "";
+  }
+  try {
+    return fs.readFileSync(tokenPath, "utf8").trim();
+  } catch {
+    return "";
+  }
 }
 
 function truncateForMattermost(text, maxLength = 3500) {

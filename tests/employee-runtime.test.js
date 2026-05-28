@@ -32,6 +32,7 @@ test("employee runtime prepares dockerized employee runs", () => {
   assert.equal(status.dockerEnabled, true);
   assert.equal(status.invocation.type, "docker");
   assert.equal(status.invocation.bin, "docker");
+  assert.equal(status.mattermostTokenPath.endsWith("mattermost-token"), true);
   assert.ok(status.invocation.args.includes("-v"));
   assert.equal(fs.existsSync(status.promptPath), true);
   assert.match(fs.readFileSync(status.promptPath, "utf8"), /Summarize the KB/);

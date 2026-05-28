@@ -52,6 +52,7 @@ Default runner/container state lives outside the memory vault:
   codex-home/
   claude-home/
   container-home/
+  mattermost-token
   runtime/
 ```
 
@@ -85,6 +86,12 @@ explicit allowlists instead of handing employees the whole parent environment.
 ## Transport
 
 Mattermost is added beside Signal. Inbound messages from both transports normalize into an internal envelope with transport/source metadata. Parent Sable may use one session across Signal and Mattermost; employee Sables should use separate sessions to avoid context pollution.
+
+Each employee should have its own Mattermost bot account and token. Store the
+token at the employee runtime path `mattermost-token` and keep only the token
+path plus Mattermost user/channel metadata in the employee registry. The parent
+Sable bot may create channels and coordinate setup, but employee run completions
+should post through the employee's own Mattermost identity.
 
 ## Credential Policy
 

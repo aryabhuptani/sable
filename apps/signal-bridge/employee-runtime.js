@@ -117,6 +117,7 @@ function createEmployeeRuntime({
       dockerEnabled: invocation.type === "docker",
       invocation,
       mattermostChannelId: employee.mattermost?.channelId || "",
+      mattermostTokenPath: employee.mattermost?.tokenPath || paths.mattermostTokenPath || "",
       credentialFilesSeeded,
       createdAt: now(),
       updatedAt: now(),

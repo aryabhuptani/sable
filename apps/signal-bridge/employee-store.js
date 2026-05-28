@@ -175,6 +175,7 @@ function createEmployeeStore({
       codexHome: path.join(runtime, "codex-home"),
       claudeHome: path.join(runtime, "claude-home"),
       containerHome: path.join(runtime, "container-home"),
+      mattermostTokenPath: path.join(runtime, "mattermost-token"),
     };
   }
 
@@ -284,6 +285,7 @@ function normalizeMattermost(value = {}) {
     channelName: String(value.channelName || ""),
     userId: String(value.userId || ""),
     username: String(value.username || ""),
+    tokenPath: String(value.tokenPath || ""),
   };
 }
 

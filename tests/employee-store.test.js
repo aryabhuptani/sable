@@ -24,6 +24,7 @@ test("employee store creates isolated state skeleton idempotently", () => {
   assert.equal(fs.existsSync(first.employee.paths.agentsPath), true);
   assert.equal(fs.existsSync(first.employee.paths.schedulePath), true);
   assert.equal(fs.existsSync(first.employee.paths.codexHome), true);
+  assert.equal(first.employee.paths.mattermostTokenPath.endsWith("mattermost-token"), true);
   assert.match(
     fs.readFileSync(first.employee.paths.agentsPath, "utf8"),
     /must not hire, create, archive, start, or manage other Sable employees/
