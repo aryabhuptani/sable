@@ -15,6 +15,7 @@ function createPluginRuntime({
   instanceConfig,
   logger = console,
   repoRoot = path.resolve(__dirname, "..", ".."),
+  services = {},
   sendReply = async () => {},
 } = {}) {
   const officialRoot = path.join(repoRoot, "plugins");
@@ -102,6 +103,7 @@ function createPluginRuntime({
         pluginDir: path.dirname(entry.manifestPath),
         repoRoot,
       },
+      services,
       registerCommand(name, handler, metadata = {}) {
         registerCommand({ entry, handler, metadata, name });
       },

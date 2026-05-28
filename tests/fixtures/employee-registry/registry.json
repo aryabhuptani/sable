@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "employees": [
+    {
+      "id": "researcher",
+      "displayName": "Researcher",
+      "role": "research",
+      "status": "active",
+      "createdAt": "2026-05-28T00:00:00.000Z",
+      "updatedAt": "2026-05-28T00:00:00.000Z",
+      "mattermost": {
+        "channelId": "channel-researcher",
+        "channelName": "sable-researcher"
+      },
+      "paths": {
+        "home": "/tmp/sable-instance/memory/agents/researcher",
+        "runtime": "/tmp/sable-instance/.sable/employees/researcher"
+      }
+    }
+  ]
+}
+

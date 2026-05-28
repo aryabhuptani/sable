@@ -27,6 +27,13 @@ const { createBridgeSchedulerRuntime } = require("./bridge-scheduler-runtime");
 const { createBridgeStateStore } = require("./bridge-state-store");
 const { createBridgeTestSupport } = require("./bridge-test-support");
 const { createCodexSessionReader } = require("./codex-session-reader");
+const { createEmployeeRuntime } = require("./employee-runtime");
+const { createEmployeeStore } = require("./employee-store");
+const {
+  createMattermostTransport,
+  formatMattermostTarget,
+  parseMattermostTarget,
+} = require("./mattermost-transport");
 const { createObsidianLinkPlugin } = require("./obsidian-link-plugin");
 const {
   createPluginAuthManager,
@@ -94,6 +101,8 @@ const {
   DEFAULT_FILE_PROMPT,
   DEFAULT_IMAGE_PROMPT,
   DEFAULT_SCHEDULER_JOBS_PATH,
+  EMPLOYEE_RUNTIME_ROOT,
+  EMPLOYEES_ROOT,
   EXTRACT_PDF_SCRIPT_PATH,
   LIVE_UPDATE_BATCH_WINDOW_MS,
   LIVE_UPDATE_DUPLICATE_WINDOW_MS,
@@ -113,6 +122,15 @@ const {
   OPS_ROOT,
   OPS_SNAPSHOT_INTERVAL_MS,
   OPS_STALLED_RUN_THRESHOLD_MS,
+  MATTERMOST_ALLOWED_USERS,
+  MATTERMOST_BASE_URL,
+  MATTERMOST_BOT_USER_ID,
+  MATTERMOST_CHANNEL_ID,
+  MATTERMOST_ENABLED,
+  MATTERMOST_PARENT_CHANNEL,
+  MATTERMOST_POLL_INTERVAL_MS,
+  MATTERMOST_TEAM,
+  MATTERMOST_TOKEN,
   PDF_EXTRACT_PYTHON_BIN,
   PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS,
   RESEARCH_ROOT,
@@ -199,11 +217,25 @@ const voiceNotes = createVoiceNotePlugin({
 const signalProfile = createSignalProfilePlugin({
   sendSignalRequest,
 });
+const employeeStore = createEmployeeStore({
+  agentsRoot: EMPLOYEES_ROOT,
+  runtimeRoot: EMPLOYEE_RUNTIME_ROOT,
+});
+const employeeRuntime = createEmployeeRuntime({
+  employeeStore,
+  repoRoot: INSTANCE_CONFIG.repoRoot,
+  dockerEnabled: normalizeBooleanEnv(process.env.SABLE_EMPLOYEE_DOCKER_ENABLED, true),
+  dockerImage: normalizeText(process.env.SABLE_EMPLOYEE_DOCKER_IMAGE) || "node:22-bookworm",
+});
 const pluginRuntime = createPluginRuntime({
   env: process.env,
   instanceConfig: INSTANCE_CONFIG,
   logger: console,
   repoRoot: INSTANCE_CONFIG.repoRoot,
+  services: {
+    employeeRuntime,
+    employeeStore,
+  },
   sendReply,
 });
 const scheduledAttachmentDiscovery = createScheduledAttachmentDiscovery({
@@ -274,6 +306,7 @@ let lifecycle;
 let queueRuntime;
 let signalReplyChannel;
 let signalRpc;
+let mattermostTransport;
 
 let state = stateStore.loadState();
 let restartRequested = false;
@@ -335,6 +368,19 @@ signalReplyChannel = createSignalReplyChannel({
   sendSignalRequest,
   splitIntoChunks,
   timestamp,
+});
+mattermostTransport = createMattermostTransport({
+  allowedUsers: MATTERMOST_ALLOWED_USERS,
+  baseUrl: MATTERMOST_BASE_URL,
+  botUserId: MATTERMOST_BOT_USER_ID,
+  enabled: MATTERMOST_ENABLED,
+  logger: console,
+  onEnvelope: handleMattermostEnvelope,
+  parentChannel: MATTERMOST_PARENT_CHANNEL,
+  parentChannelId: MATTERMOST_CHANNEL_ID,
+  pollIntervalMs: MATTERMOST_POLL_INTERVAL_MS,
+  team: MATTERMOST_TEAM,
+  token: MATTERMOST_TOKEN,
 });
 queueRuntime = createBridgeQueueRuntime({
   cancelJobControl,
@@ -479,7 +525,10 @@ lifecycle = createBridgeLifecycle({
   backgroundQueue: queueRuntime.backgroundQueue,
   broadcastAllowedMessage,
   clearInFlightTurn,
-  closeServer: () => obsidianLinks.closeServer(),
+  closeServer: () => {
+    obsidianLinks.closeServer();
+    mattermostTransport?.stop?.();
+  },
   fs,
   getInFlightTurn: () => state.inFlightTurn,
   getRestartRequested: () => restartRequested,
@@ -504,6 +553,9 @@ lifecycle = createBridgeLifecycle({
 });
 
 signalRpc.start();
+void mattermostTransport.start().catch((error) => {
+  console.error(`[${timestamp()}] Failed starting Mattermost transport: ${error.message}`);
+});
 obsidianLinks.startServer();
 ensureAttachmentQueueDirs();
 ops.ensureOpsDirs();
@@ -587,6 +639,13 @@ function clearInFlightTurn() {
 
 async function handleReceiveEvent(message) {
   await queueRuntime.handleReceiveEvent(message);
+}
+
+async function handleMattermostEnvelope(envelope) {
+  await queueRuntime.handleTransportEnvelope({
+    ...envelope,
+    replyTarget: formatMattermostTarget(envelope.conversationId),
+  });
 }
 
 async function handleCancelCommand(sender) {
@@ -713,6 +772,10 @@ function getWhatsAppTriageReport(limit = WHATSAPP_TRIAGE_LIMIT) {
 }
 
 async function sendReply(recipient, text) {
+  if (parseMattermostTarget(recipient)) {
+    await mattermostTransport.sendReply(recipient, text);
+    return;
+  }
   await signalReplyChannel.sendReply(recipient, text);
 }
 

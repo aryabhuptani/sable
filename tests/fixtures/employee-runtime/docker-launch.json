@@ -1,0 +1,12 @@
+{
+  "employeeId": "researcher",
+  "repoRoot": "/home/arya/projects/sable",
+  "employeeHome": "/tmp/sable-instance/memory/agents/researcher",
+  "runtimeHome": "/tmp/sable-instance/.sable/employees/researcher",
+  "containerName": "sable-employee-researcher",
+  "env": {
+    "SABLE_INSTANCE_MODE": "employee",
+    "SABLE_EMPLOYEE_ID": "researcher"
+  }
+}
+

@@ -169,7 +169,7 @@ test("scheduler runtime reschedules active-timezone jobs when the timezone state
     time: { hour: 9, minute: 0, text: "9:00 AM" },
     timezone: "active",
     scheduledTimezone: "Europe/Lisbon",
-    nextRunAt: "2026-05-13T08:00:00.000Z",
+    nextRunAt: "2026-06-13T08:00:00.000Z",
     sender: "+1555",
     workflowPrompt: "Morning check",
     replyMode: "default",
@@ -180,7 +180,7 @@ test("scheduler runtime reschedules active-timezone jobs when the timezone state
     loadSchedulerState: () => ({ activeTimezone: "America/Los_Angeles" }),
     computeFollowingRunAt: (_job, _now, options) => {
       calls.push(options);
-      return "2026-05-13T16:00:00.000Z";
+      return "2026-06-13T16:00:00.000Z";
     },
   });
 
@@ -191,7 +191,7 @@ test("scheduler runtime reschedules active-timezone jobs when the timezone state
 
   assert.deepEqual(queued, []);
   assert.equal(activeJob.scheduledTimezone, "America/Los_Angeles");
-  assert.equal(activeJob.nextRunAt, "2026-05-13T16:00:00.000Z");
+  assert.equal(activeJob.nextRunAt, "2026-06-13T16:00:00.000Z");
   assert.deepEqual(calls[0], { timezone: "America/Los_Angeles" });
   assert.equal(getSaved()["/tmp/jobs.json"][0].scheduledTimezone, "America/Los_Angeles");
 });

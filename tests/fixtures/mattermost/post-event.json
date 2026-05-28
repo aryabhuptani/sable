@@ -1,0 +1,17 @@
+{
+  "event": "posted",
+  "data": {
+    "channel_display_name": "sable-control",
+    "channel_name": "sable-control",
+    "channel_type": "O",
+    "post": "{\"id\":\"post-id\",\"channel_id\":\"channel-id\",\"user_id\":\"user-id\",\"message\":\"hello sable\",\"create_at\":1779945600000}"
+  },
+  "broadcast": {
+    "omit_users": null,
+    "user_id": "user-id",
+    "channel_id": "channel-id",
+    "team_id": "team-id"
+  },
+  "seq": 1
+}
+

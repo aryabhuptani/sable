@@ -124,6 +124,17 @@ function createBridgeConfig({
     env.SABLE_OPS_ALERT_IN_FLIGHT_TURN_THRESHOLD_MS,
     20 * 60 * 1000
   );
+  const EMPLOYEES_ROOT =
+    normalizeText(env.SABLE_EMPLOYEES_ROOT) ||
+    path.join(instanceConfig.memoryRoot || path.join(instanceConfig.homeDir, "memory"), "agents");
+  const EMPLOYEE_RUNTIME_ROOT =
+    normalizeText(env.SABLE_EMPLOYEE_RUNTIME_ROOT) ||
+    path.join(instanceConfig.homeDir, ".sable", "employees");
+  const MATTERMOST_ENABLED = normalizeBooleanEnv(env.MATTERMOST_ENABLED, false);
+  const MATTERMOST_POLL_INTERVAL_MS = normalizeIntegerEnv(
+    env.MATTERMOST_POLL_INTERVAL_MS,
+    5_000
+  );
 
   return {
     APP_SERVER_CLIENT_VERSION: "1.1.0",
@@ -139,6 +150,8 @@ function createBridgeConfig({
     DEFAULT_FILE_PROMPT: "Please analyze the attached files.",
     DEFAULT_IMAGE_PROMPT: "Please analyze the attached image.",
     DEFAULT_SCHEDULER_JOBS_PATH,
+    EMPLOYEE_RUNTIME_ROOT,
+    EMPLOYEES_ROOT,
     EXTRACT_PDF_SCRIPT_PATH,
     LIVE_UPDATE_BATCH_WINDOW_MS: 750,
     LIVE_UPDATE_DUPLICATE_WINDOW_MS: 5_000,
@@ -158,6 +171,15 @@ function createBridgeConfig({
     OPS_ROOT,
     OPS_SNAPSHOT_INTERVAL_MS,
     OPS_STALLED_RUN_THRESHOLD_MS,
+    MATTERMOST_ALLOWED_USERS: splitList(env.MATTERMOST_ALLOWED_USERS),
+    MATTERMOST_BASE_URL: normalizeText(env.MATTERMOST_BASE_URL),
+    MATTERMOST_BOT_USER_ID: normalizeText(env.MATTERMOST_BOT_USER_ID),
+    MATTERMOST_CHANNEL_ID: normalizeText(env.MATTERMOST_CHANNEL_ID),
+    MATTERMOST_ENABLED,
+    MATTERMOST_PARENT_CHANNEL: normalizeText(env.MATTERMOST_PARENT_CHANNEL),
+    MATTERMOST_POLL_INTERVAL_MS,
+    MATTERMOST_TEAM: normalizeText(env.MATTERMOST_TEAM),
+    MATTERMOST_TOKEN: normalizeText(env.MATTERMOST_TOKEN),
     PDF_EXTRACT_PYTHON_BIN,
     PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS: 15_000,
     RESEARCH_ROOT,
@@ -233,6 +255,13 @@ function validateBridgeConfig({
   }
 
   return missing;
+}
+
+function splitList(value) {
+  return String(value || "")
+    .split(/[,:]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 module.exports = {

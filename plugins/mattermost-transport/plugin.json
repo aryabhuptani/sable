@@ -1,0 +1,56 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "mattermost-transport",
+  "name": "Mattermost Transport",
+  "version": "0.1.0",
+  "pluginApiVersion": 1,
+  "status": "experimental",
+  "category": "transport",
+  "description": "Mattermost chat transport for parent Sable and employee Sable instances.",
+  "runtime": {
+    "type": "node-cli",
+    "currentEntryPoints": [
+      "apps/signal-bridge/mattermost-client.js",
+      "apps/signal-bridge/mattermost-transport.js",
+      "apps/signal-bridge/bridge.js"
+    ]
+  },
+  "capabilities": [
+    "mattermost.receive",
+    "mattermost.send",
+    "transport.multiplex"
+  ],
+  "commands": [],
+  "requiredConfig": [
+    {
+      "name": "MATTERMOST_ENABLED",
+      "required": false,
+      "description": "Enable Mattermost transport polling."
+    },
+    {
+      "name": "MATTERMOST_BASE_URL",
+      "required": false,
+      "description": "Mattermost server base URL."
+    },
+    {
+      "name": "MATTERMOST_TEAM",
+      "required": false,
+      "description": "Mattermost team name for parent Sable channel lookup."
+    },
+    {
+      "name": "MATTERMOST_PARENT_CHANNEL",
+      "required": false,
+      "description": "Mattermost parent Sable channel name."
+    }
+  ],
+  "requiredSecrets": [
+    {
+      "name": "MATTERMOST_TOKEN",
+      "required": false,
+      "description": "Mattermost bot token."
+    }
+  ],
+  "diagnostics": [],
+  "privateDataPolicy": "Do not store Mattermost tokens, chat history, channel contents, or private team identifiers in this plugin manifest."
+}
+

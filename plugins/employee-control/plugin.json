@@ -1,0 +1,31 @@
+{
+  "$schema": "../schema/plugin-manifest.schema.json",
+  "id": "employee-control",
+  "name": "Employee Control",
+  "version": "0.1.0",
+  "pluginApiVersion": 1,
+  "status": "experimental",
+  "category": "agents",
+  "description": "Create, inspect, launch, and manage Sable employee instances.",
+  "runtime": {
+    "type": "node-module",
+    "entry": "handler.js"
+  },
+  "capabilities": [
+    "employees.create",
+    "employees.list",
+    "employees.inspect",
+    "employees.launch"
+  ],
+  "commands": [
+    {
+      "name": "/employee",
+      "description": "Manage Sable employee instances."
+    }
+  ],
+  "requiredConfig": [],
+  "requiredSecrets": [],
+  "diagnostics": [],
+  "privateDataPolicy": "Do not store employee memory, logs, connector credentials, or Mattermost tokens in this plugin manifest."
+}
+

@@ -139,6 +139,76 @@ function createBridgeQueueRuntime({
     void processInteractiveQueue();
   }
 
+  async function handleTransportEnvelope(envelope) {
+    const transport = String(envelope?.transport || "").trim();
+    const conversationId = String(envelope?.conversationId || "").trim();
+    const sender = String(envelope?.sender || "").trim();
+    const text = String(envelope?.text || "").trim();
+    const replyTarget = String(envelope?.replyTarget || "").trim() || `${transport}:${conversationId}`;
+
+    if (!transport || !conversationId || !sender || !text) {
+      return;
+    }
+
+    logIncoming(replyTarget, text, 0);
+
+    const command = parseCommand(text, {
+      hasImages: false,
+      hasAudio: false,
+      hasFiles: false,
+      pluginRuntime,
+      telegramTriageLimit,
+      whatsappTriageLimit,
+    });
+
+    if (command.type === "cancel") {
+      await handleCancelCommand(replyTarget);
+      return;
+    }
+
+    if (command.type === "prompt" || (command.type === "new" && command.prompt)) {
+      command.prompt = [
+        `Incoming ${transport} message.`,
+        `Conversation id: ${conversationId}`,
+        `Sender: ${sender}`,
+        "",
+        command.prompt || text,
+      ].join("\n");
+    }
+
+    if (getShutdownRequested() || getRestartRequested()) {
+      if (command.type === "status") {
+        await sendReply(replyTarget, await getBridgeStatusReport());
+        return;
+      }
+
+      await sendReply(
+        replyTarget,
+        "Restart in progress. I'm finishing the current task before reconnecting, so please resend after Sable is back."
+      );
+      return;
+    }
+
+    interactiveQueue.push({
+      sender: replyTarget,
+      command,
+      context: signalAttachments.buildAttachmentContext({}, replyTarget, [], [], []),
+      queuedVoicePreparation: null,
+      sourceEnvelope: envelope,
+    });
+
+    if (isProcessingInteractive) {
+      try {
+        await sendReply(replyTarget, "Queued, will process after current task.");
+      } catch (error) {
+        logger.error?.(`[${timestamp()}] Failed sending queue acknowledgment: ${error.message}`);
+      }
+      return;
+    }
+
+    void processInteractiveQueue();
+  }
+
   async function handleCancelCommand(sender) {
     if (!isProcessingInteractive || !activeJobControl) {
       await sendReply(sender, "No active task to cancel.");
@@ -272,6 +342,7 @@ function createBridgeQueueRuntime({
     getLiveState,
     handleCancelCommand,
     handleReceiveEvent,
+    handleTransportEnvelope,
     hasActiveWork,
     interactiveQueue,
     isInteractiveProcessing: () => isProcessingInteractive,
