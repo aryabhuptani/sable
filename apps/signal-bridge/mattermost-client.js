@@ -57,6 +57,14 @@ function createMattermostClient({
     return request("GET", `/api/v4/channels/${encodeURIComponent(channelId)}/posts?${params}`);
   }
 
+  async function createDirectChannel(userIds = []) {
+    const normalized = Array.from(new Set((userIds || []).map(String).filter(Boolean)));
+    if (normalized.length !== 2) {
+      throw new Error("Mattermost direct channels require exactly two user ids.");
+    }
+    return request("POST", "/api/v4/channels/direct", normalized);
+  }
+
   async function getTeamByName(name) {
     return request("GET", `/api/v4/teams/name/${encodeURIComponent(name)}`);
   }
@@ -81,6 +89,7 @@ function createMattermostClient({
 
   return {
     baseUrl: normalizedBaseUrl,
+    createDirectChannel,
     getChannelByName,
     getChannelHistory,
     getTeamByName,
@@ -147,4 +156,3 @@ module.exports = {
   parseMattermostPost,
   redactMattermostSecrets,
 };
-

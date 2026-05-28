@@ -27,6 +27,42 @@ test("mattermost client posts messages with bearer auth", async () => {
   assert.equal(calls[0].options.headers.Authorization, "Bearer secret-token");
 });
 
+test("mattermost client creates direct channels", async () => {
+  const calls = [];
+  const client = createMattermostClient({
+    baseUrl: "https://mattermost.example.test/",
+    token: "secret-token",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ id: "direct-channel" }),
+      };
+    },
+  });
+
+  const result = await client.createDirectChannel(["bot-user", "arya-user"]);
+  assert.deepEqual(result, { id: "direct-channel" });
+  assert.equal(calls[0].url, "https://mattermost.example.test/api/v4/channels/direct");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), ["bot-user", "arya-user"]);
+});
+
+test("mattermost client rejects malformed direct channel requests", async () => {
+  const client = createMattermostClient({
+    baseUrl: "https://mattermost.example.test/",
+    token: "secret-token",
+    fetchImpl: async () => {
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  await assert.rejects(
+    () => client.createDirectChannel(["bot-user"]),
+    /exactly two user ids/
+  );
+});
+
 test("mattermost post events normalize to transport envelopes", () => {
   const event = {
     data: {
@@ -52,4 +88,3 @@ test("mattermost token redaction removes bearer and raw token", () => {
     "Bearer [REDACTED] token [REDACTED_MATTERMOST_TOKEN]"
   );
 });
-

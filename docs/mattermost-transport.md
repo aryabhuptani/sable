@@ -10,6 +10,7 @@ MATTERMOST_BASE_URL=https://mattermost.example.com
 MATTERMOST_TOKEN=example-token
 MATTERMOST_TEAM=example-team
 MATTERMOST_PARENT_CHANNEL=sable-control
+MATTERMOST_DM_USER_IDS=user-id-1,user-id-2
 ```
 
 Tokens must be redacted from logs, `/ops`, `/plugins`, and doctor output.
@@ -43,3 +44,7 @@ V1 can use one Mattermost bot token with employee-prefixed messages:
 
 Per-employee bot accounts are a later improvement if account creation/token handling is easy enough.
 
+Parent Sable can also poll direct-message channels with specific users. Set
+`MATTERMOST_DM_USER_IDS` to the allowed Mattermost user ids and keep
+`MATTERMOST_ALLOWED_USERS` scoped to the same ids. The transport resolves the
+bot/user DM channel at startup and routes replies back to that DM conversation.

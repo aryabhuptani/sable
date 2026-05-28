@@ -13,6 +13,7 @@ function createMattermostTransport({
   team = "",
   parentChannel = "",
   parentChannelId = "",
+  dmUserIds = [],
   pollIntervalMs = 5000,
   allowedUsers = [],
   botUserId = "",
@@ -24,24 +25,27 @@ function createMattermostTransport({
 } = {}) {
   const client = createMattermostClient({ baseUrl, token, fetchImpl });
   const allowedUserSet = new Set((allowedUsers || []).map(String).filter(Boolean));
+  const directUserIds = (dmUserIds || []).map(String).filter(Boolean);
   let timer = null;
   let resolvedChannelId = parentChannelId || "";
-  let lastCreateAt = 0;
+  let watchedChannels = [];
+  const lastCreateAtByChannel = new Map();
 
   function isEnabled() {
-    return Boolean(enabled && baseUrl && token && (parentChannelId || (team && parentChannel)));
+    return Boolean(
+      enabled &&
+        baseUrl &&
+        token &&
+        ((parentChannelId || (team && parentChannel)) || (botUserId && directUserIds.length > 0))
+    );
   }
 
   async function start() {
     if (!isEnabled() || timer) {
       return false;
     }
-    const channel = await client.resolveChannel({
-      team,
-      channel: parentChannel,
-      channelId: parentChannelId,
-    });
-    resolvedChannelId = channel.id;
+    watchedChannels = await resolveWatchedChannels();
+    resolvedChannelId = watchedChannels[0]?.id || "";
     timer = setIntervalFn(() => {
       void poll().catch((error) => {
         logger.error?.(`Mattermost poll failed: ${redactMattermostSecrets(error.message, token)}`);
@@ -58,27 +62,55 @@ function createMattermostTransport({
   }
 
   async function poll() {
-    if (!resolvedChannelId) {
+    if (watchedChannels.length === 0) {
       return;
     }
-    const history = await client.getChannelHistory(resolvedChannelId, {
-      perPage: 20,
-      since: lastCreateAt,
-    });
-    const posts = Object.values(history.posts || {})
-      .sort((a, b) => Number(a.create_at || 0) - Number(b.create_at || 0));
-    for (const post of posts) {
-      const created = Number(post.create_at || 0);
-      if (created <= lastCreateAt) {
-        continue;
+    for (const channel of watchedChannels) {
+      const lastCreateAt = lastCreateAtByChannel.get(channel.id) || 0;
+      const history = await client.getChannelHistory(channel.id, {
+        perPage: 20,
+        since: lastCreateAt,
+      });
+      const posts = Object.values(history.posts || {})
+        .sort((a, b) => Number(a.create_at || 0) - Number(b.create_at || 0));
+      for (const post of posts) {
+        const created = Number(post.create_at || 0);
+        if (created <= (lastCreateAtByChannel.get(channel.id) || 0)) {
+          continue;
+        }
+        lastCreateAtByChannel.set(channel.id, Math.max(lastCreateAtByChannel.get(channel.id) || 0, created));
+        const envelope = normalizeMattermostPostEvent({ post }, { botUserId });
+        if (!envelope || !isAllowedSender(envelope.sender)) {
+          continue;
+        }
+        await onEnvelope({
+          ...envelope,
+          channelKind: channel.kind,
+          replyTarget: formatMattermostTarget(envelope.conversationId),
+        });
       }
-      lastCreateAt = Math.max(lastCreateAt, created);
-      const envelope = normalizeMattermostPostEvent({ post }, { botUserId });
-      if (!envelope || !isAllowedSender(envelope.sender)) {
-        continue;
-      }
-      await onEnvelope(envelope);
     }
+  }
+
+  async function resolveWatchedChannels() {
+    const channels = [];
+    if (parentChannelId || (team && parentChannel)) {
+      const channel = await client.resolveChannel({
+        team,
+        channel: parentChannel,
+        channelId: parentChannelId,
+      });
+      if (channel?.id) {
+        channels.push({ id: channel.id, kind: "channel" });
+      }
+    }
+    for (const userId of directUserIds) {
+      const channel = await client.createDirectChannel([botUserId, userId]);
+      if (channel?.id && !channels.some((entry) => entry.id === channel.id)) {
+        channels.push({ id: channel.id, kind: "direct", userId });
+      }
+    }
+    return channels;
   }
 
   function isAllowedSender(sender) {
@@ -96,6 +128,7 @@ function createMattermostTransport({
   return {
     client,
     getChannelId: () => resolvedChannelId,
+    getWatchedChannels: () => [...watchedChannels],
     isEnabled,
     poll,
     sendReply,
@@ -118,4 +151,3 @@ module.exports = {
   formatMattermostTarget,
   parseMattermostTarget,
 };
-

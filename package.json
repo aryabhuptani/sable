@@ -25,7 +25,7 @@
     "test:browser": "node --test tests/browser-cli.test.js tests/browser-ops-plugin.test.js",
     "test:finance": "node --test tests/gocardless-probe.test.js",
     "test:signal-attachment": "node --test tests/test_signal_attachment_cli.js",
-    "test:employees": "node --test tests/employee-store.test.js tests/employee-runtime.test.js tests/mattermost-client.test.js tests/bridge-queue-transport.test.js tests/employee-control-plugin.test.js",
+    "test:employees": "node --test tests/employee-store.test.js tests/employee-runtime.test.js tests/mattermost-client.test.js tests/mattermost-transport.test.js tests/bridge-queue-transport.test.js tests/employee-control-plugin.test.js",
     "test:community": "npm run shareability:check && npm run test:plugins && npm run test:doctor && node --test tests/upgrade.test.js tests/shareability-check.test.js && npm run test:smoke",
     "simulate:fresh-clone": "node tools/community/fresh-clone-sim.js",
     "kb:init": "node tools/knowledge-base/init-topic.js",
