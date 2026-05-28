@@ -331,6 +331,7 @@ function renderAgents(employee) {
     "",
     "You use the same Sable codebase as parent Sable, but you have your own memory, task list, schedule, connector policy, and logs.",
     "You may read your own logs and state. Parent Sable may read all employee logs and state.",
+    "You must not hire, create, archive, start, or manage other Sable employees. Escalate employee-management needs to parent Sable.",
     "Communicate through Mattermost when Mattermost context is provided.",
     "",
   ].join("\n");

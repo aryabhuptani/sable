@@ -206,6 +206,7 @@ function buildEmployeePrompt(employee, prompt) {
     "You may inspect your own logs, memory, task files, and schedule.",
     "Parent Sable may inspect all employee logs and state.",
     "Stay within your employee scope unless the task explicitly asks for repo work.",
+    "You must not hire, create, archive, start, or manage other Sable employees. Escalate employee-management needs to parent Sable.",
     "",
     "Task:",
     String(prompt || "").trim(),

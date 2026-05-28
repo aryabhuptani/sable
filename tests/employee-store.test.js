@@ -24,6 +24,10 @@ test("employee store creates isolated state skeleton idempotently", () => {
   assert.equal(fs.existsSync(first.employee.paths.agentsPath), true);
   assert.equal(fs.existsSync(first.employee.paths.schedulePath), true);
   assert.equal(fs.existsSync(first.employee.paths.codexHome), true);
+  assert.match(
+    fs.readFileSync(first.employee.paths.agentsPath, "utf8"),
+    /must not hire, create, archive, start, or manage other Sable employees/
+  );
 
   fs.writeFileSync(first.employee.paths.agentsPath, "custom prompt\n", "utf8");
   const second = store.createEmployee({ id: "researcher", role: "other" });
@@ -55,4 +59,3 @@ test("employee store updates employee metadata without moving paths", () => {
   assert.equal(updated.paths.home, created.paths.home);
   assert.throws(() => store.updateEmployee("missing", { role: "x" }), /Unknown employee/);
 });
-
