@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "scope": "Hermes-native Signal cutover parity for the Sable behaviors Arya still cares about.",
+  "retiredLegacySurfaces": [
+    "Sable slash commands",
+    "Sable scheduler",
+    "Sable /ops observability",
+    "dual Signal receive-loop duplication safety"
+  ],
+  "checks": [
+    {
+      "id": "signal.text.dm",
+      "category": "signal",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes receives a direct Signal text message from Arya and sends a coherent reply.",
+      "evidence": "A live Signal DM reply produced by the Hermes gateway after the Sable bridge is stopped."
+    },
+    {
+      "id": "signal.session.followup",
+      "category": "signal",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes preserves enough session/turn context for a follow-up Signal message.",
+      "evidence": "A second DM can refer to the previous turn without restating context."
+    },
+    {
+      "id": "signal.attachment.image",
+      "category": "attachments",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes receives an image attachment over Signal and can describe or reason over it.",
+      "evidence": "A Signal image canary produces an answer grounded in the image content."
+    },
+    {
+      "id": "signal.attachment.pdf",
+      "category": "attachments",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes receives a PDF/document attachment over Signal and extracts useful text.",
+      "evidence": "A Signal PDF canary produces an answer grounded in text from the PDF."
+    },
+    {
+      "id": "signal.attachment.unsupported",
+      "category": "attachments",
+      "kind": "live",
+      "priority": "recommended",
+      "description": "Hermes handles an unsupported binary attachment without crashing or hallucinating file contents.",
+      "evidence": "A binary canary returns a clear unsupported/limited-processing response."
+    },
+    {
+      "id": "signal.voice.incoming",
+      "category": "voice",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes transcribes an incoming Signal voice note through local STT and answers the spoken request.",
+      "evidence": "A voice-note canary returns an answer matching the spoken content."
+    },
+    {
+      "id": "connector.gmail.read",
+      "category": "connectors",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes-native connector auth can read Gmail through its configured MCP/tooling path.",
+      "evidence": "A Hermes turn can retrieve or summarize a known harmless Gmail search result."
+    },
+    {
+      "id": "connector.calendar.roundtrip",
+      "category": "connectors",
+      "kind": "live",
+      "priority": "required",
+      "description": "Hermes-native connector auth can read Calendar and create/delete a throwaway event.",
+      "evidence": "A Hermes turn creates and deletes a test event without using Sable connector-card auth."
+    },
+    {
+      "id": "scheduler.hermes.cron.canary",
+      "category": "scheduler",
+      "kind": "live",
+      "priority": "required",
+      "description": "A Hermes-native scheduled/cron workflow can send a canary message to the configured home channel.",
+      "evidence": "A short-lived Hermes cron canary fires once and is then removed."
+    },
+    {
+      "id": "local.homeassistant.readonly",
+      "category": "local-integrations",
+      "kind": "live",
+      "priority": "required",
+      "description": "The first ported local integration lets Hermes perform a read-only Home Assistant status query.",
+      "evidence": "A Hermes turn reports a real Home Assistant state via a Sable-local tool/skill wrapper."
+    },
+    {
+      "id": "cutover.rollback",
+      "category": "operations",
+      "kind": "manual",
+      "priority": "required",
+      "description": "The operator can stop Hermes Signal ownership and restart the old Sable bridge if live cutover fails.",
+      "evidence": "Documented rollback command path is checked before live cutover."
+    }
+  ]
+}

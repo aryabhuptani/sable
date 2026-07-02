@@ -129,6 +129,11 @@ const suites = [
     command: "npm",
     args: ["run", "test:finance"],
   },
+  {
+    name: "Hermes native parity matrix",
+    command: "npm",
+    args: ["run", "test:hermes-parity"],
+  },
 ];
 
 function runSuite(suite) {

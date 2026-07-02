@@ -32,6 +32,8 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:humidifier"], "python3 -m unittest tests/test_humidifier_low_water_signal.py");
   assert.equal(pkg.scripts["test:telegram"], "python3 -m unittest tests/test_telegram_cli.py");
   assert.equal(pkg.scripts["test:signal-attachment"], "node --test tests/test_signal_attachment_cli.js");
+  assert.equal(pkg.scripts["test:hermes-parity"], "node --test tests/hermes-parity-check.test.js");
+  assert.equal(pkg.scripts["hermes:parity"], "node tools/hermes-migration/hermes-parity-check.js");
   assert.equal(pkg.scripts["plugin:create"], "node tools/plugins/create-plugin.js");
   assert.equal(pkg.scripts["shareability:check"], "node tools/shareability/check.js");
   assert.equal(pkg.scripts["simulate:fresh-clone"], "node tools/community/fresh-clone-sim.js");
@@ -101,6 +103,8 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/obsidian-link/ensure-serve.js",
     "tools/service/user-service.js",
     "tools/signal/send_attachment.js",
+    "tools/hermes-migration/hermes-parity-check.js",
+    "tools/hermes-migration/hermes-parity-matrix.json",
     "apps/signal-bridge/.env.example",
     "tools/telegram/.env.example",
     "tools/instance/templates/sable.env.example",
