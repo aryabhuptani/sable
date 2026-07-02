@@ -58,6 +58,10 @@ test("bridge config preserves local defaults while allowing future instance over
   assert.equal(config.CODEX_SESSIONS_DIR, "/home/tester/.codex/sessions");
   assert.equal(config.ATTACHMENT_QUEUE_PENDING_DIR, `${projectDir}/.attachment-queue/pending`);
   assert.equal(config.OPS_ALERTS_ENABLED, true);
+  assert.equal(config.PRIMARY_RUNNER, "codex-cli");
+  assert.equal(config.HERMES_CONTAINER, "hermes-sable-trial");
+  assert.equal(config.HERMES_CWD, "/opt/data/workspace");
+  assert.equal(config.HERMES_TIMEOUT_MS, 600000);
   assert.equal(config.phoneNumber, "+12025550100");
   assert.deepEqual([...config.allowedNumbers], ["+12025550123", "+12025550124"]);
   assert.deepEqual([...config.allowedSenders], ["+12025550123"]);
@@ -74,6 +78,10 @@ test("bridge config applies environment overrides and disables ops alerts in e2e
     SABLE_SCHEDULER_STATE_PATH: "/tmp/scheduler-state.json",
     SABLE_RESEARCH_ROOT: "/tmp/research",
     SABLE_SIGNAL_ATTACHMENT_QUEUE_DIR: "/tmp/attachments",
+    SABLE_PRIMARY_RUNNER: "hermes-cli",
+    SABLE_HERMES_CONTAINER: "hermes-sable",
+    SABLE_HERMES_CWD: "/opt/data/custom-workspace",
+    SABLE_HERMES_TIMEOUT_MS: "42000",
     VOICE_NOTES_ENABLED: "false",
     VOICE_NOTES_TIMEOUT_SEC: "12",
   });
@@ -89,6 +97,10 @@ test("bridge config applies environment overrides and disables ops alerts in e2e
   assert.equal(config.VOICE_NOTES_TIMEOUT_SEC, 12);
   assert.equal(config.TEST_SIGNAL_LOG_PATH, "/tmp/signal.log");
   assert.equal(config.OPS_ALERTS_ENABLED, false);
+  assert.equal(config.PRIMARY_RUNNER, "hermes-cli");
+  assert.equal(config.HERMES_CONTAINER, "hermes-sable");
+  assert.equal(config.HERMES_CWD, "/opt/data/custom-workspace");
+  assert.equal(config.HERMES_TIMEOUT_MS, 42000);
 });
 
 test("selectPythonBin prefers an existing validated venv candidate and falls back to python3", () => {

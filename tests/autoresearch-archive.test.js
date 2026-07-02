@@ -17,16 +17,13 @@ test("archiveCompletedAutoresearchRuns moves completed active runs and preserves
   const archiveRun = path.join(researchRoot, "darkbloom", "autoresearch", "archive", "finished-run");
 
   try {
-    await write(
-      path.join(activeRun, "STATE.json"),
-      JSON.stringify({
-        topicSlug: "darkbloom",
-        runSlug: "finished-run",
-        status: "completed",
-        completedAt: "2026-05-09T12:00:00.000Z",
-        pendingQuestions: [],
-      })
-    );
+    await writeState(activeRun, {
+      topicSlug: "darkbloom",
+      runSlug: "finished-run",
+      status: "completed",
+      completedAt: "2026-05-09T12:00:00.000Z",
+      pendingQuestions: [],
+    });
     await write(path.join(activeRun, "LOG.md"), "# Run Log\n");
 
     const result = await archiveCompletedAutoresearchRuns({
@@ -54,16 +51,32 @@ test("archiveCompletedAutoresearchRuns dry-run leaves completed runs in active",
   const activeRun = path.join(researchRoot, "darkbloom", "autoresearch", "active", "finished-run");
 
   try {
-    await write(
-      path.join(activeRun, "STATE.json"),
-      JSON.stringify({ topicSlug: "darkbloom", runSlug: "finished-run", status: "completed" })
-    );
+    await writeState(activeRun, { topicSlug: "darkbloom", runSlug: "finished-run", status: "completed" });
 
     const result = await archiveCompletedAutoresearchRuns({ researchRoot, dryRun: true });
 
     assert.equal(result.summary.archived, 1);
     await fs.stat(activeRun);
     assert.equal(findCompletedActiveRuns({ researchRoot }).length, 1);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("findCompletedActiveRuns treats complete as a completed status alias", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-autoresearch-archive-alias-"));
+  const researchRoot = path.join(tempRoot, "research");
+  const activeRun = path.join(researchRoot, "sable", "autoresearch", "active", "finished-run");
+
+  try {
+    await writeState(activeRun, { topicSlug: "sable", runSlug: "finished-run", status: "complete" });
+
+    const runs = findCompletedActiveRuns({ researchRoot });
+
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].topicSlug, "sable");
+    assert.equal(runs[0].runSlug, "finished-run");
+    assert.equal(runs[0].status, "complete");
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
@@ -78,6 +91,10 @@ test("archive command parser supports root, topic, format, and dry-run", () => {
     help: false,
   });
 });
+
+async function writeState(runRoot, state) {
+  await write(path.join(runRoot, "STATE.json"), JSON.stringify(state));
+}
 
 async function write(filePath, content) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

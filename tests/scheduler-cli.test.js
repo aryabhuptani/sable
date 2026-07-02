@@ -301,3 +301,63 @@ test("scheduler cli can read and update active timezone state", async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("scheduler cli stores user-facing jobs in active timezone and silent jobs in host timezone", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-timezone-mode-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+  const statePath = path.join(tempDir, "scheduler-state.json");
+
+  try {
+    await fs.writeFile(
+      statePath,
+      JSON.stringify({
+        activeTimezone: "America/Los_Angeles",
+        updatedAt: "2026-05-13T00:00:00.000Z",
+        source: "test",
+      }),
+      "utf8"
+    );
+
+    await runCli([
+      "add",
+      "--file",
+      filePath,
+      "--state-file",
+      statePath,
+      "--sender",
+      "+15551112222",
+      "--recurrence",
+      "daily",
+      "--time",
+      "9:00AM",
+      "--prompt",
+      "Run the morning brief",
+    ]);
+    await runCli([
+      "add",
+      "--file",
+      filePath,
+      "--state-file",
+      statePath,
+      "--sender",
+      "+15551112222",
+      "--recurrence",
+      "daily",
+      "--time",
+      "3:30AM",
+      "--prompt",
+      "Run silent maintenance",
+      "--silent",
+      "true",
+    ]);
+
+    const stored = JSON.parse(await fs.readFile(filePath, "utf8"));
+    assert.equal(stored.jobs[0].timezone, "active");
+    assert.equal(stored.jobs[0].scheduledTimezone, "America/Los_Angeles");
+    assert.match(stored.jobs[0].nextRunAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(stored.jobs[1].timezone, "host");
+    assert.equal(stored.jobs[1].scheduledTimezone, undefined);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});

@@ -7,13 +7,17 @@ const test = require("node:test");
 const { createEmployeeStore } = require("../apps/signal-bridge/employee-store");
 const { handleEmployeeCommand } = require("../plugins/employee-control/handler");
 
-test("employee control plugin creates, lists, shows, and starts employees", async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "sable-employee-control-"));
-  const store = createEmployeeStore({
+function createTempEmployeeStore(prefix = "sable-employee-control-") {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return createEmployeeStore({
     agentsRoot: path.join(temp, "agents"),
     runtimeRoot: path.join(temp, "runtime"),
     now: () => "2026-05-28T00:00:00.000Z",
   });
+}
+
+test("employee control plugin creates, lists, shows, and starts employees", async () => {
+  const store = createTempEmployeeStore();
   const starts = [];
   const api = {
     services: {
@@ -40,3 +44,24 @@ test("employee control plugin creates, lists, shows, and starts employees", asyn
   assert.deepEqual(starts, [{ id: "researcher", prompt: "scan the KB" }]);
 });
 
+test("employee control plugin rejects unknown employee starts without invoking runtime", async () => {
+  const store = createTempEmployeeStore("sable-employee-control-missing-");
+  let invoked = false;
+  const api = {
+    services: {
+      employeeStore: store,
+      employeeRuntime: {
+        startEmployeeRun: () => {
+          invoked = true;
+          throw new Error("runtime should not be called");
+        },
+      },
+    },
+  };
+
+  assert.equal(
+    await handleEmployeeCommand("start researcher scan the KB", api),
+    "No employee matched researcher."
+  );
+  assert.equal(invoked, false);
+});

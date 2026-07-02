@@ -20,6 +20,7 @@ function createRuntime(jobs, defaultJobs = [], overrides = {}) {
     formatScheduleList: (items) => `schedules:${items.length}:${items.map((job) => job.scheduleKind).join(",")}`,
     loadSchedulerJobs: (filePath) => (filePath.includes("default") ? defaultJobs : jobs),
     loadSchedulerState: overrides.loadSchedulerState || (() => ({ activeTimezone: "" })),
+    now: overrides.now || (() => new Date("2026-05-04T10:00:00.000Z")),
     normalizeText: (value) => (typeof value === "string" && value.trim() ? value.trim() : ""),
     normalizeJobTimezoneMode:
       overrides.normalizeJobTimezoneMode ||
@@ -76,7 +77,7 @@ test("scheduler runtime queues due jobs and advances schedule state", async () =
   assert.equal(queued[0].replyMode, "silent");
   assert.deepEqual(queued[0].context.images, [{ path: "/tmp/image.png" }]);
   assert.deepEqual(queued[0].context.files, [{ path: "/tmp/file.txt" }]);
-  assert.equal(dueJob.lastRunAt.slice(0, 10), new Date().toISOString().slice(0, 10));
+  assert.equal(dueJob.lastRunAt, "2026-05-04T10:00:00.000Z");
   assert.equal(dueJob.nextRunAt, "2026-05-04T11:00:00.000Z");
   assert.equal(dueJob.updatedAt, "2026-05-04T10:00:00.000Z");
   assert.equal(ensured, 1);
@@ -177,6 +178,7 @@ test("scheduler runtime reschedules active-timezone jobs when the timezone state
   const queued = [];
   const calls = [];
   const { runtime, getSaved } = createRuntime([activeJob], [], {
+    now: () => new Date("2026-06-13T07:00:00.000Z"),
     loadSchedulerState: () => ({ activeTimezone: "America/Los_Angeles" }),
     computeFollowingRunAt: (_job, _now, options) => {
       calls.push(options);

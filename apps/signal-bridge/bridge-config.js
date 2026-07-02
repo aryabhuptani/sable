@@ -54,6 +54,18 @@ function createBridgeConfig({
     env.APP_SERVER_REQUEST_TIMEOUT_MS,
     20_000
   );
+  const PRIMARY_RUNNER =
+    normalizeText(env.SABLE_PRIMARY_RUNNER) ||
+    normalizeText(env.SABLE_RUNNER) ||
+    "codex-cli";
+  const HERMES_CONTAINER =
+    normalizeText(env.SABLE_HERMES_CONTAINER) || "hermes-sable-trial";
+  const HERMES_CWD =
+    normalizeText(env.SABLE_HERMES_CWD) || "/opt/data/workspace";
+  const HERMES_TIMEOUT_MS = normalizeIntegerEnv(
+    env.SABLE_HERMES_TIMEOUT_MS,
+    10 * 60 * 1000
+  );
   const APP_SERVER_IDLE_TIMEOUT_MS = normalizeIntegerEnv(
     env.APP_SERVER_IDLE_TIMEOUT_MS,
     10 * 60 * 1000
@@ -194,6 +206,7 @@ function createBridgeConfig({
     MATTERMOST_TOKEN: normalizeText(env.MATTERMOST_TOKEN),
     PDF_EXTRACT_PYTHON_BIN,
     PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS: 15_000,
+    PRIMARY_RUNNER,
     RESEARCH_ROOT,
     RESTART_NOTICE_PATH,
     RESTART_REQUEST_PATH,
@@ -205,6 +218,9 @@ function createBridgeConfig({
     SIGNAL_REPLY_TO_ENV: "SABLE_SIGNAL_REPLY_TO",
     STATE_PATH,
     TELEGRAM_TRIAGE_LIMIT: null,
+    HERMES_CONTAINER,
+    HERMES_CWD,
+    HERMES_TIMEOUT_MS,
     TEST_APP_SERVER_LOG_PATH,
     TEST_RECEIVE_SCENARIO_PATH,
     TEST_SIGNAL_LOG_PATH,

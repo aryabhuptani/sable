@@ -128,6 +128,22 @@ class TelegramCliTests(unittest.TestCase):
         )
         self.assertTrue(telegram_cli.is_auto_cleanup_solicitation(dialog))
 
+    def test_auto_cleanup_solicitation_matches_listing_partner_pitch(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            snippet="We are a listing partner of top exchanges and can support your token launch.",
+        )
+        self.assertTrue(telegram_cli.is_auto_cleanup_solicitation(dialog))
+
+    def test_auto_cleanup_solicitation_matches_listing_ieo_terms_pitch(self):
+        dialog = self.build_dialog(
+            is_user=True,
+            is_group=False,
+            snippet="Can we discuss the listing + IEO terms for Everclear with you?",
+        )
+        self.assertTrue(telegram_cli.is_auto_cleanup_solicitation(dialog))
+
     def test_auto_cleanup_solicitation_does_not_match_group_or_non_solicit_request(self):
         group_dialog = self.build_dialog(
             is_user=False,

@@ -45,6 +45,8 @@ function createPluginAuthManager({
       startedAt: timestamp(),
       completedAt: "",
       lastCheckedAt: "",
+      nextCheckAt: "",
+      checkCount: 0,
     };
     savePending(pending);
 
@@ -59,12 +61,18 @@ function createPluginAuthManager({
   async function check() {
     const pending = getPending();
     if (!pending || pending.status !== "pending" || isInteractiveProcessing()) {
-      return;
+      return { checked: false, reason: "inactive" };
+    }
+
+    const now = timestamp();
+    if (!isDueForCheck(pending, now)) {
+      return { checked: false, reason: "not-due", nextCheckAt: pending.nextCheckAt };
     }
 
     try {
       const status = await getPluginInstallStatus(pending);
-      pending.lastCheckedAt = timestamp();
+      pending.lastCheckedAt = now;
+      pending.checkCount = normalizeNonNegativeInteger(pending.checkCount) + 1;
 
       if (!pending.installUrl && status.installUrl) {
         pending.installUrl = status.installUrl;
@@ -72,13 +80,16 @@ function createPluginAuthManager({
 
       if (status.installed) {
         pending.status = "completed";
-        pending.completedAt = timestamp();
+        pending.completedAt = now;
+        pending.nextCheckAt = "";
         savePending(pending);
         await sendReply(pending.sender, formatCompleted(pending));
-        return;
+        return { checked: true, installed: true };
       }
 
+      pending.nextCheckAt = computeNextCheckAt(now, pending.checkCount);
       savePending(pending);
+      return { checked: true, installed: false, nextCheckAt: pending.nextCheckAt };
     } catch (error) {
       throw new Error(`Pending plugin auth poll failed: ${error.message}`);
     }
@@ -189,6 +200,11 @@ function normalizePendingPluginAuth(value, timestamp = defaultTimestamp) {
   const pluginName = normalizeText(value.pluginName);
   const marketplacePath = normalizeText(value.marketplacePath);
   const installUrl = normalizeText(value.installUrl);
+  const startedAt = normalizeText(value.startedAt) || timestamp();
+  const checkCount = Math.max(
+    normalizeNonNegativeInteger(value.checkCount),
+    inferInitialCheckCount(startedAt, timestamp())
+  );
 
   if (!sender || !pluginId || !pluginName || !marketplacePath || !installUrl) {
     return null;
@@ -203,9 +219,11 @@ function normalizePendingPluginAuth(value, timestamp = defaultTimestamp) {
     installUrl,
     sourcePrompt: normalizeText(value.sourcePrompt),
     status: normalizePendingPluginAuthStatus(value.status),
-    startedAt: normalizeText(value.startedAt) || timestamp(),
+    startedAt,
     completedAt: normalizeText(value.completedAt),
     lastCheckedAt: normalizeText(value.lastCheckedAt),
+    nextCheckAt: normalizeText(value.nextCheckAt),
+    checkCount,
   };
 }
 
@@ -254,6 +272,13 @@ function formatStatus(pendingPluginAuth) {
     lines.push(`completed: ${pendingPluginAuth.completedAt}`);
   }
 
+  if (
+    pendingPluginAuth.status !== "completed" &&
+    normalizeText(pendingPluginAuth.nextCheckAt)
+  ) {
+    lines.push(`next check: ${pendingPluginAuth.nextCheckAt}`);
+  }
+
   lines.push(pendingPluginAuth.installUrl);
 
   if (pendingPluginAuth.status === "completed") {
@@ -280,6 +305,60 @@ function summarize(pendingPluginAuth) {
   return `${pendingPluginAuth.displayName} ${pendingPluginAuth.status}`;
 }
 
+function isDueForCheck(pendingPluginAuth, now = defaultTimestamp()) {
+  const nextCheckAt = normalizeText(pendingPluginAuth?.nextCheckAt);
+  if (!nextCheckAt) {
+    return true;
+  }
+
+  const nextCheckTime = Date.parse(nextCheckAt);
+  const nowTime = Date.parse(now);
+  if (!Number.isFinite(nextCheckTime) || !Number.isFinite(nowTime)) {
+    return true;
+  }
+
+  return nowTime >= nextCheckTime;
+}
+
+function computeNextCheckAt(now, checkCount) {
+  const nowTime = Date.parse(now);
+  if (!Number.isFinite(nowTime)) {
+    return "";
+  }
+  return new Date(nowTime + getPollDelayMs(checkCount)).toISOString();
+}
+
+function getPollDelayMs(checkCount) {
+  const normalized = normalizeNonNegativeInteger(checkCount);
+  if (normalized <= 4) {
+    return 15_000;
+  }
+  if (normalized <= 12) {
+    return 60_000;
+  }
+  if (normalized <= 48) {
+    return 5 * 60_000;
+  }
+  return 60 * 60_000;
+}
+
+function normalizeNonNegativeInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function inferInitialCheckCount(startedAt, now) {
+  const startedTime = Date.parse(startedAt);
+  const nowTime = Date.parse(now);
+  if (!Number.isFinite(startedTime) || !Number.isFinite(nowTime)) {
+    return 0;
+  }
+  return nowTime - startedTime >= 24 * 60 * 60 * 1000 ? 49 : 0;
+}
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -289,10 +368,14 @@ function defaultTimestamp() {
 }
 
 module.exports = {
+  computeNextCheckAt,
   createPluginAuthManager,
   formatCompleted,
   formatPrompt,
   formatStatus,
+  getPollDelayMs,
+  inferInitialCheckCount,
+  isDueForCheck,
   normalizePendingPluginAuth,
   normalizePendingPluginAuthStatus,
   splitPluginId,

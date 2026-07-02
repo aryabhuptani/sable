@@ -14,6 +14,7 @@ function createBridgeSchedulerRuntime(options = {}) {
     normalizeJobTimezoneMode = defaultNormalizeJobTimezoneMode,
     schedulerJobsPath,
     schedulerStatePath = "",
+    now = () => new Date(),
     saveSchedulerJobs,
     timestamp = () => new Date().toISOString(),
   } = options;
@@ -90,10 +91,10 @@ function createBridgeSchedulerRuntime(options = {}) {
       return;
     }
 
-    const now = new Date();
+    const nowDate = now();
     let changed = false;
 
-    if (refreshTimezoneSensitiveJobs(now)) {
+    if (refreshTimezoneSensitiveJobs(nowDate)) {
       changed = true;
     }
 
@@ -103,15 +104,15 @@ function createBridgeSchedulerRuntime(options = {}) {
       }
 
       const nextRunMs = Date.parse(scheduledJob.nextRunAt);
-      if (Number.isNaN(nextRunMs) || nextRunMs > now.getTime()) {
+      if (Number.isNaN(nextRunMs) || nextRunMs > nowDate.getTime()) {
         continue;
       }
 
       enqueueBackgroundJob(queueScheduledWorkflowRun(scheduledJob));
-      scheduledJob.lastRunAt = now.toISOString();
+      scheduledJob.lastRunAt = nowDate.toISOString();
       scheduledJob.nextRunAt = computeFollowingRunAt(
         scheduledJob,
-        now,
+        nowDate,
         getComputeOptionsForJob(scheduledJob)
       );
       scheduledJob.scheduledTimezone = getScheduledTimezoneForJob(scheduledJob);

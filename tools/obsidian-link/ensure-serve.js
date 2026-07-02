@@ -75,9 +75,22 @@ function isServeConfigured(status, { dnsName = "", host, httpsPort, port }) {
   const hostsToCheck = candidateHosts.length ? candidateHosts : hostnames;
 
   return hostsToCheck.some((hostname) => {
+    if (isFunnelEnabled(status, hostname)) {
+      return false;
+    }
     const handlers = web?.[hostname]?.Handlers || {};
     return Object.values(handlers).some((handler) => handler?.Proxy === expectedProxy);
   });
+}
+
+function hasFunnelExposure(status, { dnsName = "", httpsPort } = {}) {
+  const funnel = status?.AllowFunnel || {};
+  const candidateHosts = dnsName ? [normalizeServeHostname(dnsName, httpsPort)] : Object.keys(funnel);
+  return candidateHosts.some((hostname) => isFunnelEnabled(status, hostname));
+}
+
+function isFunnelEnabled(status, hostname) {
+  return status?.AllowFunnel?.[hostname] === true;
 }
 
 function normalizeServeHostname(dnsName, httpsPort = DEFAULT_HTTPS_PORT) {
@@ -206,11 +219,16 @@ async function ensureObsidianServe(options) {
   let tailscaleStatus = null;
   let serveStatus = null;
   let serveConfigured = false;
+  let funnelExposed = false;
   let tailscaleError = "";
 
   try {
     tailscaleStatus = readTailscaleStatus({ tailscale: options.tailscale });
     serveStatus = readServeStatus({ tailscale: options.tailscale });
+    funnelExposed = hasFunnelExposure(serveStatus, {
+      dnsName: tailscaleStatus?.Self?.DNSName || "",
+      httpsPort: options.httpsPort,
+    });
     serveConfigured = isServeConfigured(serveStatus, {
       dnsName: tailscaleStatus?.Self?.DNSName || "",
       host: options.host,
@@ -221,7 +239,7 @@ async function ensureObsidianServe(options) {
     tailscaleError = error.message;
   }
 
-  if (!serveConfigured && !tailscaleError) {
+  if (!serveConfigured && !funnelExposed && !tailscaleError) {
     const serve = run(
       options.tailscale,
       [
@@ -237,6 +255,10 @@ async function ensureObsidianServe(options) {
     if ((serve.status || 0) === 0 && !options.dryRun) {
       try {
         serveStatus = readServeStatus({ tailscale: options.tailscale });
+        funnelExposed = hasFunnelExposure(serveStatus, {
+          dnsName: tailscaleStatus?.Self?.DNSName || "",
+          httpsPort: options.httpsPort,
+        });
         serveConfigured = isServeConfigured(serveStatus, {
           dnsName: tailscaleStatus?.Self?.DNSName || "",
           host: options.host,
@@ -252,8 +274,9 @@ async function ensureObsidianServe(options) {
   return {
     actions,
     dnsName: tailscaleStatus?.Self?.DNSName || "",
+    funnelExposed,
     localHealth,
-    ok: Boolean(localHealth.ok && serveConfigured && !tailscaleError),
+    ok: Boolean(localHealth.ok && serveConfigured && !funnelExposed && !tailscaleError),
     serveConfigured,
     tailscaleBackendState: tailscaleStatus?.BackendState || "",
     tailscaleError,
@@ -301,6 +324,7 @@ module.exports = {
   ensureObsidianServe,
   expectedProxyTarget,
   getLocalHealthUrl,
+  hasFunnelExposure,
   isServeConfigured,
   normalizeServeHostname,
   parseArgs,

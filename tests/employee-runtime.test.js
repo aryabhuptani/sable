@@ -7,19 +7,21 @@ const test = require("node:test");
 const { createEmployeeRuntime } = require("../apps/signal-bridge/employee-runtime");
 const { createEmployeeStore } = require("../apps/signal-bridge/employee-store");
 
+const NOW = "2026-05-28T00:00:00.000Z";
+
 test("employee runtime prepares dockerized employee runs", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "sable-employee-runtime-"));
   const store = createEmployeeStore({
     agentsRoot: path.join(temp, "memory", "agents"),
     runtimeRoot: path.join(temp, ".sable", "employees"),
-    now: () => "2026-05-28T00:00:00.000Z",
+    now: () => NOW,
   });
   store.createEmployee({ id: "researcher", role: "research" });
   const runtime = createEmployeeRuntime({
     employeeStore: store,
     repoRoot: "/repo/sable",
     dockerEnabled: true,
-    now: () => "2026-05-28T00:00:00.000Z",
+    now: () => NOW,
   });
 
   const status = runtime.startEmployeeRun("researcher", "Summarize the KB.", {
@@ -35,7 +37,9 @@ test("employee runtime prepares dockerized employee runs", () => {
   assert.equal(status.mattermostTokenPath.endsWith("mattermost-token"), true);
   assert.ok(status.invocation.args.includes("-v"));
   assert.equal(fs.existsSync(status.promptPath), true);
-  assert.match(fs.readFileSync(status.promptPath, "utf8"), /Summarize the KB/);
+  const prompt = fs.readFileSync(status.promptPath, "utf8");
+  assert.match(prompt, /Summarize the KB/);
+  assert.match(prompt, /must not hire, create, archive, start, or manage other Sable employees/);
 });
 
 test("employee runtime can prepare host fallback runs", () => {

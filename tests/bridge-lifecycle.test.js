@@ -85,6 +85,12 @@ function createLifecycle(overrides = {}) {
     get closed() {
       return closed;
     },
+    get restartRequested() {
+      return restartRequested;
+    },
+    get shutdownRequested() {
+      return shutdownRequested;
+    },
     lifecycle,
     logs,
     noticePath,
@@ -148,6 +154,33 @@ test("bridge lifecycle shutdown exits immediately when idle", () => {
   assert.equal(harness.signalRpc.rejected.message, "Bridge shutting down");
   assert.deepEqual(harness.signalRpc.killCalls, ["SIGTERM"]);
   assert.deepEqual(harness.exits, [0]);
+});
+
+test("bridge lifecycle shutdown defers exit while work is active", () => {
+  let interactiveProcessed = false;
+  let backgroundProcessed = false;
+  const harness = createLifecycle({
+    backgroundQueue: ["background-job"],
+    interactiveQueue: ["interactive-job"],
+    processBackgroundQueue: async () => {
+      backgroundProcessed = true;
+    },
+    processInteractiveQueue: async () => {
+      interactiveProcessed = true;
+    },
+  });
+  harness.setActiveWork(true);
+
+  harness.lifecycle.shutdown();
+
+  assert.equal(harness.shutdownRequested, true);
+  assert.equal(harness.restartRequested, true);
+  assert.equal(interactiveProcessed, true);
+  assert.equal(backgroundProcessed, true);
+  assert.equal(harness.closed, false);
+  assert.equal(harness.signalRpc.rejected, undefined);
+  assert.deepEqual(harness.signalRpc.killCalls, []);
+  assert.deepEqual(harness.exits, []);
 });
 
 test("formatInterruptedTurnNotice omits missing prompt previews", () => {

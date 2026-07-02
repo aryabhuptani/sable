@@ -38,7 +38,7 @@ test("background batch notify parser supports repeated jobs and callback options
 });
 
 test("background batch notify aggregates pending and terminal sibling jobs", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-batch-"));
+  const tempDir = await makeTempBatchDir();
   const jobsRoot = path.join(tempDir, "jobs");
   const batchFile = path.join(tempDir, "batch.json");
 
@@ -76,7 +76,7 @@ test("background batch notify aggregates pending and terminal sibling jobs", asy
 });
 
 test("background batch notify queues one Signal message after all jobs finish", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-batch-"));
+  const tempDir = await makeTempBatchDir();
   const jobsRoot = path.join(tempDir, "jobs");
   const queueDir = path.join(tempDir, "queue");
   const batchFile = path.join(tempDir, "batch.json");
@@ -117,6 +117,61 @@ test("background batch notify queues one Signal message after all jobs finish", 
   }
 });
 
+test("background batch notify waits without queueing while a sibling job is still running", async () => {
+  const tempDir = await makeTempBatchDir();
+  const jobsRoot = path.join(tempDir, "jobs");
+  const queueDir = path.join(tempDir, "queue");
+  const batchFile = path.join(tempDir, "batch.json");
+
+  try {
+    await writeJobStatus(jobsRoot, "job-a", { name: "Alpha", status: "completed" });
+    await writeJobStatus(jobsRoot, "job-b", { name: "Beta", status: "running" });
+    await initBatch({
+      batchFile,
+      jobs: ["job-a", "job-b"],
+      jobsRoot,
+      name: "Elimination round 2",
+      recipient: "+15551112222",
+    });
+
+    const result = await handleCallback({ batchFile, queueDir });
+
+    assert.equal(result.notificationQueued, false);
+    assert.equal(result.reason, "waiting");
+    assert.equal(result.aggregate.allTerminal, false);
+    await assertNoNotificationSideEffects({ batchFile, queueDir });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("background batch notify dry-run renders without queueing or marking notified", async () => {
+  const tempDir = await makeTempBatchDir();
+  const jobsRoot = path.join(tempDir, "jobs");
+  const queueDir = path.join(tempDir, "queue");
+  const batchFile = path.join(tempDir, "batch.json");
+
+  try {
+    await writeJobStatus(jobsRoot, "job-a", { name: "Alpha", status: "completed" });
+    await initBatch({
+      batchFile,
+      jobs: ["job-a"],
+      jobsRoot,
+      name: "Preview round",
+      recipient: "+15551112222",
+    });
+
+    const result = await handleCallback({ batchFile, dryRun: true, queueDir });
+
+    assert.equal(result.notificationQueued, false);
+    assert.equal(result.reason, "dry-run");
+    assert.match(result.message, /Background batch finished: Preview round/);
+    await assertNoNotificationSideEffects({ batchFile, queueDir });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("background batch notification text includes status and report commands", () => {
   const message = formatBatchNotification({
     batch: { message: "", name: "Round", jobsRoot: "/tmp/jobs" },
@@ -140,4 +195,16 @@ async function writeJobStatus(jobsRoot, id, status) {
     `${JSON.stringify({ id, jobDir, ...status }, null, 2)}\n`,
     "utf8"
   );
+}
+
+function makeTempBatchDir() {
+  return fs.mkdtemp(path.join(os.tmpdir(), "sable-background-batch-"));
+}
+
+async function assertNoNotificationSideEffects({ batchFile, queueDir }) {
+  await assert.rejects(() => fs.access(path.join(queueDir, "pending")), { code: "ENOENT" });
+
+  const batch = JSON.parse(await fs.readFile(batchFile, "utf8"));
+  assert.equal(batch.notifiedAt, "");
+  assert.equal(batch.notificationRequestId, "");
 }

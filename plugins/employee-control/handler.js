@@ -79,6 +79,9 @@ async function handleEmployeeCommand(args, api) {
     if (!id || !prompt) {
       return "Usage: /employee start <id> <prompt>";
     }
+    if (!store.getEmployee(id)) {
+      return `No employee matched ${id}.`;
+    }
     if (!runtime) {
       return "Employee runtime is not available.";
     }
@@ -123,4 +126,3 @@ module.exports = {
   handleEmployeeCommand,
   registerPlugin,
 };
-

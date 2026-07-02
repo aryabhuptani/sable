@@ -40,6 +40,7 @@ const {
   normalizePendingPluginAuth,
 } = require("./plugin-auth-manager");
 const { createPluginRuntime } = require("./plugin-runtime");
+const { createHermesCliRunnerAdapter } = require("./hermes-cli-runner");
 const { createCodexCliRunnerAdapter } = require("./runner-adapter");
 const {
   cancelJobControl,
@@ -137,6 +138,7 @@ const {
   MATTERMOST_TOKEN,
   PDF_EXTRACT_PYTHON_BIN,
   PENDING_PLUGIN_AUTH_POLL_INTERVAL_MS,
+  PRIMARY_RUNNER,
   RESEARCH_ROOT,
   RESTART_NOTICE_PATH,
   RESTART_REQUEST_PATH,
@@ -147,6 +149,9 @@ const {
   SIGNAL_BRIDGE_DIR_ENV,
   SIGNAL_REPLY_TO_ENV,
   STATE_PATH,
+  HERMES_CONTAINER,
+  HERMES_CWD,
+  HERMES_TIMEOUT_MS,
   TEST_APP_SERVER_LOG_PATH,
   TEST_RECEIVE_SCENARIO_PATH,
   TEST_SIGNAL_LOG_PATH,
@@ -425,7 +430,7 @@ queueRuntime = createBridgeQueueRuntime({
   timestamp,
   voiceNotes,
 });
-const runner = createCodexCliRunnerAdapter({
+const codexRunner = createCodexCliRunnerAdapter({
   spawn,
   cwd: CODEX_CWD,
   projectDir: PROJECT_DIR,
@@ -441,12 +446,25 @@ const runner = createCodexCliRunnerAdapter({
     console.error(`[${timestamp()}] codex app-server stderr: ${text}`);
   },
 });
+const hermesRunner = createHermesCliRunnerAdapter({
+  spawn,
+  containerName: HERMES_CONTAINER,
+  workspaceDir: HERMES_CWD,
+  timeoutMs: HERMES_TIMEOUT_MS,
+  normalizeText,
+  timestamp,
+  onLifecycle: testSupport.appendAppServerLog,
+  onStderr(text) {
+    ops.noteCodexAppServerStderr(text);
+    console.error(`[${timestamp()}] hermes cli stderr: ${text}`);
+  },
+});
+const runner = normalizeRunnerName(PRIMARY_RUNNER) === "hermes-cli" ? hermesRunner : codexRunner;
 const {
   createAppServerClient,
   callCodexAppServer,
-  recordTestAppServerSpawnArgs,
-  probeRuntimeProfile,
-} = runner;
+} = codexRunner;
+const { recordTestLaunchArgs, probeRuntimeProfile } = runner;
 appServerTurnRunner = createAppServerTurnRunner({
   runtimeHooks: {
     turnIdleTimeoutMs: APP_SERVER_IDLE_TIMEOUT_MS,
@@ -680,7 +698,7 @@ async function runCodex(
   suppressLiveUpdates = false,
   onInvalidSession = null
 ) {
-  recordTestAppServerSpawnArgs();
+  recordTestLaunchArgs();
 
   if (TEST_TURN_SCENARIO_PATH && TEST_TURN_CURSOR_PATH) {
     return testSupport.runCodexViaTestScenario(
@@ -689,6 +707,12 @@ async function runCodex(
       imagePaths,
       jobControl
     );
+  }
+  if (runner.id === "hermes-cli") {
+    return runner.runTurn(prompt, null, imagePaths, jobControl, {
+      suppressLiveUpdates,
+      onInvalidSession,
+    });
   }
   return runCodexViaAppServer(
     prompt,
@@ -716,6 +740,14 @@ function runCodexViaAppServer(
     suppressLiveUpdates,
     onInvalidSession
   );
+}
+
+function normalizeRunnerName(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (["hermes", "hermes-cli", "hermes_cli"].includes(normalized)) {
+    return "hermes-cli";
+  }
+  return "codex-cli";
 }
 
 function buildAppServerThreadParams(threadId = null) {

@@ -70,7 +70,7 @@ function findCompletedActiveRuns({ researchRoot, topic = "" } = {}) {
       const runRoot = path.join(activeRoot, entry.name);
       const statePath = path.join(runRoot, "STATE.json");
       const state = readJson(statePath);
-      if (normalizeText(state?.status).toLowerCase() !== "completed") {
+      if (!isCompletedStatus(state?.status)) {
         continue;
       }
       runs.push({
@@ -192,6 +192,10 @@ function readJson(filePath) {
 
 function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isCompletedStatus(value) {
+  return ["complete", "completed"].includes(normalizeText(value).toLowerCase());
 }
 
 function normalizeTopic(value) {

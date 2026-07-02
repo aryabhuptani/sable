@@ -61,6 +61,10 @@ function loadApprovedChats({ env = process.env, filePath = defaultApprovedChatsP
   return dedupeApprovedChats(approved.filter((entry) => entry.id || entry.name));
 }
 
+function approvedChatsPathFromArgs(args, env = process.env) {
+  return args["approved-config"] || args["approved-chats"] || defaultApprovedChatsPath(env);
+}
+
 function normalizeApprovedChat(entry) {
   if (typeof entry === "string") {
     return { id: normalizeText(entry), name: normalizeText(entry) };
@@ -196,7 +200,7 @@ function appendBucket(lines, title, chats, limit) {
 async function commandTriage(args, env = process.env) {
   const approvedChats = loadApprovedChats({
     env,
-    filePath: args["approved-chats"] || defaultApprovedChatsPath(env),
+    filePath: approvedChatsPathFromArgs(args, env),
   });
   const limit = normalizeInteger(args.limit, DEFAULT_TRIAGE_LIMIT);
   const staleDays = normalizeInteger(args["stale-days"], DEFAULT_STALE_DAYS);
@@ -222,12 +226,13 @@ async function commandListChats(args, env = process.env) {
 }
 
 async function commandExportApproved(args, env = process.env) {
+  const approvedChatsPath = approvedChatsPathFromArgs(args, env);
   const approvedChats = loadApprovedChats({
     env,
-    filePath: args["approved-chats"] || defaultApprovedChatsPath(env),
+    filePath: approvedChatsPath,
   });
   if (!approvedChats.length) {
-    throw new Error(`No approved WhatsApp chats configured in ${defaultApprovedChatsPath(env)}.`);
+    throw new Error(`No approved WhatsApp chats configured in ${approvedChatsPath}.`);
   }
   const outputPath = path.resolve(expandHome(args.out || args.output || "whatsapp-approved-export.md"));
   const exportResult = await exportApprovedChatsWithBrowser({
@@ -449,8 +454,8 @@ function printUsage() {
     "Usage:",
     "  whatsapp_cli.js init-config [--file path] [--force true]",
     "  whatsapp_cli.js list-chats [--limit 50] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
-    "  whatsapp_cli.js triage [--limit 25] [--stale-days 21] [--approved-chats path] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
-    "  whatsapp_cli.js export-approved --out path [--approved-chats path] [--ready-timeout-ms 300000]",
+    "  whatsapp_cli.js triage [--limit 25] [--stale-days 21] [--approved-chats path|--approved-config path] [--input-json path] [--qr-file path] [--ready-timeout-ms 300000]",
+    "  whatsapp_cli.js export-approved --out path [--approved-chats path|--approved-config path] [--ready-timeout-ms 300000]",
   ].join("\n"));
 }
 
@@ -523,6 +528,7 @@ module.exports = {
   loadApprovedChats,
   normalizeSnapshot,
   parseArgs,
+  approvedChatsPathFromArgs,
   commandListChats,
   formatApprovedChatExport,
 };

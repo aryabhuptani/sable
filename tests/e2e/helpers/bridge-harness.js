@@ -96,6 +96,7 @@ async function startBridgeScenario({
       SABLE_E2E_SIGNAL_LOG_PATH: signalLogPath,
       SABLE_E2E_TURN_SCENARIO_PATH: codexScenarioPath,
       SABLE_E2E_TURN_CURSOR_PATH: codexCursorPath,
+      SABLE_PRIMARY_RUNNER: "codex-cli",
       FAKE_SIGNAL_SCENARIO_PATH: signalScenarioPath,
       FAKE_SIGNAL_LOG_PATH: signalLogPath,
       FAKE_CODEX_SCENARIO_PATH: codexScenarioPath,
