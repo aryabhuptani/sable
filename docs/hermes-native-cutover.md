@@ -2,6 +2,12 @@
 
 This is the Sable migration path after Arya approved full Signal account cutover to Hermes.
 
+Rollback note: as of 2026-07-03, this migration is paused. The active local
+Signal setup is the Codex-backed `signal-codex-bridge.service`; `signal-cli-http.service`
+is disabled/inactive and `hermes-sable-native` is stopped. Treat the rest of
+this document as the preserved Hermes migration runbook, not current runtime
+state, until Arya explicitly resumes the migration.
+
 ## Target
 
 Hermes owns Signal receive/send directly. Sable keeps only the local tools, skills, memory conventions, and selected integrations that still matter.
