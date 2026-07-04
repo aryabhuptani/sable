@@ -5,6 +5,16 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
+const employeeRegressionTests = [
+  "tests/employee-store.test.js",
+  "tests/employee-runtime.test.js",
+  "tests/employee-run-worker.test.js",
+  "tests/mattermost-client.test.js",
+  "tests/mattermost-transport.test.js",
+  "tests/bridge-queue-transport.test.js",
+  "tests/employee-control-plugin.test.js",
+];
+
 const suites = [
   {
     name: "migration contract",
@@ -30,13 +40,7 @@ const suites = [
       "tests/browser-cli.test.js",
       "tests/browser-ops-plugin.test.js",
       "tests/codex-session-reader.test.js",
-      "tests/employee-store.test.js",
-      "tests/employee-runtime.test.js",
-      "tests/employee-run-worker.test.js",
-      "tests/mattermost-client.test.js",
-      "tests/mattermost-transport.test.js",
-      "tests/bridge-queue-transport.test.js",
-      "tests/employee-control-plugin.test.js",
+      ...employeeRegressionTests,
       "tests/fresh-clone-sim.test.js",
       "tests/gocardless-probe.test.js",
       "tests/init-instance.test.js",
