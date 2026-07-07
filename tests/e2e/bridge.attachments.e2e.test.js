@@ -3,16 +3,12 @@ const test = require("node:test");
 
 const {
   assert,
+  assertNoCodexTurnStarted,
   fsp,
   path,
   startBridgeScenario,
   waitFor,
 } = require("./helpers/bridge-harness");
-
-async function assertNoCodexTurnStarted(harness) {
-  const codexRequests = await harness.getCodexRequests();
-  assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
-}
 
 async function queueAttachmentRequest(queueDir, requestId, payload) {
   const pendingPath = path.join(queueDir, "pending", `${requestId}.json`);

@@ -223,8 +223,14 @@ function extractSentMessages(signalRequests) {
     .filter((message) => typeof message === "string");
 }
 
+async function assertNoCodexTurnStarted(harness) {
+  const codexRequests = await harness.getCodexRequests();
+  assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
+}
+
 module.exports = {
   assert,
+  assertNoCodexTurnStarted,
   extractSentMessages,
   path,
   fsp,

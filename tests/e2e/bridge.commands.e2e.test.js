@@ -3,14 +3,10 @@ const test = require("node:test");
 
 const {
   assert,
+  assertNoCodexTurnStarted,
   path,
   startBridgeScenario,
 } = require("./helpers/bridge-harness");
-
-async function assertNoCodexTurnStarted(harness) {
-  const codexRequests = await harness.getCodexRequests();
-  assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
-}
 
 function createFakeCommandRecorder({ tempRoot, binDirName, binaryName, logFileName, output }) {
   const binDir = path.join(tempRoot, binDirName);

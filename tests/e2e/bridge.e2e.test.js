@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   assert,
+  assertNoCodexTurnStarted,
   extractSentMessages,
   fsp,
   path,
@@ -14,11 +15,6 @@ const EMPTY_TURN_SCENARIO_ENV = {
   SABLE_E2E_TURN_SCENARIO_PATH: "",
   SABLE_E2E_TURN_CURSOR_PATH: "",
 };
-
-async function assertNoCodexTurnStarted(harness) {
-  const codexRequests = await harness.getCodexRequests();
-  assert.equal(codexRequests.find((request) => request.method === "turn/start"), undefined);
-}
 
 test("/schedules lists persisted recurring workflows", async () => {
   const futureDailyRun = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
