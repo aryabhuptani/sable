@@ -46,6 +46,7 @@ test("codex app-server launches with full-access bridge flags", () => {
   assert.deepEqual(client.buildCodexAppServerArgs(), [
     "--search",
     "--dangerously-bypass-approvals-and-sandbox",
+    "--dangerously-bypass-hook-trust",
     "-C",
     BRIDGE_DIR,
     "-c",

@@ -16,6 +16,7 @@ function createBridgeCodexClient({
     return [
       "--search",
       "--dangerously-bypass-approvals-and-sandbox",
+      "--dangerously-bypass-hook-trust",
       "-C",
       cwd,
       "-c",
