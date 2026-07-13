@@ -18,6 +18,7 @@ function createBridgeJobRuntime(options = {}) {
     normalizeText,
     pluginAuth,
     pluginRuntime = null,
+    runCommands = null,
     runCodex,
     saveSessionId,
     schedulerRuntime,
@@ -76,6 +77,14 @@ function createBridgeJobRuntime(options = {}) {
 
     if (job.command.type === "ops") {
       await sendJobReply(job, await getOpsReport());
+      return;
+    }
+
+    if (["list-runs", "list-run-blockers", "show-run", "control-run", "run-usage"].includes(job.command.type)) {
+      const message = runCommands
+        ? await runCommands.handle(job.command, { actor: "signal" })
+        : "Run controls are not available in this Sable runtime yet.";
+      await sendJobReply(job, message);
       return;
     }
 

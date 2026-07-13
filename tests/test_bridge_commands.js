@@ -17,6 +17,42 @@ test("parseCommand recognizes bridge control commands", () => {
   assert.deepEqual(parseCommand("/plugins"), { type: "plugin-status" });
   assert.deepEqual(parseCommand("/pluginstatus"), { type: "plugin-status" });
   assert.deepEqual(parseCommand("/whatsapp"), { type: "whatsapp-triage", limit: 25 });
+  assert.deepEqual(parseCommand("/runs"), { type: "list-runs" });
+  assert.deepEqual(parseCommand("/blockers"), { type: "list-run-blockers" });
+});
+
+test("parseCommand parses delegated run status and controls", () => {
+  assert.deepEqual(parseCommand("/run coding-20260713-001"), {
+    type: "show-run",
+    runId: "coding-20260713-001",
+  });
+  assert.deepEqual(parseCommand("/run coding-20260713-001 pause"), {
+    type: "control-run",
+    runId: "coding-20260713-001",
+    action: "pause",
+  });
+  assert.deepEqual(parseCommand("/run coding-20260713-001 resume"), {
+    type: "control-run",
+    runId: "coding-20260713-001",
+    action: "resume",
+  });
+  assert.deepEqual(parseCommand("/run coding-20260713-001 cancel"), {
+    type: "control-run",
+    runId: "coding-20260713-001",
+    action: "cancel",
+  });
+  assert.deepEqual(parseCommand("/run coding-20260713-001 steer focus on callback tests"), {
+    type: "control-run",
+    runId: "coding-20260713-001",
+    action: "steer",
+    instruction: "focus on callback tests",
+  });
+});
+
+test("parseCommand returns run usage for incomplete or invalid controls", () => {
+  assert.deepEqual(parseCommand("/run"), { type: "run-usage" });
+  assert.deepEqual(parseCommand("/run coding-1 steer"), { type: "run-usage", runId: "coding-1" });
+  assert.deepEqual(parseCommand("/run coding-1 explode"), { type: "run-usage", runId: "coding-1" });
 });
 
 test("formatHelp includes built-in and runtime plugin commands", () => {
@@ -35,6 +71,9 @@ test("formatHelp includes built-in and runtime plugin commands", () => {
 
   assert.match(help, /\/help - Show available Sable slash commands/);
   assert.match(help, /\/ops - Show bridge/);
+  assert.match(help, /\/runs - List recent delegated runs/);
+  assert.match(help, /\/run <id> steer <instruction>/);
+  assert.match(help, /\/blockers - Show delegated runs waiting/);
   assert.match(help, /\/hello \(local-hello\) - Say hello/);
 });
 

@@ -8,10 +8,25 @@ const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
 
 const { createInstanceConfig } = require("../instance/instance-config");
+const {
+  createRun,
+  readRun,
+  runPaths,
+  transitionRun,
+  updateRun,
+} = require("../runtime/run-kernel");
 
 const DEFAULT_RECENT_LOG_LINES = 80;
 const DEFAULT_CLAUDE_PERMISSION_MODE = "acceptEdits";
 const DEFAULT_CLAUDE_OUTPUT_FORMAT = "json";
+const DEFAULT_AGENT_PROFILE = "coding";
+const DEFAULT_TRIGGER = "manual";
+const DEFAULT_VISIBILITY = "final_only";
+const DEFAULT_DELIVERY = "orchestrator_only";
+const DEFAULT_RISK_TIER = 2;
+const TRIGGERS = new Set(["manual", "scheduled", "callback", "autonomous"]);
+const VISIBILITIES = new Set(["silent", "final_only", "milestones", "interactive"]);
+const DELIVERIES = new Set(["none", "orchestrator_only", "signal"]);
 
 function parseArgs(argv) {
   const first = argv[0] || "list";
@@ -32,6 +47,11 @@ function parseArgs(argv) {
     claude: process.env.CLAUDE_BIN || "claude",
     claudeHome: process.env.CLAUDE_CONFIG_DIR || defaultClaudeHome(),
     callbackCommand: "",
+    agentProfile: DEFAULT_AGENT_PROFILE,
+    trigger: DEFAULT_TRIGGER,
+    visibility: DEFAULT_VISIBILITY,
+    delivery: DEFAULT_DELIVERY,
+    riskTier: DEFAULT_RISK_TIER,
     model: "",
     permissionMode: process.env.SABLE_BACKGROUND_CLAUDE_PERMISSION_MODE || DEFAULT_CLAUDE_PERMISSION_MODE,
     allowedTools: process.env.SABLE_BACKGROUND_CLAUDE_ALLOWED_TOOLS || "",
@@ -74,6 +94,16 @@ function parseArgs(argv) {
       options.claudeHome = path.resolve(expandHome(argv[++index] || ""));
     } else if (arg === "--callback-command") {
       options.callbackCommand = argv[++index] || "";
+    } else if (arg === "--agent-profile") {
+      options.agentProfile = argv[++index] || "";
+    } else if (arg === "--trigger") {
+      options.trigger = argv[++index] || "";
+    } else if (arg === "--visibility") {
+      options.visibility = argv[++index] || "";
+    } else if (arg === "--delivery") {
+      options.delivery = argv[++index] || "";
+    } else if (arg === "--risk-tier") {
+      options.riskTier = parseRiskTier(argv[++index]);
     } else if (arg === "--model") {
       options.model = argv[++index] || "";
     } else if (arg === "--permission-mode") {
@@ -103,7 +133,31 @@ function parseArgs(argv) {
     }
   }
 
+  options.agentProfile = String(options.agentProfile || "").trim();
+  if (!options.agentProfile) {
+    throw new Error("--agent-profile must not be empty.");
+  }
+  options.trigger = normalizeChoice("trigger", options.trigger, TRIGGERS);
+  options.visibility = normalizeChoice("visibility", options.visibility, VISIBILITIES);
+  options.delivery = normalizeChoice("delivery", options.delivery, DELIVERIES);
+
   return options;
+}
+
+function normalizeChoice(name, value, allowed) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!allowed.has(normalized)) {
+    throw new Error(`Unsupported --${name}: ${value}. Expected one of: ${[...allowed].join(", ")}.`);
+  }
+  return normalized;
+}
+
+function parseRiskTier(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 5 || String(parsed) !== String(value)) {
+    throw new Error(`Invalid --risk-tier: ${value}. Expected an integer from 0 to 5.`);
+  }
+  return parsed;
 }
 
 function defaultCodexHome({ env = process.env } = {}) {
@@ -194,10 +248,13 @@ function defaultWorktreeDir(sourceRepo, id) {
 }
 
 function jobPaths(jobDir) {
+  const run = runPaths(jobDir);
   return {
+    eventsPath: run.eventsPath,
     jobDir,
     lastMessagePath: path.join(jobDir, "last-message.md"),
     promptPath: path.join(jobDir, "prompt.md"),
+    runPath: run.runPath,
     statusPath: path.join(jobDir, "status.json"),
     stderrPath: path.join(jobDir, "stderr.log"),
     stdoutPath: path.join(jobDir, "stdout.jsonl"),
@@ -250,6 +307,7 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
   await fsp.mkdir(jobDir, { recursive: true });
   await fsp.writeFile(paths.promptPath, prompt, "utf8");
   const runnerConfig = buildRunnerConfig(options);
+  const runMetadata = normalizeRunMetadata(options);
 
   const status = {
     id,
@@ -263,6 +321,7 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
     createdAt: now.toISOString(),
     dryRun: Boolean(options.dryRun),
     jobDir,
+    ...runMetadata,
     model: options.model || "",
     runner: runnerConfig.type,
     runnerBin: runnerConfig.bin,
@@ -272,12 +331,16 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
     disallowedTools: runnerConfig.disallowedTools || "",
     outputFormat: runnerConfig.outputFormat || "",
     pid: null,
+    runEventsPath: paths.eventsPath,
+    runId: id,
+    runPath: paths.runPath,
     status: options.dryRun ? "prepared" : "starting",
     updatedAt: now.toISOString(),
     worktree,
   };
 
   await writeStatus(paths.statusPath, status);
+  await createBackgroundRun(status, paths, { now });
   if (options.dryRun) {
     return status;
   }
@@ -354,14 +417,32 @@ async function runWorker(options) {
   const job = await loadJob(options);
   const paths = jobPaths(job.jobDir);
   const runnerConfig = buildRunnerConfig(options, job);
+  await ensureBackgroundRun(job, paths);
+  const startedAt = new Date();
   await updateStatus(paths.statusPath, {
-    startedAt: new Date().toISOString(),
+    startedAt: startedAt.toISOString(),
     runner: runnerConfig.type,
     runnerBin: runnerConfig.bin,
     runnerHome: runnerConfig.home,
     status: "running",
     workerPid: process.pid,
   });
+  await transitionRun(
+    job.jobDir,
+    {
+      phase: "running",
+      started_at: startedAt.toISOString(),
+      status: "running",
+      public_summary: "Background worker started.",
+      next_action: "Run the configured agent harness.",
+    },
+    {
+      type: "started",
+      summary: `Background worker started with ${runnerConfig.type}.`,
+      payload: { harness: runnerConfig.type, worker_pid: process.pid },
+    },
+    { now: startedAt }
+  );
 
   const stdout = fs.openSync(paths.stdoutPath, "a");
   const stderr = fs.openSync(paths.stderrPath, "a");
@@ -406,17 +487,92 @@ async function runWorker(options) {
     await invocation.afterExit(exit);
   }
 
+  const completedAt = new Date();
+  const terminalStatus = exit.code === 0 ? "completed" : "failed";
   await updateStatus(paths.statusPath, {
-    completedAt: new Date().toISOString(),
+    completedAt: completedAt.toISOString(),
     error: exit.error || "",
     exitCode: exit.code,
     signal: exit.signal || "",
-    status: exit.code === 0 ? "completed" : "failed",
+    status: terminalStatus,
   });
+  const finalSummary = await readFinalSummary(paths, terminalStatus, exit);
+  await transitionRun(
+    job.jobDir,
+    {
+      final_summary: finalSummary,
+      next_action: "",
+      phase: terminalStatus,
+      public_summary: finalSummary,
+      status: terminalStatus,
+    },
+    {
+      type: terminalStatus,
+      summary: finalSummary,
+      payload: { exit_code: exit.code, signal: exit.signal || "", error: exit.error || "" },
+    },
+    { now: completedAt }
+  );
 
   if (job.callbackCommand) {
     await runCompletionCallback(job, paths, exit);
   }
+}
+
+function normalizeRunMetadata(options = {}) {
+  return {
+    agentProfile: String(options.agentProfile || DEFAULT_AGENT_PROFILE).trim(),
+    trigger: normalizeChoice("trigger", options.trigger || DEFAULT_TRIGGER, TRIGGERS),
+    visibility: normalizeChoice("visibility", options.visibility || DEFAULT_VISIBILITY, VISIBILITIES),
+    delivery: normalizeChoice("delivery", options.delivery || DEFAULT_DELIVERY, DELIVERIES),
+    riskTier: options.riskTier === undefined ? DEFAULT_RISK_TIER : parseRiskTier(options.riskTier),
+  };
+}
+
+async function createBackgroundRun(job, paths, { now = new Date() } = {}) {
+  const metadata = normalizeRunMetadata(job);
+  return createRun(job.jobDir, {
+    run_id: job.runId || job.id,
+    agent_profile: metadata.agentProfile,
+    goal: job.name,
+    trigger: metadata.trigger,
+    visibility: metadata.visibility,
+    delivery: metadata.delivery,
+    risk_tier: metadata.riskTier,
+    status: "queued",
+    phase: job.dryRun ? "prepared" : "queued",
+    created_at: job.createdAt || now.toISOString(),
+    harness: job.runner || "codex",
+    model: job.model || "",
+    background_job_id: job.id,
+    background_job_status_path: paths.statusPath,
+  }, { now });
+}
+
+async function ensureBackgroundRun(job, paths) {
+  try {
+    return await readRun(job.jobDir);
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+    return createBackgroundRun(job, paths, { now: new Date(job.createdAt || Date.now()) });
+  }
+}
+
+async function readFinalSummary(paths, terminalStatus, exit) {
+  if (terminalStatus === "completed" && fs.existsSync(paths.lastMessagePath)) {
+    const message = (await fsp.readFile(paths.lastMessagePath, "utf8")).trim();
+    if (message) {
+      return message;
+    }
+  }
+  if (exit.error) {
+    return `Background worker failed: ${exit.error}`;
+  }
+  return terminalStatus === "completed"
+    ? "Background worker completed successfully."
+    : `Background worker failed with exit code ${exit.code}${exit.signal ? ` (${exit.signal})` : ""}.`;
 }
 
 function buildRunnerInvocation(runnerConfig, job, paths) {
@@ -543,9 +699,11 @@ function parseJson(value) {
 }
 
 async function runCompletionCallback(job, paths, exit) {
+  const callbackStartedAt = new Date();
   await updateStatus(paths.statusPath, {
-    callbackStartedAt: new Date().toISOString(),
+    callbackStartedAt: callbackStartedAt.toISOString(),
   });
+  await updateRun(job.jobDir, { last_callback_at: callbackStartedAt.toISOString() }, { now: callbackStartedAt });
 
   const callback = spawn(job.callbackCommand, [], {
     cwd: job.cwd,
@@ -556,6 +714,9 @@ async function runCompletionCallback(job, paths, exit) {
       SABLE_BACKGROUND_JOB_LAST_MESSAGE: paths.lastMessagePath,
       SABLE_BACKGROUND_JOB_STATUS: exit.code === 0 ? "completed" : "failed",
       SABLE_BACKGROUND_JOB_STATUS_PATH: paths.statusPath,
+      SABLE_RUN_EVENTS_PATH: paths.eventsPath,
+      SABLE_RUN_ID: job.runId || job.id,
+      SABLE_RUN_PATH: paths.runPath,
     },
     shell: true,
     stdio: "ignore",
@@ -693,6 +854,7 @@ function usage() {
     "  node tools/background-job/batch-notify.js init --batch-file FILE --job JOB_ID [--job JOB_ID...]",
     "",
     "Starts detached bounded background agent jobs with durable logs/status. Codex is the default runner; Claude Code can be selected with --runner claude.",
+    "Run metadata: --agent-profile PROFILE --trigger manual|scheduled|callback|autonomous --visibility silent|final_only|milestones|interactive --delivery none|orchestrator_only|signal --risk-tier 0..5.",
     "Pass --callback-command COMMAND to start so the worker runs COMMAND after completion with SABLE_BACKGROUND_JOB_* env vars.",
     "For sibling batches, put the same callback on every job: node tools/background-job/batch-notify.js callback --batch-file FILE.",
   ].join("\n");

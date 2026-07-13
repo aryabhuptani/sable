@@ -9,6 +9,11 @@ const BUILT_IN_COMMANDS = [
   ["/plugins", "Show discovered official/local plugins and runtime plugin commands."],
   ["/schedules", "List recurring Sable workflows."],
   ["/unschedule <id>", "Remove a recurring workflow by id."],
+  ["/runs", "List recent delegated runs."],
+  ["/run <id>", "Show a concise delegated run status."],
+  ["/run <id> pause|resume|cancel", "Control a delegated run."],
+  ["/run <id> steer <instruction>", "Steer a delegated run at its next checkpoint."],
+  ["/blockers", "Show delegated runs waiting for input or a decision."],
   ["/telegram [limit]", "Review Telegram inbound queue when Telegram is configured."],
   ["/whatsapp [limit]", "Review approved WhatsApp chats when WhatsApp is configured."],
   ["/setavatar", "Use the first attached image as Sable's Signal profile picture."],
@@ -52,6 +57,18 @@ function parseCommand(
 
   if (trimmed.startsWith("/unschedule ")) {
     return { type: "unschedule", scheduleId: trimmed.slice("/unschedule ".length).trim() };
+  }
+
+  if (trimmed === "/runs") {
+    return { type: "list-runs" };
+  }
+
+  if (trimmed === "/blockers") {
+    return { type: "list-run-blockers" };
+  }
+
+  if (trimmed === "/run" || trimmed.startsWith("/run ")) {
+    return parseRunCommand(trimmed);
   }
 
   if (trimmed === "/cancel") {
@@ -130,6 +147,27 @@ function parseCommand(
   };
 }
 
+function parseRunCommand(text) {
+  const match = text.match(/^\/run(?:\s+(\S+))?(?:\s+(\S+))?(?:\s+([\s\S]+))?$/);
+  const runId = match?.[1] || "";
+  const action = match?.[2] || "";
+  const instruction = match?.[3]?.trim() || "";
+
+  if (!runId) {
+    return { type: "run-usage" };
+  }
+  if (!action) {
+    return { type: "show-run", runId };
+  }
+  if (["pause", "resume", "cancel"].includes(action) && !instruction) {
+    return { type: "control-run", runId, action };
+  }
+  if (action === "steer" && instruction) {
+    return { type: "control-run", runId, action, instruction };
+  }
+  return { type: "run-usage", runId };
+}
+
 function formatHelp(pluginRuntime = null) {
   const lines = ["Sable commands:", ""];
   for (const [command, description] of BUILT_IN_COMMANDS) {
@@ -156,4 +194,5 @@ module.exports = {
   BUILT_IN_COMMANDS,
   formatHelp,
   parseCommand,
+  parseRunCommand,
 };

@@ -51,6 +51,9 @@ function createRuntime(overrides = {}) {
       formatStatus: () => "plugin status",
     },
     runCodex: async () => ({ sessionId: "session-1", message: "final" }),
+    runCommands: {
+      handle: async (command, context) => `run ${command.type} by ${context.actor}`,
+    },
     saveSessionId: (key, value) => {
       sessions[key] = value;
     },
@@ -131,6 +134,24 @@ test("job runtime handles WhatsApp triage without Codex", async () => {
   await runtime.processJob({ sender: "+1555", command: { type: "whatsapp-triage", limit: 3 } });
 
   assert.deepEqual(replies.map((reply) => reply.message), ["whatsapp report"]);
+});
+
+test("job runtime dispatches run commands without running Codex", async () => {
+  let codexCalled = false;
+  const { replies, runtime } = createRuntime({
+    runCodex: async () => {
+      codexCalled = true;
+      return { message: "unexpected" };
+    },
+  });
+
+  await runtime.processJob({
+    sender: "+1555",
+    command: { type: "show-run", runId: "coding-1" },
+  });
+
+  assert.equal(codexCalled, false);
+  assert.deepEqual(replies, [{ sender: "+1555", message: "run show-run by signal" }]);
 });
 
 test("job runtime runs prompt jobs, stores session ids, and cleans materialized paths", async () => {

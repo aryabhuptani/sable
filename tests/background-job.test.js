@@ -39,6 +39,38 @@ test("background job parser supports start options without assuming a repo", () 
   assert.equal(options.dryRun, true);
 });
 
+test("background job parser supports run-kernel metadata", () => {
+  const options = parseArgs([
+    "start",
+    "--name",
+    "Nightly research",
+    "--cwd",
+    "/tmp",
+    "--prompt",
+    "collect evidence",
+    "--agent-profile",
+    "research",
+    "--trigger",
+    "scheduled",
+    "--visibility",
+    "silent",
+    "--delivery",
+    "none",
+    "--risk-tier",
+    "1",
+  ]);
+
+  assert.equal(options.agentProfile, "research");
+  assert.equal(options.trigger, "scheduled");
+  assert.equal(options.visibility, "silent");
+  assert.equal(options.delivery, "none");
+  assert.equal(options.riskTier, 1);
+  assert.throws(
+    () => parseArgs(["start", "--risk-tier", "6"]),
+    /Expected an integer from 0 to 5/
+  );
+});
+
 test("background job parser supports Claude runner options", () => {
   const options = parseArgs([
     "start",
@@ -175,6 +207,11 @@ test("background job dry-run writes durable prompt and status files", async () =
         name: "Job One",
         prompt: "Implement the bounded thing.",
         promptFile: "",
+        agentProfile: "coding",
+        trigger: "manual",
+        visibility: "milestones",
+        delivery: "orchestrator_only",
+        riskTier: 2,
       },
       { now: new Date("2026-05-07T12:00:00.000Z") }
     );
@@ -182,11 +219,42 @@ test("background job dry-run writes durable prompt and status files", async () =
     assert.equal(status.status, "prepared");
     assert.equal(status.id, "job-1");
     assert.equal(status.cwd, cwd);
+    assert.equal(status.runId, "job-1");
+    assert.equal(status.agentProfile, "coding");
+    assert.equal(status.visibility, "milestones");
     assert.equal(
       await fs.readFile(path.join(jobsRoot, "job-1", "prompt.md"), "utf8"),
       "Implement the bounded thing."
     );
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(jobsRoot, "job-1", "status.json"), "utf8")), status);
+    assert.deepEqual(
+      JSON.parse(await fs.readFile(path.join(jobsRoot, "job-1", "run.json"), "utf8")),
+      {
+        parent_run_id: null,
+        phase: "prepared",
+        public_summary: "",
+        next_action: "",
+        artifacts: [],
+        last_callback_at: null,
+        final_summary: null,
+        controls: [],
+        run_id: "job-1",
+        agent_profile: "coding",
+        goal: "Job One",
+        trigger: "manual",
+        visibility: "milestones",
+        delivery: "orchestrator_only",
+        risk_tier: 2,
+        status: "queued",
+        created_at: "2026-05-07T12:00:00.000Z",
+        harness: "codex",
+        model: "",
+        background_job_id: "job-1",
+        background_job_status_path: path.join(jobsRoot, "job-1", "status.json"),
+        updated_at: "2026-05-07T12:00:00.000Z",
+      }
+    );
+    assert.equal(await fs.readFile(path.join(jobsRoot, "job-1", "events.jsonl"), "utf8"), "");
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
@@ -366,6 +434,8 @@ test("background job run-worker writes completion state and invokes callback", a
       "fs.writeFileSync(process.argv[2], JSON.stringify({",
       "  id: process.env.SABLE_BACKGROUND_JOB_ID,",
       "  status: process.env.SABLE_BACKGROUND_JOB_STATUS,",
+      "  runId: process.env.SABLE_RUN_ID,",
+      "  runPath: process.env.SABLE_RUN_PATH,",
       "  lastMessage: fs.readFileSync(process.env.SABLE_BACKGROUND_JOB_LAST_MESSAGE, 'utf8').trim(),",
       "}));",
       "",
@@ -420,8 +490,22 @@ test("background job run-worker writes completion state and invokes callback", a
     assert.deepEqual(JSON.parse(await fs.readFile(callbackOutput, "utf8")), {
       id: "job-1",
       status: "completed",
+      runId: "job-1",
+      runPath: path.join(jobDir, "run.json"),
       lastMessage: "worker saw: Implement the bounded thing.",
     });
+    const run = JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8"));
+    const events = (await fs.readFile(path.join(jobDir, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.equal(run.run_id, "job-1");
+    assert.equal(run.status, "completed");
+    assert.equal(run.phase, "completed");
+    assert.equal(run.final_summary, "worker saw: Implement the bounded thing.");
+    assert.ok(run.last_callback_at);
+    assert.deepEqual(events.map((event) => event.type), ["started", "completed"]);
+    assert.ok(events.every((event) => event.run_id === "job-1"));
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
@@ -586,6 +670,14 @@ test("background job run-worker records missing runner binary as failed", async 
     assert.equal(status.status, "failed");
     assert.equal(status.exitCode, 1);
     assert.match(status.error, /ENOENT/);
+    const run = JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8"));
+    const events = (await fs.readFile(path.join(jobDir, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.equal(run.status, "failed");
+    assert.match(run.final_summary, /ENOENT/);
+    assert.deepEqual(events.map((event) => event.type), ["started", "failed"]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

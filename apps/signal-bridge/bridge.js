@@ -18,6 +18,7 @@ const { createAutoresearchMonitor } = require("./autoresearch-monitor");
 const { createBridgeLifecycle } = require("./bridge-lifecycle");
 const { createBridgeOpsManager } = require("./bridge-ops");
 const { createBridgeJobRuntime } = require("./bridge-job-runtime");
+const { createBridgeRunCommands } = require("./bridge-run-commands");
 const {
   createBridgeConfig,
   validateBridgeConfig,
@@ -48,6 +49,7 @@ const {
   isCancellationError,
   registerCancellationHandler,
 } = require("./job-control");
+const { createBackgroundJobRunStore } = require("../../tools/runtime/run-kernel");
 const { createLiveUpdateChannel } = require("./live-update-channel");
 const { createScheduledAttachmentDiscovery } = require("./scheduled-attachment-discovery");
 const { createSignalAttachmentPlugin } = require("./signal-attachment-plugin");
@@ -503,6 +505,10 @@ const pluginAuth = createPluginAuthManager({
   sendReply,
   timestamp,
 });
+const runStore = createBackgroundJobRunStore({
+  jobsRoot: path.join(path.dirname(INSTANCE_CONFIG.projectTasksPath), "background-jobs"),
+});
+const runCommands = createBridgeRunCommands({ runStore });
 jobRuntime = createBridgeJobRuntime({
   appServerMessages,
   autoresearchMonitor,
@@ -531,6 +537,7 @@ jobRuntime = createBridgeJobRuntime({
   normalizeText,
   pluginAuth,
   pluginRuntime,
+  runCommands,
   runCodex,
   saveSessionId: (key, sessionId) => {
     state[key] = sessionId;
