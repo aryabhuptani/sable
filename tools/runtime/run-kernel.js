@@ -4,6 +4,17 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
+const RISK_TIERS = Object.freeze({
+  0: "Observe only; no writes or external actions.",
+  1: "Read and analyze local or explicitly provided data.",
+  2: "Make reversible changes inside assigned workspace.",
+  3: "Perform bounded, reversible external actions.",
+  4: "Perform sensitive/high-impact actions with explicit authorization.",
+  5: "Exceptional actions under direct human supervision.",
+});
+const MIN_RISK_TIER = 0;
+const MAX_RISK_TIER = 5;
+
 function runPaths(runDir) {
   return {
     controlPath: path.join(runDir, "control.json"),
@@ -69,6 +80,126 @@ async function transitionRun(runDir, patch, event, { now = new Date() } = {}) {
   const updated = await updateRun(runDir, patch, { now });
   const appended = await appendRunEvent(runDir, event, { now });
   return { event: appended, run: updated };
+}
+
+function validateRiskTier(value, { name = "risk tier" } = {}) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  const exact = typeof value === "number" ? Number.isInteger(value) : String(parsed) === String(value);
+  if (!exact || parsed < MIN_RISK_TIER || parsed > MAX_RISK_TIER) {
+    throw new Error(`Invalid ${name}: ${value}. Expected an integer from ${MIN_RISK_TIER} to ${MAX_RISK_TIER}.`);
+  }
+  return parsed;
+}
+
+function describeRiskTier(value) {
+  const tier = validateRiskTier(value);
+  return RISK_TIERS[tier];
+}
+
+function checkRiskTier(runTier, requiredTier) {
+  const current = validateRiskTier(runTier, { name: "run risk tier" });
+  const required = validateRiskTier(requiredTier, { name: "required risk tier" });
+  return {
+    allowed: current >= required,
+    current,
+    currentDescription: RISK_TIERS[current],
+    required,
+    requiredDescription: RISK_TIERS[required],
+  };
+}
+
+async function blockRunForRisk(
+  runDir,
+  { action = "", actor = "runtime", requiredTier, summary = "" } = {},
+  { now = new Date() } = {}
+) {
+  const run = await readRun(runDir);
+  const gate = checkRiskTier(run.risk_tier ?? 0, requiredTier);
+  if (gate.allowed) {
+    return { blocked: false, gate, run };
+  }
+  const message =
+    summary ||
+    `Blocked ${action || "action"}: requires risk tier ${gate.required}, run is tier ${gate.current}.`;
+  const result = await transitionRun(
+    runDir,
+    {
+      next_action: message,
+      phase: "blocked",
+      public_summary: message,
+      status: "blocked",
+    },
+    {
+      type: "needs_decision",
+      actor,
+      summary: message,
+      payload: {
+        action,
+        required_risk_tier: gate.required,
+        required_risk_tier_description: gate.requiredDescription,
+        run_risk_tier: gate.current,
+        run_risk_tier_description: gate.currentDescription,
+      },
+    },
+    { now }
+  );
+  return { blocked: true, gate, run: result.run };
+}
+
+async function readRunCheckpoint(runDir) {
+  const paths = runPaths(runDir);
+  let run = null;
+  try {
+    run = await readRun(runDir);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  let controlFile = {};
+  try {
+    controlFile = JSON.parse(await fs.readFile(paths.controlPath, "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  const controls = dedupeControls([
+    ...(Array.isArray(run?.controls) ? run.controls : []),
+    ...(Array.isArray(controlFile.controls) ? controlFile.controls : []),
+  ]);
+  const status = String(run?.status || "");
+  const hasAction = (action) => controls.some((control) => String(control?.action || "") === action);
+  const lastPauseResume = [...controls]
+    .filter((control) => ["pause", "resume"].includes(String(control?.action || "")))
+    .at(-1);
+  const instructions = controls
+    .filter((control) => String(control?.action || "") === "steer" && String(control?.instruction || "").trim())
+    .map((control) => ({
+      control_id: control.control_id || "",
+      created_at: control.created_at || "",
+      instruction: String(control.instruction).trim(),
+    }));
+
+  return {
+    blocked: status === "blocked",
+    cancelled: hasAction("cancel") || status === "cancelling" || status === "cancelled",
+    controls,
+    instructions,
+    paused: status === "pausing" || String(lastPauseResume?.action || "") === "pause",
+    run_id: run?.run_id || "",
+    status,
+  };
+}
+
+function dedupeControls(controls) {
+  const seen = new Set();
+  const deduped = [];
+  for (const control of controls) {
+    const key = control?.control_id || JSON.stringify(control);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(control);
+  }
+  return deduped;
 }
 
 function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) {
@@ -228,10 +359,16 @@ async function writeJsonAtomic(filePath, value) {
 
 module.exports = {
   appendRunEvent,
+  blockRunForRisk,
+  checkRiskTier,
   createBackgroundJobRunStore,
   createRun,
+  describeRiskTier,
   readRun,
+  readRunCheckpoint,
+  RISK_TIERS,
   runPaths,
   transitionRun,
   updateRun,
+  validateRiskTier,
 };

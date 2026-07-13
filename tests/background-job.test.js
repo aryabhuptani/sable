@@ -71,6 +71,78 @@ test("background job parser supports run-kernel metadata", () => {
   );
 });
 
+test("background job parser applies agent profile defaults", () => {
+  const expected = {
+    orchestrator: ["callback", "final_only", "signal", 1],
+    ops: ["manual", "interactive", "signal", 3],
+    coding: ["manual", "milestones", "orchestrator_only", 2],
+    research: ["manual", "final_only", "orchestrator_only", 1],
+    work: ["manual", "final_only", "orchestrator_only", 1],
+  };
+
+  for (const [agentProfile, [trigger, visibility, delivery, riskTier]] of Object.entries(expected)) {
+    const options = parseArgs(["start", "--agent-profile", agentProfile]);
+    assert.deepEqual(
+      {
+        agentProfile: options.agentProfile,
+        trigger: options.trigger,
+        visibility: options.visibility,
+        delivery: options.delivery,
+        riskTier: options.riskTier,
+      },
+      { agentProfile, trigger, visibility, delivery, riskTier }
+    );
+  }
+
+  assert.throws(
+    () => parseArgs(["start", "--agent-profile", "finance"]),
+    /Unsupported --agent-profile: finance.*orchestrator, ops, coding, research, work/
+  );
+});
+
+test("explicit metadata flags override agent profile defaults", () => {
+  const options = parseArgs([
+    "start",
+    "--agent-profile",
+    "ops",
+    "--trigger",
+    "scheduled",
+    "--visibility",
+    "silent",
+    "--delivery",
+    "none",
+    "--risk-tier",
+    "1",
+  ]);
+
+  assert.deepEqual(
+    {
+      agentProfile: options.agentProfile,
+      trigger: options.trigger,
+      visibility: options.visibility,
+      delivery: options.delivery,
+      riskTier: options.riskTier,
+    },
+    {
+      agentProfile: "ops",
+      trigger: "scheduled",
+      visibility: "silent",
+      delivery: "none",
+      riskTier: 1,
+    }
+  );
+});
+
+test("background job profiles command lists configured domains", () => {
+  const output = execFileSync(process.execPath, [
+    path.join(__dirname, "..", "tools", "background-job", "background-job.js"),
+    "profiles",
+  ], { encoding: "utf8" });
+  assert.match(output, /orchestrator\s+callback\s+final_only\s+signal\s+1/);
+  assert.match(output, /coding\s+manual\s+milestones\s+orchestrator_only\s+2/);
+  assert.match(output, /work\s+manual\s+final_only\s+orchestrator_only\s+1/);
+});
+
 test("background job parser supports Claude runner options", () => {
   const options = parseArgs([
     "start",
@@ -245,6 +317,7 @@ test("background job dry-run writes durable prompt and status files", async () =
         visibility: "milestones",
         delivery: "orchestrator_only",
         risk_tier: 2,
+        risk_tier_description: "Make reversible changes inside assigned workspace.",
         status: "queued",
         created_at: "2026-05-07T12:00:00.000Z",
         harness: "codex",
@@ -504,7 +577,7 @@ test("background job run-worker writes completion state and invokes callback", a
     assert.equal(run.phase, "completed");
     assert.equal(run.final_summary, "worker saw: Implement the bounded thing.");
     assert.ok(run.last_callback_at);
-    assert.deepEqual(events.map((event) => event.type), ["started", "completed"]);
+    assert.deepEqual(events.map((event) => event.type), ["started", "completed", "callback"]);
     assert.ok(events.every((event) => event.run_id === "job-1"));
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -677,7 +750,7 @@ test("background job run-worker records missing runner binary as failed", async 
       .map(JSON.parse);
     assert.equal(run.status, "failed");
     assert.match(run.final_summary, /ENOENT/);
-    assert.deepEqual(events.map((event) => event.type), ["started", "failed"]);
+    assert.deepEqual(events.map((event) => event.type), ["started", "failed", "callback"]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
@@ -712,6 +785,42 @@ test("background job stop tolerates already-exited worker pid", async () => {
     const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
     assert.equal(status.status, "stopping");
     assert.match(status.stopError, /kill ESRCH/);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("background job stop does not rewrite terminal jobs", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const jobsRoot = path.join(tempDir, "jobs");
+  const jobDir = path.join(jobsRoot, "job-done");
+  const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
+  await fs.mkdir(jobDir, { recursive: true });
+  await fs.writeFile(
+    path.join(jobDir, "status.json"),
+    `${JSON.stringify(
+      {
+        completedAt: "2026-05-08T00:01:00.000Z",
+        id: "job-done",
+        name: "Done Job",
+        cwd: tempDir,
+        jobDir,
+        pid: 99999999,
+        status: "completed",
+        updatedAt: "2026-05-08T00:01:00.000Z",
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  try {
+    execFileSync(process.execPath, [harness, "stop", "--jobs-root", jobsRoot, "--id", "job-done"]);
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    assert.equal(status.status, "completed");
+    assert.equal(status.updatedAt, "2026-05-08T00:01:00.000Z");
+    assert.equal(status.stopError, undefined);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

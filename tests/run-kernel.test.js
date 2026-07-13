@@ -5,9 +5,12 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  blockRunForRisk,
+  checkRiskTier,
   createBackgroundJobRunStore,
   createRun,
   readRun,
+  readRunCheckpoint,
   runPaths,
   transitionRun,
 } = require("../tools/runtime/run-kernel");
@@ -60,6 +63,57 @@ test("run kernel creates, transitions, lists, and controls background runs", asy
       .split("\n")
       .map(JSON.parse);
     assert.deepEqual(events.map((event) => event.type), ["started", "control"]);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("run kernel exposes risk gates and checkpoint state", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-kernel-"));
+  try {
+    const runDir = path.join(tempDir, "job-2");
+    await createRun(
+      runDir,
+      {
+        run_id: "job-2",
+        agent_profile: "ops",
+        goal: "Bounded operation",
+        status: "running",
+        risk_tier: 1,
+        background_job_id: "job-2",
+      },
+      { now: new Date("2026-07-13T11:00:00.000Z") }
+    );
+
+    assert.deepEqual(checkRiskTier(2, 1), {
+      allowed: true,
+      current: 2,
+      currentDescription: "Make reversible changes inside assigned workspace.",
+      required: 1,
+      requiredDescription: "Read and analyze local or explicitly provided data.",
+    });
+
+    const blocked = await blockRunForRisk(
+      runDir,
+      { action: "send email", requiredTier: 3 },
+      { now: new Date("2026-07-13T11:01:00.000Z") }
+    );
+    assert.equal(blocked.blocked, true);
+    assert.equal(blocked.run.status, "blocked");
+    assert.match(blocked.run.public_summary, /requires risk tier 3/);
+
+    const store = createBackgroundJobRunStore({
+      jobsRoot: tempDir,
+      now: () => new Date("2026-07-13T11:02:00.000Z"),
+    });
+    await store.controlRun("job-2", { action: "steer", instruction: "Do the smaller safe check." });
+    await store.controlRun("job-2", { action: "cancel" });
+
+    const checkpoint = await readRunCheckpoint(runDir);
+    assert.equal(checkpoint.blocked, false);
+    assert.equal(checkpoint.cancelled, true);
+    assert.equal(checkpoint.run_id, "job-2");
+    assert.deepEqual(checkpoint.instructions.map((item) => item.instruction), ["Do the smaller safe check."]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
