@@ -9,7 +9,16 @@ const { execFile, spawn } = require("node:child_process");
 
 const { createInstanceConfig } = require("../instance/instance-config");
 const { formatAgentProfiles, getAgentProfile } = require("../runtime/agent-profiles");
+const {
+  agentTaskPacketEnv,
+  buildAgentTaskPacket,
+  prependAgentTaskPreamble,
+} = require("../runtime/agent-task-packet");
 const { handleRunCallback } = require("../runtime/run-callback");
+const {
+  formatSummary: formatWatchdogSummary,
+  scanRuns: scanWatchdogRuns,
+} = require("../runtime/run-watchdog");
 const {
   createRun,
   describeRiskTier,
@@ -41,6 +50,7 @@ function parseArgs(argv) {
     promptFile: "",
     jobsRoot: "",
     dryRun: false,
+    fix: false,
     runner: process.env.SABLE_BACKGROUND_RUNNER || "codex",
     runnerBin: "",
     runnerHome: "",
@@ -60,6 +70,8 @@ function parseArgs(argv) {
     disallowedTools: process.env.SABLE_BACKGROUND_CLAUDE_DISALLOWED_TOOLS || "",
     outputFormat: process.env.SABLE_BACKGROUND_CLAUDE_OUTPUT_FORMAT || DEFAULT_CLAUDE_OUTPUT_FORMAT,
     recentLines: DEFAULT_RECENT_LOG_LINES,
+    olderThanMinutes: undefined,
+    watchdogFormat: "text",
     worktreeBase: "HEAD",
     worktreeBranch: "",
     worktreeDir: "",
@@ -128,6 +140,14 @@ function parseArgs(argv) {
       options.worktreeBase = argv[++index] || "HEAD";
     } else if (arg === "--dry-run") {
       options.dryRun = true;
+    } else if (arg === "--fix") {
+      options.fix = true;
+    } else if (arg === "--older-than-minutes") {
+      options.olderThanMinutes = parsePositiveNumber(argv[++index], "--older-than-minutes");
+    } else if (arg === "--json") {
+      options.watchdogFormat = "json";
+    } else if (arg === "--text") {
+      options.watchdogFormat = "text";
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else {
@@ -201,6 +221,14 @@ function buildRunnerConfig(options = {}, job = {}) {
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parsePositiveNumber(value, name) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number.`);
+  }
+  return parsed;
 }
 
 function expandHome(value) {
@@ -411,7 +439,7 @@ async function runWorker(options) {
   const job = await loadJob(options);
   const paths = jobPaths(job.jobDir);
   const runnerConfig = buildRunnerConfig(options, job);
-  await ensureBackgroundRun(job, paths);
+  const run = await ensureBackgroundRun(job, paths);
   const startedAt = new Date();
   await updateStatus(paths.statusPath, {
     startedAt: startedAt.toISOString(),
@@ -442,13 +470,17 @@ async function runWorker(options) {
   const stderr = fs.openSync(paths.stderrPath, "a");
   const invocation = buildRunnerInvocation(runnerConfig, job, paths);
   const prompt = await fsp.readFile(paths.promptPath, "utf8");
+  const taskPacket = buildAgentTaskPacket({ job, run, status: job });
+  const childPrompt = prependAgentTaskPreamble(prompt, taskPacket);
 
   const child = spawn(invocation.bin, invocation.args, {
     cwd: job.cwd,
     env: {
       ...process.env,
       ...invocation.env,
+      ...agentTaskPacketEnv(taskPacket),
       SABLE_RUN_CHECKPOINT: `${process.execPath} ${shellQuote(path.join(__dirname, "..", "runtime", "run-checkpoint.js"))} --run-dir ${shellQuote(job.jobDir)}`,
+      SABLE_RUN_UPDATE: `${process.execPath} ${shellQuote(path.join(__dirname, "..", "runtime", "run-update.js"))} --run-dir ${shellQuote(job.jobDir)}`,
       SABLE_RUN_CONTROL_PATH: paths.controlPath,
       SABLE_RUN_EVENTS_PATH: paths.eventsPath,
       SABLE_RUN_ID: job.runId || job.id,
@@ -474,7 +506,9 @@ async function runWorker(options) {
   });
 
   if (child.stdin) {
-    child.stdin.end(invocation.stdinPrefix ? `${invocation.stdinPrefix}\n\n${prompt}` : prompt);
+    child.stdin.end(
+      invocation.stdinPrefix ? `${invocation.stdinPrefix}\n\n${childPrompt}` : childPrompt
+    );
   }
 
   const exit = await waitForChildWithControls(child, exitPromise, job.jobDir);
@@ -910,6 +944,7 @@ function usage() {
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
     "  npm run background-job -- stop --id JOB_ID",
+    "  npm run background-job -- watchdog [--jobs-root DIR] [--older-than-minutes N] [--fix] [--json|--text]",
     "  npm run background-job -- profiles",
     "  node tools/background-job/batch-notify.js init --batch-file FILE --job JOB_ID [--job JOB_ID...]",
     "",
@@ -962,6 +997,20 @@ async function main(argv = process.argv.slice(2)) {
   if (options.command === "stop") {
     console.log(JSON.stringify(await stopJob(options), null, 2));
     return 0;
+  }
+  if (options.command === "watchdog") {
+    const watchdogOptions = {
+      fix: options.fix,
+      jobsRoot: options.jobsRoot || defaultJobsRoot(),
+    };
+    if (options.olderThanMinutes !== undefined) {
+      watchdogOptions.olderThanMinutes = options.olderThanMinutes;
+    }
+    const summary = await scanWatchdogRuns(watchdogOptions);
+    console.log(
+      options.watchdogFormat === "json" ? JSON.stringify(summary, null, 2) : formatWatchdogSummary(summary)
+    );
+    return summary.errors.length > 0 ? 1 : 0;
   }
   if (options.command === "profiles") {
     console.log(formatAgentProfiles());

@@ -476,6 +476,7 @@ test("background job run-worker writes completion state and invokes callback", a
   const jobsRoot = path.join(tempDir, "jobs");
   const jobDir = path.join(jobsRoot, "job-1");
   const callbackOutput = path.join(tempDir, "callback.json");
+  const runnerEnvOutput = path.join(tempDir, "runner-env.json");
   const fakeCodex = path.join(tempDir, "fake-codex.js");
   const callbackScript = path.join(tempDir, "callback.js");
   const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
@@ -493,6 +494,7 @@ test("background job run-worker writes completion state and invokes callback", a
       "let input = '';",
       "process.stdin.on('data', (chunk) => { input += chunk; });",
       "process.stdin.on('end', () => {",
+      "  fs.writeFileSync(process.env.SABLE_TEST_RUNNER_ENV_OUTPUT, JSON.stringify({ checkpoint: process.env.SABLE_RUN_CHECKPOINT, update: process.env.SABLE_RUN_UPDATE }));",
       "  fs.writeFileSync(outputPath, `worker saw: ${input.trim()}\\n`);",
       "  console.log(JSON.stringify({ type: 'complete' }));",
       "});",
@@ -552,21 +554,28 @@ test("background job run-worker writes completion state and invokes callback", a
       fakeCodex,
       "--codex-home",
       codexHome,
-    ]);
+    ], { env: { ...process.env, SABLE_TEST_RUNNER_ENV_OUTPUT: runnerEnvOutput } });
 
     const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
     assert.equal(status.status, "completed");
     assert.equal(status.exitCode, 0);
     assert.equal(status.callbackExitCode, 0);
-    assert.equal(await fs.readFile(path.join(jobDir, "last-message.md"), "utf8"), "worker saw: Implement the bounded thing.\n");
+    const lastMessage = await fs.readFile(path.join(jobDir, "last-message.md"), "utf8");
+    assert.match(lastMessage, /^worker saw: \[Sable domain task packet v0\]/);
+    assert.match(lastMessage, /Role: coding - Implements and verifies bounded software changes\./);
+    assert.match(lastMessage, /visibility=milestones; delivery=orchestrator_only; risk=2/);
+    assert.ok(lastMessage.endsWith("\n\nImplement the bounded thing.\n"));
     assert.match(await fs.readFile(path.join(jobDir, "stdout.jsonl"), "utf8"), /"type":"complete"/);
     assert.deepEqual(JSON.parse(await fs.readFile(callbackOutput, "utf8")), {
       id: "job-1",
       status: "completed",
       runId: "job-1",
       runPath: path.join(jobDir, "run.json"),
-      lastMessage: "worker saw: Implement the bounded thing.",
+      lastMessage: lastMessage.trim(),
     });
+    const runnerEnv = JSON.parse(await fs.readFile(runnerEnvOutput, "utf8"));
+    assert.match(runnerEnv.checkpoint, /run-checkpoint\.js.*--run-dir/);
+    assert.match(runnerEnv.update, /run-update\.js.*--run-dir/);
     const run = JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8"));
     const events = (await fs.readFile(path.join(jobDir, "events.jsonl"), "utf8"))
       .trim()
@@ -575,7 +584,7 @@ test("background job run-worker writes completion state and invokes callback", a
     assert.equal(run.run_id, "job-1");
     assert.equal(run.status, "completed");
     assert.equal(run.phase, "completed");
-    assert.equal(run.final_summary, "worker saw: Implement the bounded thing.");
+    assert.equal(run.final_summary, lastMessage.trim());
     assert.ok(run.last_callback_at);
     assert.deepEqual(events.map((event) => event.type), ["started", "completed", "callback"]);
     assert.ok(events.every((event) => event.run_id === "job-1"));
@@ -607,8 +616,12 @@ test("background job Claude run-worker parses JSON result into last message", as
       "process.stdin.on('end', () => {",
       "  fs.writeFileSync(process.env.FAKE_CLAUDE_CAPTURE, JSON.stringify({",
       "    args: process.argv.slice(2),",
+      "    agentProfile: process.env.SABLE_AGENT_PROFILE,",
       "    claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,",
+      "    delivery: process.env.SABLE_RUN_DELIVERY,",
       "    input: input.trim(),",
+      "    riskTier: process.env.SABLE_RUN_RISK_TIER,",
+      "    taskPacketVersion: process.env.SABLE_TASK_PACKET_VERSION,",
       "  }));",
       "  console.log(JSON.stringify({ result: `claude saw: ${input.trim()}` }));",
       "});",
@@ -673,12 +686,16 @@ test("background job Claude run-worker parses JSON result into last message", as
     assert.equal(status.runner, "claude");
     assert.equal(status.exitCode, 0);
     assert.equal(capture.claudeConfigDir, claudeHome);
+    assert.equal(capture.agentProfile, "coding");
+    assert.equal(capture.delivery, "orchestrator_only");
+    assert.equal(capture.riskTier, "2");
+    assert.equal(capture.taskPacketVersion, "v0");
     assert.ok(capture.args.includes("-p"));
-    assert.match(capture.input, /Build the pretty thing/);
-    assert.equal(
-      await fs.readFile(path.join(jobDir, "last-message.md"), "utf8"),
-      "claude saw: Build the pretty thing.\n"
-    );
+    assert.match(capture.input, /^\[Sable domain task packet v0\]/);
+    assert.ok(capture.input.endsWith("\n\nBuild the pretty thing."));
+    const lastMessage = await fs.readFile(path.join(jobDir, "last-message.md"), "utf8");
+    assert.match(lastMessage, /^claude saw: \[Sable domain task packet v0\]/);
+    assert.ok(lastMessage.endsWith("\n\nBuild the pretty thing.\n"));
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
