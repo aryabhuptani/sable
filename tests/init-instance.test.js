@@ -23,18 +23,22 @@ test("init instance creates private state and generated env without overwriting"
       repoRoot: tempRepo,
     });
     const instance = first.instance;
+    const architectureProjectRoot = path.join(
+      instance.orchestratorRoot,
+      "projects",
+      "domain-architecture"
+    );
 
     for (const targetPath of [
       instance.agentsPath,
       path.join(instance.homeDir, "SETUP.md"),
       instance.todoPath,
       instance.projectTasksPath,
-      path.join(instance.memoryRoot, "README.md"),
-      path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE.md"),
-      path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE_LOG.md"),
-      path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
-      path.join(instance.knowledgeRoot, "projects", "memory", "metrics"),
-      path.join(instance.tasksRoot, "projects", "memory", "TODO.md"),
+      path.join(architectureProjectRoot, "ARCHITECTURE.md"),
+      path.join(architectureProjectRoot, "ARCHITECTURE_LOG.md"),
+      path.join(architectureProjectRoot, "evals", "MEMORY_EVALS.md"),
+      path.join(architectureProjectRoot, "metrics"),
+      path.join(architectureProjectRoot, "TASKS.md"),
       instance.defaultSchedulerJobsPath,
       instance.schedulerJobsPath,
       getInstanceEnvPath(instance),
@@ -43,6 +47,8 @@ test("init instance creates private state and generated env without overwriting"
     ]) {
       assert.equal(await exists(targetPath), true, `${targetPath} should exist`);
     }
+    assert.equal(await exists(path.join(instance.domainsRoot, "knowledge")), false);
+    assert.equal(await exists(path.join(instance.domainsRoot, "tasks")), false);
 
     await fs.writeFile(instance.todoPath, "custom todo\n", "utf8");
     await fs.writeFile(path.join(instance.homeDir, "SETUP.md"), "custom setup\n", "utf8");
@@ -100,10 +106,12 @@ test("rendered instance env points runtime paths at the private instance", () =>
   assert.match(env, /SABLE_REPO_ROOT=\/opt\/sable/);
   assert.match(env, /SABLE_CODEX_CWD=\/srv\/sable-user/);
   assert.match(env, /SABLE_DOMAINS_ROOT=\/srv\/sable-user\/domains/);
+  assert.match(env, /SABLE_PERSONAL_ROOT=\/srv\/sable-user\/domains\/personal/);
   assert.match(env, /SABLE_DEFAULT_SCHEDULER_JOBS_PATH=\/srv\/sable-user\/domains\/orchestrator\/schedules\/default-scheduler-jobs\.json/);
   assert.match(env, /SABLE_SCHEDULER_STATE_PATH=\/srv\/sable-user\/domains\/orchestrator\/schedules\/scheduler-state\.json/);
   assert.match(env, /SABLE_PLUGIN_PATHS=\/srv\/sable-user\/plugins/);
   assert.match(env, /CODEX_HOME=\/srv\/sable-user\/\.codex-bridge/);
+  assert.doesNotMatch(env, /SABLE_OPS_ROOT/);
 });
 
 test("first-run setup checklist prompts for personality, avatar, help, and scheduler review", async () => {

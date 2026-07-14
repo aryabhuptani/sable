@@ -21,6 +21,7 @@ class InstanceConfig:
     coding_root: str
     research_domain_root: str
     work_root: str
+    personal_root: str
     ops_root: str
     archive_root: str
     memory_root: str
@@ -84,17 +85,19 @@ def create_instance_config(
         or Path(domains_root) / "research"
     )
     work_root = _resolve(_env_value(active_env, "SABLE_WORK_ROOT") or Path(domains_root) / "work")
-    ops_root = _resolve(_env_value(active_env, "SABLE_OPS_ROOT") or Path(domains_root) / "ops")
+    personal_root = _resolve(
+        _env_value(active_env, "SABLE_PERSONAL_ROOT")
+        or _env_value(active_env, "SABLE_OPS_ROOT")
+        or Path(domains_root) / "personal"
+    )
     archive_root = _resolve(
         _env_value(active_env, "SABLE_ARCHIVE_ROOT") or Path(domains_root) / "archive"
     )
     memory_root = _resolve(
-        _env_value(active_env, "SABLE_MEMORY_ROOT") or Path(orchestrator_root) / "legacy" / "memory"
+        _env_value(active_env, "SABLE_MEMORY_ROOT") or Path(domains_root)
     )
-    knowledge_root = _resolve(
-        _env_value(active_env, "SABLE_KNOWLEDGE_ROOT") or Path(memory_root) / "knowledge"
-    )
-    tasks_root = _resolve(_env_value(active_env, "SABLE_TASKS_ROOT") or Path(memory_root) / "tasks")
+    knowledge_root = _resolve(_env_value(active_env, "SABLE_KNOWLEDGE_ROOT") or Path(domains_root))
+    tasks_root = _resolve(_env_value(active_env, "SABLE_TASKS_ROOT") or Path(domains_root))
     skills_root = _resolve(
         _env_value(active_env, "SABLE_SKILLS_ROOT") or Path(shared_root) / "skills"
     )
@@ -146,7 +149,8 @@ def create_instance_config(
         coding_root=coding_root,
         research_domain_root=research_domain_root,
         work_root=work_root,
-        ops_root=ops_root,
+        personal_root=personal_root,
+        ops_root=personal_root,
         archive_root=archive_root,
         memory_root=memory_root,
         knowledge_root=knowledge_root,

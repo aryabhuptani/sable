@@ -10,7 +10,7 @@ const {
 
 test("agent task packet combines canonical run metadata with profile defaults", () => {
   const packet = buildAgentTaskPacket({
-    status: { id: "job-1", name: "Investigate latency", agentProfile: "ops" },
+    status: { id: "job-1", name: "Investigate latency", agentProfile: "personal" },
     run: { visibility: "milestones", risk_tier: 2 },
   });
 
@@ -18,15 +18,15 @@ test("agent task packet combines canonical run metadata with profile defaults", 
     version: "v0",
     jobId: "job-1",
     goal: "Investigate latency",
-    agentProfile: "ops",
-    purpose: "Handles operational tasks that may affect running systems.",
+    agentProfile: "personal",
+    purpose: "Handles personal/admin tasks, documents, travel, finance, and household workflows.",
     trigger: "manual",
     visibility: "milestones",
     delivery: "signal",
     riskTier: 2,
     riskHint: "Make reversible changes inside assigned workspace.",
     hierarchyHint:
-      "You report to orchestrator. Do not delegate to ops, coding, research, work or any other domain agent; no sideways delegation.",
+      "You report to orchestrator. Do not delegate to personal, coding, research, work or any other domain agent; no sideways delegation.",
     checkpointHint: "Checkpoint meaningful milestones and before completion or blocking.",
     deliveryHint: "Prepare a concise user-facing result for Signal delivery.",
   });
@@ -61,7 +61,7 @@ test("task preamble is deterministic, bounded, and preserves the original prompt
 test("orchestrator packet permits only downward domain delegation and exports non-secret metadata", () => {
   const packet = buildAgentTaskPacket({ job: { agentProfile: "orchestrator" } });
 
-  assert.match(packet.hierarchyHint, /delegate downward only to ops, coding, research, work/);
+  assert.match(packet.hierarchyHint, /delegate downward only to personal, coding, research, work/);
   assert.deepEqual(agentTaskPacketEnv(packet), {
     SABLE_AGENT_PROFILE: "orchestrator",
     SABLE_RUN_DELIVERY: "signal",
@@ -75,7 +75,7 @@ test("orchestrator packet permits only downward domain delegation and exports no
 test("every runtime profile renders its profile-specific purpose", () => {
   const purposes = {
     orchestrator: "Coordinates delegated work and reports consolidated outcomes.",
-    ops: "Handles operational tasks that may affect running systems.",
+    personal: "Handles personal/admin tasks, documents, travel, finance, and household workflows.",
     coding: "Implements and verifies bounded software changes.",
     research: "Collects evidence and returns a concise synthesis.",
     work: "Owns Eigen Labs/work context and returns structured synthesis.",
@@ -86,4 +86,10 @@ test("every runtime profile renders its profile-specific purpose", () => {
     assert.equal(packet.purpose, purpose);
     assert.match(renderAgentTaskPreamble(packet), new RegExp(`Role: ${agentProfile} -`));
   }
+});
+
+test("legacy ops profile requests canonicalize to personal", () => {
+  const packet = buildAgentTaskPacket({ job: { agentProfile: "ops" } });
+  assert.equal(packet.agentProfile, "personal");
+  assert.match(renderAgentTaskPreamble(packet), /Role: personal -/);
 });

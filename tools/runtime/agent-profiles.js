@@ -10,13 +10,13 @@ const AGENT_PROFILES = Object.freeze({
     defaultRiskTier: 1,
     description: "Coordinates delegated work and reports consolidated outcomes.",
   }),
-  ops: Object.freeze({
-    agentProfile: "ops",
+  personal: Object.freeze({
+    agentProfile: "personal",
     defaultTrigger: "manual",
     defaultVisibility: "interactive",
     defaultDelivery: "signal",
     defaultRiskTier: 3,
-    description: "Handles operational tasks that may affect running systems.",
+    description: "Handles personal/admin tasks, documents, travel, finance, and household workflows.",
   }),
   coding: Object.freeze({
     agentProfile: "coding",
@@ -45,10 +45,14 @@ const AGENT_PROFILES = Object.freeze({
 });
 
 const AGENT_PROFILE_NAMES = Object.freeze(Object.keys(AGENT_PROFILES));
+const AGENT_PROFILE_ALIASES = Object.freeze({
+  ops: "personal",
+});
 
 function getAgentProfile(name) {
   const normalized = String(name || "").trim().toLowerCase();
-  const profile = AGENT_PROFILES[normalized];
+  const canonicalName = AGENT_PROFILE_ALIASES[normalized] || normalized;
+  const profile = AGENT_PROFILES[canonicalName];
   if (!profile) {
     throw new Error(
       `Unsupported --agent-profile: ${name}. Expected one of: ${AGENT_PROFILE_NAMES.join(", ")}.`

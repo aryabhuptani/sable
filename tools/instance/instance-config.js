@@ -22,15 +22,15 @@ function createInstanceConfig({
     env.SABLE_RESEARCH_DOMAIN_ROOT || path.join(domainsRoot, "research")
   );
   const workRoot = path.resolve(env.SABLE_WORK_ROOT || path.join(domainsRoot, "work"));
-  const opsRoot = path.resolve(env.SABLE_OPS_ROOT || path.join(domainsRoot, "ops"));
+  const personalRoot = path.resolve(
+    env.SABLE_PERSONAL_ROOT || env.SABLE_OPS_ROOT || path.join(domainsRoot, "personal")
+  );
   const archiveRoot = path.resolve(env.SABLE_ARCHIVE_ROOT || path.join(domainsRoot, "archive"));
   const memoryRoot = path.resolve(
-    env.SABLE_MEMORY_ROOT || path.join(orchestratorRoot, "legacy", "memory")
+    env.SABLE_MEMORY_ROOT || domainsRoot
   );
-  const knowledgeRoot = path.resolve(
-    env.SABLE_KNOWLEDGE_ROOT || path.join(memoryRoot, "knowledge")
-  );
-  const tasksRoot = path.resolve(env.SABLE_TASKS_ROOT || path.join(memoryRoot, "tasks"));
+  const knowledgeRoot = path.resolve(env.SABLE_KNOWLEDGE_ROOT || domainsRoot);
+  const tasksRoot = path.resolve(env.SABLE_TASKS_ROOT || domainsRoot);
   const skillsRoot = path.resolve(env.SABLE_SKILLS_ROOT || path.join(sharedRoot, "skills"));
   const researchRoot = path.resolve(
     env.SABLE_RESEARCH_ROOT || path.join(researchDomainRoot, "projects")
@@ -54,7 +54,8 @@ function createInstanceConfig({
     codingRoot,
     researchDomainRoot,
     workRoot,
-    opsRoot,
+    personalRoot,
+    opsRoot: personalRoot,
     archiveRoot,
     agentsPath: path.join(resolvedHomeDir, "AGENTS.md"),
     todoPath: path.join(resolvedHomeDir, "TODO.md"),

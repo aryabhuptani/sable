@@ -650,6 +650,7 @@ function buildCodexInvocation(runnerConfig, job, paths) {
     "exec",
     "--json",
     "--dangerously-bypass-approvals-and-sandbox",
+    "--dangerously-bypass-hook-trust",
     "--cd",
     job.cwd,
     "-o",

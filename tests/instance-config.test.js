@@ -17,13 +17,14 @@ test("instance config defaults to Arya's current local layout", () => {
   assert.equal(config.codingRoot, "/home/arya/domains/coding");
   assert.equal(config.researchDomainRoot, "/home/arya/domains/research");
   assert.equal(config.workRoot, "/home/arya/domains/work");
-  assert.equal(config.opsRoot, "/home/arya/domains/ops");
-  assert.equal(config.memoryRoot, "/home/arya/domains/orchestrator/legacy/memory");
-  assert.equal(config.knowledgeRoot, "/home/arya/domains/orchestrator/legacy/memory/knowledge");
+  assert.equal(config.personalRoot, "/home/arya/domains/personal");
+  assert.equal(config.opsRoot, "/home/arya/domains/personal");
+  assert.equal(config.memoryRoot, "/home/arya/domains");
+  assert.equal(config.knowledgeRoot, "/home/arya/domains");
   assert.equal(config.researchRoot, "/home/arya/domains/research/projects");
   assert.equal(config.autotweetRoot, "/home/arya/domains/orchestrator/projects/autotweet");
   assert.equal(config.signalBridgeDir, "/home/arya/domains/coding/projects/sable/apps/signal-bridge");
-  assert.equal(config.tasksRoot, "/home/arya/domains/orchestrator/legacy/memory/tasks");
+  assert.equal(config.tasksRoot, "/home/arya/domains");
   assert.equal(config.skillsRoot, "/home/arya/domains/shared/skills");
   assert.equal(config.agentsPath, "/home/arya/AGENTS.md");
   assert.equal(config.todoPath, "/home/arya/TODO.md");
@@ -58,12 +59,14 @@ test("instance config supports future non-Arya install paths through env overrid
   assert.equal(config.domainsRoot, "/domains/alex");
   assert.equal(config.orchestratorRoot, "/domains/alex/orchestrator");
   assert.equal(config.codingRoot, "/domains/alex/coding");
+  assert.equal(config.personalRoot, "/domains/alex/personal");
+  assert.equal(config.opsRoot, "/domains/alex/personal");
   assert.equal(config.memoryRoot, "/data/alex/memory");
-  assert.equal(config.knowledgeRoot, "/data/alex/memory/knowledge");
+  assert.equal(config.knowledgeRoot, "/domains/alex");
   assert.equal(config.researchRoot, "/data/alex/research");
   assert.equal(config.autotweetRoot, "/data/alex/autotweet");
   assert.equal(config.signalBridgeDir, "/srv/alex/signal-bridge");
-  assert.equal(config.tasksRoot, "/data/alex/memory/tasks");
+  assert.equal(config.tasksRoot, "/domains/alex");
   assert.equal(config.skillsRoot, "/data/alex/skills");
   assert.equal(config.projectKnowledgeRoot, "/domains/alex/coding/projects/sable/knowledge");
   assert.equal(config.projectTasksPath, "/domains/alex/coding/projects/sable/TASKS.md");
@@ -85,7 +88,7 @@ test("instance config supports explicit home dir over env defaults", () => {
 
   assert.equal(config.homeDir, "/tmp/sable-user");
   assert.equal(config.domainsRoot, path.join("/tmp/sable-user", "domains"));
-  assert.equal(config.memoryRoot, path.join("/tmp/sable-user", "domains", "orchestrator", "legacy", "memory"));
+  assert.equal(config.memoryRoot, path.join("/tmp/sable-user", "domains"));
 });
 
 test("instance path redaction uses the active instance home", () => {

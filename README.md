@@ -54,7 +54,7 @@ Refactor policy:
 - code lives in `/home/arya/domains/coding/projects/`
 - research context lives in `/home/arya/domains/research/projects/`
 - work/org context lives in `/home/arya/domains/work/projects/`
-- personal/admin context lives in `/home/arya/domains/ops/projects/`
+- personal/admin context lives in `/home/arya/domains/personal/projects/`
 - orchestration state lives in `/home/arya/domains/orchestrator/`
 
 That separation is deliberate. Knowledge is not the same thing as a queue.

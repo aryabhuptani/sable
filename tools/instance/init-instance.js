@@ -64,6 +64,11 @@ function initInstance({
   const created = [];
   const skipped = [];
   const overwritten = [];
+  const architectureProjectRoot = path.join(
+    instance.orchestratorRoot,
+    "projects",
+    "domain-architecture"
+  );
 
   function ensureDir(targetPath) {
     if (fs.existsSync(targetPath)) {
@@ -94,7 +99,7 @@ function initInstance({
     instance.codingRoot,
     instance.researchDomainRoot,
     instance.workRoot,
-    instance.opsRoot,
+    instance.personalRoot,
     instance.archiveRoot,
     path.join(instance.sharedRoot, "skills"),
     path.join(instance.orchestratorRoot, "skills"),
@@ -109,21 +114,17 @@ function initInstance({
     instance.researchRoot,
     path.join(instance.workRoot, "skills"),
     path.join(instance.workRoot, "projects"),
-    path.join(instance.opsRoot, "skills"),
-    path.join(instance.opsRoot, "projects"),
+    path.join(instance.personalRoot, "skills"),
+    path.join(instance.personalRoot, "projects"),
     path.join(instance.archiveRoot, "projects"),
-    instance.memoryRoot,
-    instance.knowledgeRoot,
-    instance.tasksRoot,
     instance.skillsRoot,
     instance.researchRoot,
     instance.autotweetRoot,
     path.dirname(instance.projectTasksPath),
     instance.projectKnowledgeRoot,
-    path.join(instance.knowledgeRoot, "projects", "memory"),
-    path.join(instance.knowledgeRoot, "projects", "memory", "evals"),
-    path.join(instance.knowledgeRoot, "projects", "memory", "metrics"),
-    path.join(instance.tasksRoot, "projects", "memory"),
+    architectureProjectRoot,
+    path.join(architectureProjectRoot, "evals"),
+    path.join(architectureProjectRoot, "metrics"),
     path.join(instance.homeDir, ".codex"),
     path.join(instance.homeDir, ".codex-bridge"),
     path.join(instance.homeDir, "plugins"),
@@ -149,7 +150,7 @@ function initInstance({
   writeFile(path.join(instance.codingRoot, "PROFILE.md"), renderCodingProfile());
   writeFile(path.join(instance.researchDomainRoot, "PROFILE.md"), renderResearchProfile());
   writeFile(path.join(instance.workRoot, "PROFILE.md"), renderWorkProfile());
-  writeFile(path.join(instance.opsRoot, "PROFILE.md"), renderOpsProfile());
+  writeFile(path.join(instance.personalRoot, "PROFILE.md"), renderPersonalProfile());
   writeFile(path.join(instance.archiveRoot, "PROFILE.md"), renderArchiveProfile());
   writeFile(
     instance.todoPath,
@@ -175,23 +176,19 @@ function initInstance({
     ].join("\n")
   );
   writeFile(path.join(instance.homeDir, "SETUP.md"), renderSetupChecklist(instance));
-  writeFile(path.join(instance.memoryRoot, "README.md"), renderMemoryReadme());
   writeFile(
-    path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE.md"),
+    path.join(architectureProjectRoot, "ARCHITECTURE.md"),
     renderMemoryArchitecture()
   );
   writeFile(
-    path.join(instance.knowledgeRoot, "projects", "memory", "ARCHITECTURE_LOG.md"),
+    path.join(architectureProjectRoot, "ARCHITECTURE_LOG.md"),
     renderMemoryArchitectureLog()
   );
   writeFile(
-    path.join(instance.knowledgeRoot, "projects", "memory", "evals", "MEMORY_EVALS.md"),
+    path.join(architectureProjectRoot, "evals", "MEMORY_EVALS.md"),
     renderMemoryEvalSuite()
   );
-  writeFile(
-    path.join(instance.tasksRoot, "projects", "memory", "TODO.md"),
-    renderMemoryTaskFile()
-  );
+  writeFile(path.join(architectureProjectRoot, "TASKS.md"), renderMemoryTaskFile());
   writeFile(
     instance.defaultSchedulerJobsPath,
     `${JSON.stringify({ jobs: createDefaultScheduledWorkflowJobs() }, null, 2)}\n`,
@@ -241,11 +238,8 @@ function renderInstanceEnv(instance) {
     `SABLE_CODING_ROOT=${shellValue(instance.codingRoot)}`,
     `SABLE_RESEARCH_DOMAIN_ROOT=${shellValue(instance.researchDomainRoot)}`,
     `SABLE_WORK_ROOT=${shellValue(instance.workRoot)}`,
-    `SABLE_OPS_ROOT=${shellValue(instance.opsRoot)}`,
+    `SABLE_PERSONAL_ROOT=${shellValue(instance.personalRoot)}`,
     `SABLE_ARCHIVE_ROOT=${shellValue(instance.archiveRoot)}`,
-    `SABLE_MEMORY_ROOT=${shellValue(instance.memoryRoot)}`,
-    `SABLE_KNOWLEDGE_ROOT=${shellValue(instance.knowledgeRoot)}`,
-    `SABLE_TASKS_ROOT=${shellValue(instance.tasksRoot)}`,
     `SABLE_SKILLS_ROOT=${shellValue(instance.skillsRoot)}`,
     `SABLE_RESEARCH_ROOT=${shellValue(instance.researchRoot)}`,
     `SABLE_AUTOTWEET_ROOT=${shellValue(instance.autotweetRoot)}`,
@@ -276,7 +270,7 @@ function renderDomainsReadme() {
     "- `coding/` - code repositories, tests, deployments, and engineering context.",
     "- `research/` - research projects, benchmarks, experiments, and traces.",
     "- `work/` - work/org context, meetings, strategy, and agendas.",
-    "- `ops/` - personal/admin execution, documents, finance, travel, household workflows.",
+    "- `personal/` - personal/admin execution, documents, finance, travel, household workflows.",
     "- `archive/` - inactive historical retrieval.",
     "",
   ].join("\n");
@@ -337,11 +331,11 @@ function renderWorkProfile() {
   ].join("\n");
 }
 
-function renderOpsProfile() {
+function renderPersonalProfile() {
   return [
-    "# Ops Domain Profile",
+    "# Personal Domain Profile",
     "",
-    "Ops owns personal and administrative execution: forms, documents, finance, taxes, travel, household workflows, and similar practical life operations.",
+    "Personal owns personal and administrative execution: forms, documents, finance, taxes, travel, household workflows, and similar practical life operations.",
     "",
     "Treat private documents as sensitive. Start from indexes before opening raw contents.",
     "",
@@ -377,7 +371,7 @@ function renderMemoryReadme() {
     "| Code projects | `domains/coding/projects/` | Repos, engineering context, tests, deployments |",
     "| Research projects | `domains/research/projects/` | Experiments, traces, benchmarks, evidence maps |",
     "| Work projects | `domains/work/projects/` | Work/org context, meetings, strategy, agendas |",
-    "| Ops projects | `domains/ops/projects/` | Admin, documents, finance/taxes, travel, household workflows |",
+    "| Personal projects | `domains/personal/projects/` | Admin, documents, finance/taxes, travel, household workflows |",
     "",
     "## Architecture Record",
     "",
@@ -445,7 +439,7 @@ function renderMemoryArchitecture() {
     "| Coding | `domains/coding/` | Repos, implementation, tests, deployments |",
     "| Research | `domains/research/` | Experiments, traces, benchmarks, evidence maps |",
     "| Work | `domains/work/` | Work/org context, meetings, strategy, agendas |",
-    "| Ops | `domains/ops/` | Admin, finance/taxes, travel, household workflows |",
+    "| Personal | `domains/personal/` | Admin, finance/taxes, travel, household workflows |",
     "| Archive | `domains/archive/` | Inactive historical retrieval |",
     "",
     "## Indexing Rules",

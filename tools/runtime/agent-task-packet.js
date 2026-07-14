@@ -5,7 +5,7 @@ const { describeRiskTier, validateRiskTier } = require("./run-kernel");
 
 const TASK_PACKET_VERSION = "v0";
 const DEFAULT_AGENT_PROFILE = "coding";
-const DOMAIN_PROFILES = Object.freeze(["ops", "coding", "research", "work"]);
+const DOMAIN_PROFILES = Object.freeze(["personal", "coding", "research", "work"]);
 
 const VISIBILITY_HINTS = Object.freeze({
   silent: "Keep progress quiet; checkpoint only durable state needed for recovery.",

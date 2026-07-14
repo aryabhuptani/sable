@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const {
   buildRunnerConfig,
+  buildRunnerInvocation,
   createJobId,
   defaultJobsRoot,
   defaultWorktreeDir,
@@ -74,7 +75,7 @@ test("background job parser supports run-kernel metadata", () => {
 test("background job parser applies agent profile defaults", () => {
   const expected = {
     orchestrator: ["callback", "final_only", "signal", 1],
-    ops: ["manual", "interactive", "signal", 3],
+    personal: ["manual", "interactive", "signal", 3],
     coding: ["manual", "milestones", "orchestrator_only", 2],
     research: ["manual", "final_only", "orchestrator_only", 1],
     work: ["manual", "final_only", "orchestrator_only", 1],
@@ -96,15 +97,20 @@ test("background job parser applies agent profile defaults", () => {
 
   assert.throws(
     () => parseArgs(["start", "--agent-profile", "finance"]),
-    /Unsupported --agent-profile: finance.*orchestrator, ops, coding, research, work/
+    /Unsupported --agent-profile: finance.*orchestrator, personal, coding, research, work/
   );
+});
+
+test("background job parser accepts legacy ops as personal", () => {
+  const options = parseArgs(["start", "--agent-profile", "ops"]);
+  assert.equal(options.agentProfile, "personal");
 });
 
 test("explicit metadata flags override agent profile defaults", () => {
   const options = parseArgs([
     "start",
     "--agent-profile",
-    "ops",
+    "personal",
     "--trigger",
     "scheduled",
     "--visibility",
@@ -124,7 +130,7 @@ test("explicit metadata flags override agent profile defaults", () => {
       riskTier: options.riskTier,
     },
     {
-      agentProfile: "ops",
+      agentProfile: "personal",
       trigger: "scheduled",
       visibility: "silent",
       delivery: "none",
@@ -211,6 +217,37 @@ test("background job runner config preserves Codex defaults and supports Claude"
       type: "claude",
     }
   );
+});
+
+test("background job Codex runner uses the same full-access bypass flags as the bridge", () => {
+  const invocation = buildRunnerInvocation(
+    {
+      bin: "codex",
+      home: "/tmp/codex-home",
+      model: "",
+      type: "codex",
+    },
+    {
+      cwd: "/tmp/workspace",
+    },
+    {
+      lastMessagePath: "/tmp/job/last-message.md",
+    }
+  );
+
+  assert.equal(invocation.bin, "codex");
+  assert.equal(invocation.env.CODEX_HOME, "/tmp/codex-home");
+  assert.deepEqual(invocation.args, [
+    "exec",
+    "--json",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--dangerously-bypass-hook-trust",
+    "--cd",
+    "/tmp/workspace",
+    "-o",
+    "/tmp/job/last-message.md",
+    "-",
+  ]);
 });
 
 test("background job parser supports isolated worktree options and callbacks", () => {

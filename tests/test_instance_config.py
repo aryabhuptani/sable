@@ -24,9 +24,10 @@ class InstanceConfigTests(unittest.TestCase):
         self.assertEqual(config.coding_root, "/home/arya/domains/coding")
         self.assertEqual(config.research_domain_root, "/home/arya/domains/research")
         self.assertEqual(config.work_root, "/home/arya/domains/work")
-        self.assertEqual(config.ops_root, "/home/arya/domains/ops")
-        self.assertEqual(config.memory_root, "/home/arya/domains/orchestrator/legacy/memory")
-        self.assertEqual(config.knowledge_root, "/home/arya/domains/orchestrator/legacy/memory/knowledge")
+        self.assertEqual(config.personal_root, "/home/arya/domains/personal")
+        self.assertEqual(config.ops_root, "/home/arya/domains/personal")
+        self.assertEqual(config.memory_root, "/home/arya/domains")
+        self.assertEqual(config.knowledge_root, "/home/arya/domains")
         self.assertEqual(config.research_root, "/home/arya/domains/research/projects")
         self.assertEqual(
             config.autotweet_root,
@@ -36,7 +37,7 @@ class InstanceConfigTests(unittest.TestCase):
             config.signal_bridge_dir,
             "/home/arya/domains/coding/projects/sable/apps/signal-bridge",
         )
-        self.assertEqual(config.tasks_root, "/home/arya/domains/orchestrator/legacy/memory/tasks")
+        self.assertEqual(config.tasks_root, "/home/arya/domains")
         self.assertEqual(config.skills_root, "/home/arya/domains/shared/skills")
         self.assertEqual(config.agents_path, "/home/arya/AGENTS.md")
         self.assertEqual(config.todo_path, "/home/arya/TODO.md")
@@ -90,6 +91,8 @@ class InstanceConfigTests(unittest.TestCase):
         self.assertEqual(config.domains_root, "/domains/alex")
         self.assertEqual(config.orchestrator_root, "/domains/alex/orchestrator")
         self.assertEqual(config.coding_root, "/domains/alex/coding")
+        self.assertEqual(config.personal_root, "/domains/alex/personal")
+        self.assertEqual(config.ops_root, "/domains/alex/personal")
         self.assertEqual(config.memory_root, "/data/alex/memory")
         self.assertEqual(config.knowledge_root, "/data/alex/knowledge")
         self.assertEqual(config.research_root, "/data/alex/research")
@@ -119,7 +122,7 @@ class InstanceConfigTests(unittest.TestCase):
 
         self.assertEqual(config.home_dir, "/tmp/sable-user")
         self.assertEqual(config.domains_root, "/tmp/sable-user/domains")
-        self.assertEqual(config.memory_root, "/tmp/sable-user/domains/orchestrator/legacy/memory")
+        self.assertEqual(config.memory_root, "/tmp/sable-user/domains")
 
     def test_redacts_active_instance_home(self):
         self.assertEqual(
