@@ -61,7 +61,7 @@ function expandHome(value) {
 
 function defaultJobsRoot({ env = process.env } = {}) {
   const instance = createInstanceConfig({ env });
-  return path.join(path.dirname(instance.projectTasksPath), "background-jobs");
+  return path.join(instance.runsRoot || path.dirname(instance.projectTasksPath), "background-jobs");
 }
 
 async function resolveRunDir(options, { env = process.env } = {}) {

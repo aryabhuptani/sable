@@ -13,7 +13,7 @@ It intentionally exposes only read-only Home Assistant inspection commands.
 Run from the Sable repo:
 
 ```bash
-cd /home/arya/projects/sable
+cd "${SABLE_REPO_ROOT:-$HOME/domains/coding/projects/sable}"
 tools/hermes-migration/hermes-ha-readonly.sh summary
 tools/hermes-migration/hermes-ha-readonly.sh list-areas
 tools/hermes-migration/hermes-ha-readonly.sh list-devices
@@ -41,7 +41,7 @@ tools/hermes-migration/hermes-ha-readonly.sh list-devices --area bedroom
 The required canary for `local.homeassistant.readonly` is:
 
 ```bash
-cd /home/arya/projects/sable
+cd "${SABLE_REPO_ROOT:-$HOME/domains/coding/projects/sable}"
 tools/hermes-migration/hermes-ha-readonly.sh summary
 ```
 

@@ -2,7 +2,7 @@
 
 Node.js service that listens for Signal messages through `signal-cli` JSON-RPC over stdio, forwards them to the Codex CLI, and sends the reply back over Signal.
 
-Canonical project root for Arya's current instance: `/home/arya/projects/sable/`
+Canonical project root for Arya's current instance: `/home/arya/domains/coding/projects/sable/`
 
 Legacy compatibility path: `/home/arya/signal-codex-bridge` (symlink)
 
@@ -43,17 +43,15 @@ When you have the number:
    - `ALLOWED_NUMBERS`: comma-separated list of phone numbers allowed to interact with the bridge
    - optional instance roots:
      - `SABLE_INSTANCE_HOME=/home/arya`
-     - `SABLE_REPO_ROOT=/home/arya/projects/sable`
-     - `SABLE_MEMORY_ROOT=/home/arya/memory`
-     - `SABLE_TASKS_ROOT=/home/arya/memory/tasks`
-     - `SABLE_KNOWLEDGE_ROOT=/home/arya/memory/knowledge`
-     - `SABLE_SIGNAL_BRIDGE_DIR=/home/arya/projects/sable/apps/signal-bridge`
+     - `SABLE_REPO_ROOT=/home/arya/domains/coding/projects/sable`
+     - `SABLE_DOMAINS_ROOT=/home/arya/domains`
+     - `SABLE_SIGNAL_BRIDGE_DIR=/home/arya/domains/coding/projects/sable/apps/signal-bridge`
    - optional runtime path overrides:
      - `SABLE_CODEX_CWD=/home/arya`
-     - `SABLE_SCHEDULER_JOBS_PATH=/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
-     - `SABLE_RESEARCH_ROOT=/home/arya/memory/knowledge/research`
-     - `SABLE_TELEGRAM_CLI_PATH=/home/arya/projects/sable/tools/telegram/telegram_cli.py`
-     - `SABLE_OBSIDIAN_VAULT_ROOT=/home/arya/memory`
+     - `SABLE_SCHEDULER_JOBS_PATH=/home/arya/domains/orchestrator/schedules/scheduler-jobs.json`
+     - `SABLE_RESEARCH_ROOT=/home/arya/domains/research/projects`
+     - `SABLE_TELEGRAM_CLI_PATH=/home/arya/domains/coding/projects/sable/tools/telegram/telegram_cli.py`
+     - `SABLE_OBSIDIAN_VAULT_ROOT=/home/arya/domains`
      - `SABLE_OBSIDIAN_VAULT_NAME=memory`
    - optional bridge timeout:
      - `APP_SERVER_IDLE_TIMEOUT_MS=600000`
@@ -113,9 +111,9 @@ The service reads the same `.env` file in this app directory, so changing number
 - This scheduler is for recurring autonomous Sable workflows, not normal reminders.
 - Use Google Calendar / Tasks for ordinary reminders and todos.
 - Scheduler jobs are persisted at `SABLE_SCHEDULER_JOBS_PATH` when set; otherwise the path comes from instance config. Arya's current default is:
-  `/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
+  `/home/arya/domains/orchestrator/schedules/scheduler-jobs.json`
 - User-facing recurring workflows follow Sable's active timezone state, stored at `SABLE_SCHEDULER_STATE_PATH` when set or the instance default:
-  `/home/arya/memory/tasks/projects/sable/scheduler-state.json`
+  `/home/arya/domains/orchestrator/schedules/scheduler-state.json`
 - Silent maintenance workflows default to host time. Set a job's `timezone` to `active` or `host` to override that default.
 - Due jobs are picked up by the bridge heartbeat and executed through the normal Codex/Signal queue.
 - Management escape hatches:
@@ -170,13 +168,13 @@ The service reads the same `.env` file in this app directory, so changing number
 Runtime defaults come from `tools/instance/instance-config.js` first, with `.env` overrides for deploy-specific paths. Arya's current defaults are examples, not portable requirements.
 
 - `SABLE_INSTANCE_HOME` / `SABLE_HOME`: instance home; current default `/home/arya`
-- `SABLE_REPO_ROOT`: repo root; current default `/home/arya/projects/sable`
+- `SABLE_REPO_ROOT`: repo root; current default `/home/arya/domains/coding/projects/sable`
 - `SABLE_CODEX_CWD`: Codex working directory; current default `/home/arya`
-- `SABLE_SCHEDULER_JOBS_PATH`: scheduler persistence file; current default `/home/arya/memory/tasks/projects/sable/scheduler-jobs.json`
-- `SABLE_SCHEDULER_STATE_PATH`: scheduler active-timezone state file; current default `/home/arya/memory/tasks/projects/sable/scheduler-state.json`
-- `SABLE_RESEARCH_ROOT`: research KB root; current default `/home/arya/memory/knowledge/research`
-- `SABLE_TELEGRAM_CLI_PATH`: Telegram review CLI; current default `/home/arya/projects/sable/tools/telegram/telegram_cli.py`
-- `SABLE_OBSIDIAN_VAULT_ROOT` and `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian link target; current defaults `/home/arya/memory` and the discovered vault name, usually `memory`
+- `SABLE_SCHEDULER_JOBS_PATH`: scheduler persistence file; current default `/home/arya/domains/orchestrator/schedules/scheduler-jobs.json`
+- `SABLE_SCHEDULER_STATE_PATH`: scheduler active-timezone state file; current default `/home/arya/domains/orchestrator/schedules/scheduler-state.json`
+- `SABLE_RESEARCH_ROOT`: research project root; current default `/home/arya/domains/research/projects`
+- `SABLE_TELEGRAM_CLI_PATH`: Telegram review CLI; current default `/home/arya/domains/coding/projects/sable/tools/telegram/telegram_cli.py`
+- `SABLE_OBSIDIAN_VAULT_ROOT` and `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian link target; current defaults `/home/arya/domains` and the discovered vault name, usually `Sable Memory`
 - `VOICE_NOTES_MODEL_PATH`: local Whisper model path; current default `/home/arya/models/faster-whisper-base.en`
 
 ## Experimental Number Rotation

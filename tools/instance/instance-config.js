@@ -12,23 +12,50 @@ function createInstanceConfig({
     homeDir || env.SABLE_INSTANCE_HOME || env.SABLE_HOME || DEFAULT_HOME_DIR
   );
   const resolvedRepoRoot = path.resolve(env.SABLE_REPO_ROOT || repoRoot);
-  const memoryRoot = path.resolve(env.SABLE_MEMORY_ROOT || path.join(resolvedHomeDir, "memory"));
+  const domainsRoot = path.resolve(env.SABLE_DOMAINS_ROOT || path.join(resolvedHomeDir, "domains"));
+  const sharedRoot = path.resolve(env.SABLE_SHARED_ROOT || path.join(domainsRoot, "shared"));
+  const orchestratorRoot = path.resolve(
+    env.SABLE_ORCHESTRATOR_ROOT || path.join(domainsRoot, "orchestrator")
+  );
+  const codingRoot = path.resolve(env.SABLE_CODING_ROOT || path.join(domainsRoot, "coding"));
+  const researchDomainRoot = path.resolve(
+    env.SABLE_RESEARCH_DOMAIN_ROOT || path.join(domainsRoot, "research")
+  );
+  const workRoot = path.resolve(env.SABLE_WORK_ROOT || path.join(domainsRoot, "work"));
+  const opsRoot = path.resolve(env.SABLE_OPS_ROOT || path.join(domainsRoot, "ops"));
+  const archiveRoot = path.resolve(env.SABLE_ARCHIVE_ROOT || path.join(domainsRoot, "archive"));
+  const memoryRoot = path.resolve(
+    env.SABLE_MEMORY_ROOT || path.join(orchestratorRoot, "legacy", "memory")
+  );
   const knowledgeRoot = path.resolve(
     env.SABLE_KNOWLEDGE_ROOT || path.join(memoryRoot, "knowledge")
   );
   const tasksRoot = path.resolve(env.SABLE_TASKS_ROOT || path.join(memoryRoot, "tasks"));
-  const skillsRoot = path.resolve(env.SABLE_SKILLS_ROOT || path.join(resolvedHomeDir, "skills"));
-  const researchRoot = path.resolve(env.SABLE_RESEARCH_ROOT || path.join(knowledgeRoot, "research"));
+  const skillsRoot = path.resolve(env.SABLE_SKILLS_ROOT || path.join(sharedRoot, "skills"));
+  const researchRoot = path.resolve(
+    env.SABLE_RESEARCH_ROOT || path.join(researchDomainRoot, "projects")
+  );
   const autotweetRoot = path.resolve(
-    env.SABLE_AUTOTWEET_ROOT || path.join(knowledgeRoot, "projects", "sable", "autotweet")
+    env.SABLE_AUTOTWEET_ROOT || path.join(orchestratorRoot, "projects", "autotweet")
   );
   const signalBridgeDir = path.resolve(
     env.SABLE_SIGNAL_BRIDGE_DIR || path.join(resolvedRepoRoot, "apps", "signal-bridge")
   );
+  const codingSableRoot = path.join(codingRoot, "projects", "sable");
+  const schedulesRoot = path.join(orchestratorRoot, "schedules");
+  const runsRoot = path.join(orchestratorRoot, "runs");
 
   return {
     homeDir: resolvedHomeDir,
     repoRoot: resolvedRepoRoot,
+    domainsRoot,
+    sharedRoot,
+    orchestratorRoot,
+    codingRoot,
+    researchDomainRoot,
+    workRoot,
+    opsRoot,
+    archiveRoot,
     agentsPath: path.join(resolvedHomeDir, "AGENTS.md"),
     todoPath: path.join(resolvedHomeDir, "TODO.md"),
     memoryRoot,
@@ -38,16 +65,12 @@ function createInstanceConfig({
     signalBridgeDir,
     tasksRoot,
     skillsRoot,
-    projectKnowledgeRoot: path.join(knowledgeRoot, "projects", "sable"),
-    projectTasksPath: path.join(tasksRoot, "projects", "sable", "TODO.md"),
-    defaultSchedulerJobsPath: path.join(
-      tasksRoot,
-      "projects",
-      "sable",
-      "default-scheduler-jobs.json"
-    ),
-    schedulerJobsPath: path.join(tasksRoot, "projects", "sable", "scheduler-jobs.json"),
-    schedulerStatePath: path.join(tasksRoot, "projects", "sable", "scheduler-state.json"),
+    runsRoot,
+    projectKnowledgeRoot: path.join(codingSableRoot, "knowledge"),
+    projectTasksPath: path.join(codingSableRoot, "TASKS.md"),
+    defaultSchedulerJobsPath: path.join(schedulesRoot, "default-scheduler-jobs.json"),
+    schedulerJobsPath: path.join(schedulesRoot, "scheduler-jobs.json"),
+    schedulerStatePath: path.join(schedulesRoot, "scheduler-state.json"),
   };
 }
 

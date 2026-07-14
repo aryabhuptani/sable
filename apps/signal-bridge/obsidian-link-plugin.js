@@ -15,7 +15,11 @@ function createObsidianLinkPlugin({
     throw new Error("createObsidianLinkPlugin requires instanceConfig.");
   }
 
-  const vaultRoot = path.resolve(normalizeText(env.SABLE_OBSIDIAN_VAULT_ROOT) || instanceConfig.memoryRoot);
+  const vaultRoot = path.resolve(
+    normalizeText(env.SABLE_OBSIDIAN_VAULT_ROOT) ||
+      instanceConfig.domainsRoot ||
+      instanceConfig.memoryRoot
+  );
   const vaultName =
     normalizeText(env.SABLE_OBSIDIAN_VAULT_NAME) ||
     discoverObsidianVaultName(vaultRoot, { logger }) ||

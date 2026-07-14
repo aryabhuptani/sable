@@ -44,9 +44,9 @@ As of 2026-07-02, the local runtime is:
 - `signal-cli-http.service`: enabled user service. Runs `signal-cli daemon --http 127.0.0.1:8080` using the existing Signal account from the bridge env.
 - `hermes-sable-native`: Docker container running `ghcr.io/nimblecoai/hermes-agent:latest` with host networking, `HERMES_HOME=/opt/data`, and the copied Sable Hermes profile mounted at `/opt/data`.
 - Hermes profile mounts:
-  - `/home/arya/memory:/home/arya/memory:ro`
-  - `/home/arya/skills:/home/arya/skills:ro`
-  - `/home/arya/projects/sable:/home/arya/projects/sable:ro`
+  - `/home/arya/domains:/home/arya/domains:ro`
+  - `/home/arya/domains/shared/skills:/home/arya/domains/shared/skills:ro`
+  - `/home/arya/domains/coding/projects/sable:/home/arya/domains/coding/projects/sable:ro`
   - `/home/arya/homeassistant:/home/arya/homeassistant:ro`
 
 The older `hermes-sable-trial` container is stopped and should be treated as superseded by `hermes-sable-native`.

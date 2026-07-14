@@ -14,7 +14,7 @@ Parent Sable remains the top-level orchestrator:
 
 Each employee:
 
-- runs the same `/home/arya/projects/sable` codebase
+- runs the same `/home/arya/domains/coding/projects/sable` codebase
 - has a durable `AGENTS.md`, profile, tasks, schedule, connector policy, state, and logs
 - runs as `SABLE_INSTANCE_MODE=employee`
 - gets its own Codex/Claude runner home

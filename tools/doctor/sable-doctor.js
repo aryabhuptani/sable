@@ -31,7 +31,7 @@ function buildDoctorReport({
 
   checks.push(checkPath("repo", resolvedRepoRoot, "dir"));
   checks.push(checkPath("package.json", path.join(resolvedRepoRoot, "package.json"), "file"));
-  checks.push(checkPath("migration checklist", path.join(resolvedRepoRoot, "docs", "sable-architecture-migration-checklist.md"), "file"));
+  checks.push(checkPath("domain architecture", instance.projectKnowledgeRoot, "dir"));
   checks.push(checkPath("smoke runner", path.join(resolvedRepoRoot, "tools", "smoke", "run-smoke-tests.js"), "file"));
   checks.push(checkPath("runner adapter", path.join(resolvedRepoRoot, "apps", "signal-bridge", "runner-adapter.js"), "file"));
   checks.push(checkPath("Signal bridge", path.join(resolvedRepoRoot, "apps", "signal-bridge", "bridge.js"), "file"));

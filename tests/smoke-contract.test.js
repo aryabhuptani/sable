@@ -18,6 +18,7 @@ function assertFile(relativePath) {
 
 test("smoke gate script covers the current migration-critical surfaces", () => {
   const pkg = readJson("package.json");
+  const smokeGate = fs.readFileSync(path.join(REPO_ROOT, "tools/smoke/run-smoke-tests.js"), "utf8");
 
   assert.equal(pkg.scripts["test:smoke"], "node tools/smoke/run-smoke-tests.js");
   assert.equal(pkg.scripts["test:e2e"], "node --test tests/e2e/*.test.js");
@@ -35,11 +36,10 @@ test("smoke gate script covers the current migration-critical surfaces", () => {
   assert.equal(pkg.scripts["test:hermes-parity"], "node --test tests/hermes-parity-check.test.js");
   assert.equal(pkg.scripts["hermes:parity"], "node tools/hermes-migration/hermes-parity-check.js");
   assert.equal(pkg.scripts["plugin:create"], "node tools/plugins/create-plugin.js");
-  assert.equal(pkg.scripts["shareability:check"], "node tools/shareability/check.js");
-  assert.equal(pkg.scripts["simulate:fresh-clone"], "node tools/community/fresh-clone-sim.js");
+  assert.equal(pkg.scripts["safety:check"], "node tools/shareability/check.js");
   assert.equal(pkg.scripts["upgrade"], "node tools/upgrade/upgrade.js run");
   assert.equal(pkg.scripts["upgrade:check"], "node tools/upgrade/upgrade.js check");
-  assert.ok(pkg.scripts["test:community"].includes("npm run shareability:check"));
+  assert.match(smokeGate, /tests\/hermes-cli-runner\.test\.js/);
   assert.equal(pkg.scripts["init:instance"], "node tools/instance/init-instance.js");
   assert.equal(pkg.scripts["install:user-service"], "node tools/service/user-service.js install");
   assert.equal(pkg.scripts["uninstall:user-service"], "node tools/service/user-service.js uninstall");
@@ -72,6 +72,7 @@ test("current Sable core candidates are present before architecture extraction",
     "apps/signal-bridge/plugin-auth-manager.js",
     "apps/signal-bridge/plugin-runtime.js",
     "apps/signal-bridge/runner-adapter.js",
+    "apps/signal-bridge/hermes-cli-runner.js",
     "apps/signal-bridge/scheduled-attachment-discovery.js",
     "apps/signal-bridge/signal-attachment-plugin.js",
     "apps/signal-bridge/signal-inbound-plugin.js",
@@ -93,7 +94,6 @@ test("current Sable core candidates are present before architecture extraction",
     "tools/plugins/plugin-manifest.js",
     "tools/plugins/create-plugin.js",
     "tools/shareability/check.js",
-    "tools/community/fresh-clone-sim.js",
     "tools/upgrade/upgrade.js",
     "tools/doctor/sable-doctor.js",
     "tools/instance/instance-config.js",
@@ -108,10 +108,7 @@ test("current Sable core candidates are present before architecture extraction",
     "apps/signal-bridge/.env.example",
     "tools/telegram/.env.example",
     "tools/instance/templates/sable.env.example",
-    "docs/community-install.md",
-    "docs/first-user-handoff.md",
     "docs/upgrade.md",
-    "docs/sable-architecture-migration-checklist.md",
     "CONTRIBUTING.md",
     "DEVELOPER_PREVIEW.md",
     "plugins/schema/plugin-manifest.schema.json",
@@ -128,7 +125,7 @@ test("local durable operating docs exist outside the shareable runtime", () => {
     path.join(instance.skillsRoot, "home-assistant-management", "SKILL.md"),
     path.join(instance.skillsRoot, "telegram-review", "SKILL.md"),
     path.join(instance.skillsRoot, "tweet-ideas", "SKILL.md"),
-    path.join(instance.projectKnowledgeRoot, "outputs", "2026-05-04-community-sable-plan.md"),
+    path.join(instance.projectKnowledgeRoot, "maintenance", "LOG.md"),
   ].forEach((absolutePath) => {
     assert.equal(fs.statSync(absolutePath).isFile(), true, `${absolutePath} should exist`);
   });

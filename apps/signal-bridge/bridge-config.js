@@ -138,7 +138,7 @@ function createBridgeConfig({
   );
   const EMPLOYEES_ROOT =
     normalizeText(env.SABLE_EMPLOYEES_ROOT) ||
-    path.join(instanceConfig.memoryRoot || path.join(instanceConfig.homeDir, "memory"), "agents");
+    path.join(instanceConfig.orchestratorRoot || instanceConfig.homeDir, "employees");
   const EMPLOYEE_RUNTIME_ROOT =
     normalizeText(env.SABLE_EMPLOYEE_RUNTIME_ROOT) ||
     path.join(instanceConfig.homeDir, ".sable", "employees");

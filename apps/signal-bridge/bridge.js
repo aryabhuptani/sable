@@ -506,7 +506,7 @@ const pluginAuth = createPluginAuthManager({
   timestamp,
 });
 const runStore = createBackgroundJobRunStore({
-  jobsRoot: path.join(path.dirname(INSTANCE_CONFIG.projectTasksPath), "background-jobs"),
+  jobsRoot: path.join(INSTANCE_CONFIG.runsRoot || path.dirname(INSTANCE_CONFIG.projectTasksPath), "background-jobs"),
 });
 const runCommands = createBridgeRunCommands({ runStore });
 jobRuntime = createBridgeJobRuntime({

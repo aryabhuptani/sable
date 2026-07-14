@@ -46,10 +46,9 @@ Supported values:
 - `none`
 - `doctor`
 - `plugins`
-- `community`
 - `smoke`
 
-The default is `community`.
+The default is `smoke`.
 
 ## What Is Safe to Customize
 
@@ -57,8 +56,8 @@ Safe outside the repo:
 
 - `<instance-home>/AGENTS.md`
 - `<instance-home>/TODO.md`
-- `<instance-home>/memory`
-- `<instance-home>/skills`
+- `<instance-home>/domains`
+- `<instance-home>/domains/shared/skills`
 - `<instance-home>/plugins/local-*`
 - `<instance-home>/.codex`
 - `<instance-home>/.codex-bridge`
@@ -88,7 +87,7 @@ If `upgrade` fails after pulling but before restarting the service, fix the repo
 
 ```bash
 npm run sable:doctor
-npm run test:community
+npm run test:smoke
 ```
 
 Then restart manually:
@@ -107,8 +106,8 @@ Run full smoke before sharing a handoff ref:
 npm run test:smoke
 ```
 
-Run shareability before pushing public-ish code:
+Run the safety scanner before pushing code that may include local paths or secrets:
 
 ```bash
-npm run shareability:check
+npm run safety:check
 ```

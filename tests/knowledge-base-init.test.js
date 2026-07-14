@@ -17,14 +17,14 @@ test("slugify normalizes topic titles into stable slugs", () => {
 });
 
 test("knowledge-base default research root follows instance config", () => {
-  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/memory/knowledge/research");
+  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/domains/research/projects");
   assert.equal(
     getDefaultResearchRoot({
       env: {
         SABLE_INSTANCE_HOME: "/srv/alex",
       },
     }),
-    "/srv/alex/memory/knowledge/research"
+    "/srv/alex/domains/research/projects"
   );
   assert.equal(
     getDefaultResearchRoot({

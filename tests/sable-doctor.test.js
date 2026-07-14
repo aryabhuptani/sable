@@ -125,8 +125,8 @@ test("doctor reports bridge runtime paths through active instance config", () =>
   assert.match(check.detail, /codexCwd=~\/workspace/);
   assert.match(check.detail, /telegramCliPath=~\/custom\/telegram.py/);
   assert.match(check.detail, /voiceModelPath=~\/models\/whisper/);
-  assert.match(check.detail, /schedulerJobsPath=\/data\/alex\/tasks\/projects\/sable\/scheduler-jobs.json/);
-  assert.match(check.detail, /researchRoot=\/data\/alex\/memory\/knowledge\/research/);
+  assert.match(check.detail, /schedulerJobsPath=~\/domains\/orchestrator\/schedules\/scheduler-jobs.json/);
+  assert.match(check.detail, /researchRoot=~\/domains\/research\/projects/);
   assert.doesNotMatch(check.detail, /\/srv\/alex\/workspace/);
 });
 

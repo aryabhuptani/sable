@@ -14,7 +14,7 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled
 
 function defaultJobsRoot({ env = process.env, instanceConfig } = {}) {
   const instance = instanceConfig || createInstanceConfig({ env });
-  return path.join(path.dirname(instance.projectTasksPath), "background-jobs");
+  return path.join(instance.runsRoot || path.dirname(instance.projectTasksPath), "background-jobs");
 }
 
 function parseArgs(argv) {

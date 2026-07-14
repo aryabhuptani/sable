@@ -24,8 +24,8 @@ Sable expects a markdown-first memory tree:
 
 - `AGENTS.md` for durable local operating norms.
 - `skills/` for reusable procedures.
-- `memory/tasks/` for active work and project task lists.
-- `memory/knowledge/` for semantic, project, and research knowledge.
+- `domains/<domain>/projects/` for active work, project task lists, and durable domain context.
+- `domains/shared/skills/` for reusable procedures.
 
 The memory architecture and daily eval loop are documented in:
 

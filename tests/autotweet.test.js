@@ -72,11 +72,11 @@ queue_mode: draft
 
 test("autotweet default paths follow instance config", () => {
   assert.deepEqual(getDefaultAutotweetPaths({ env: {} }), {
-    root: "/home/arya/memory/knowledge/projects/sable/autotweet",
-    configPath: "/home/arya/memory/knowledge/projects/sable/autotweet/CONFIG.md",
-    styleGuidePath: "/home/arya/memory/knowledge/projects/sable/autotweet/STYLE_GUIDE.md",
-    questionBankPath: "/home/arya/memory/knowledge/projects/sable/autotweet/QUESTION_BANK.md",
-    suggestionsPath: "/home/arya/memory/knowledge/projects/sable/autotweet/SUGGESTIONS.md",
+    root: "/home/arya/domains/orchestrator/projects/autotweet",
+    configPath: "/home/arya/domains/orchestrator/projects/autotweet/CONFIG.md",
+    styleGuidePath: "/home/arya/domains/orchestrator/projects/autotweet/STYLE_GUIDE.md",
+    questionBankPath: "/home/arya/domains/orchestrator/projects/autotweet/QUESTION_BANK.md",
+    suggestionsPath: "/home/arya/domains/orchestrator/projects/autotweet/SUGGESTIONS.md",
   });
 
   assert.deepEqual(
@@ -130,11 +130,11 @@ enabled: true
 
 test("autotweet runtime paths follow instance config", () => {
   assert.deepEqual(getDefaultAutotweetRuntimePaths({ env: {} }), {
-    codexCwd: "/home/arya/projects/sable",
-    projectDir: "/home/arya/projects/sable/apps/signal-bridge",
-    runLogDir: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs",
-    historyPath: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs/history.jsonl",
-    lastRunPath: "/home/arya/memory/knowledge/projects/sable/autotweet/run-logs/last-run.json",
+    codexCwd: "/home/arya/domains/coding/projects/sable",
+    projectDir: "/home/arya/domains/coding/projects/sable/apps/signal-bridge",
+    runLogDir: "/home/arya/domains/orchestrator/projects/autotweet/run-logs",
+    historyPath: "/home/arya/domains/orchestrator/projects/autotweet/run-logs/history.jsonl",
+    lastRunPath: "/home/arya/domains/orchestrator/projects/autotweet/run-logs/last-run.json",
   });
 
   assert.deepEqual(

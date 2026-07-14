@@ -99,8 +99,9 @@ test("rendered instance env points runtime paths at the private instance", () =>
   assert.match(env, /SABLE_INSTANCE_HOME=\/srv\/sable-user/);
   assert.match(env, /SABLE_REPO_ROOT=\/opt\/sable/);
   assert.match(env, /SABLE_CODEX_CWD=\/srv\/sable-user/);
-  assert.match(env, /SABLE_DEFAULT_SCHEDULER_JOBS_PATH=\/srv\/sable-user\/memory\/tasks\/projects\/sable\/default-scheduler-jobs\.json/);
-  assert.match(env, /SABLE_SCHEDULER_STATE_PATH=\/srv\/sable-user\/memory\/tasks\/projects\/sable\/scheduler-state\.json/);
+  assert.match(env, /SABLE_DOMAINS_ROOT=\/srv\/sable-user\/domains/);
+  assert.match(env, /SABLE_DEFAULT_SCHEDULER_JOBS_PATH=\/srv\/sable-user\/domains\/orchestrator\/schedules\/default-scheduler-jobs\.json/);
+  assert.match(env, /SABLE_SCHEDULER_STATE_PATH=\/srv\/sable-user\/domains\/orchestrator\/schedules\/scheduler-state\.json/);
   assert.match(env, /SABLE_PLUGIN_PATHS=\/srv\/sable-user\/plugins/);
   assert.match(env, /CODEX_HOME=\/srv\/sable-user\/\.codex-bridge/);
 });

@@ -10,7 +10,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     command: argv[0] || "run",
     repoRoot: DEFAULT_REPO_ROOT,
     restartService: true,
-    smokeLevel: "community",
+    smokeLevel: "smoke",
   };
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -29,8 +29,8 @@ function parseArgs(argv = process.argv.slice(2)) {
   if (!["run", "check"].includes(options.command)) {
     throw new Error("Command must be run or check");
   }
-  if (!["none", "doctor", "plugins", "community", "smoke"].includes(options.smokeLevel)) {
-    throw new Error("--smoke-level must be none, doctor, plugins, community, or smoke");
+  if (!["none", "doctor", "plugins", "smoke"].includes(options.smokeLevel)) {
+    throw new Error("--smoke-level must be none, doctor, plugins, or smoke");
   }
   return options;
 }
@@ -40,7 +40,7 @@ function runUpgrade({
   logger = console,
   repoRoot = DEFAULT_REPO_ROOT,
   restartService = true,
-  smokeLevel = "community",
+  smokeLevel = "smoke",
   spawn = spawnSync,
 } = {}) {
   const dryRun = command === "check";
@@ -147,7 +147,7 @@ function testCommandForSmokeLevel(smokeLevel) {
   if (smokeLevel === "smoke") {
     return ["npm", "run", "test:smoke"];
   }
-  return ["npm", "run", "test:community"];
+  return ["npm", "run", "test:smoke"];
 }
 
 function formatUpgradeSummary(summary) {
@@ -176,7 +176,7 @@ function formatUpgradeSummary(summary) {
 
 function usage() {
   return [
-    "Usage: node tools/upgrade/upgrade.js <run|check> [--smoke-level none|doctor|plugins|community|smoke] [--no-restart]",
+    "Usage: node tools/upgrade/upgrade.js <run|check> [--smoke-level none|doctor|plugins|smoke] [--no-restart]",
     "",
     "Performs a guarded upstream update without touching private instance state or local plugins.",
   ].join("\n");

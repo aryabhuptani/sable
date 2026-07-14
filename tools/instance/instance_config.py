@@ -15,6 +15,14 @@ DEFAULT_REPO_ROOT = str(Path(__file__).resolve().parents[2])
 class InstanceConfig:
     home_dir: str
     repo_root: str
+    domains_root: str
+    shared_root: str
+    orchestrator_root: str
+    coding_root: str
+    research_domain_root: str
+    work_root: str
+    ops_root: str
+    archive_root: str
     memory_root: str
     knowledge_root: str
     research_root: str
@@ -22,6 +30,7 @@ class InstanceConfig:
     signal_bridge_dir: str
     tasks_root: str
     skills_root: str
+    runs_root: str
     agents_path: str
     todo_path: str
     project_knowledge_root: str
@@ -57,22 +66,44 @@ def create_instance_config(
         or DEFAULT_HOME_DIR
     )
     resolved_repo_root = _resolve(_env_value(active_env, "SABLE_REPO_ROOT") or repo_root)
+    domains_root = _resolve(
+        _env_value(active_env, "SABLE_DOMAINS_ROOT") or Path(resolved_home_dir) / "domains"
+    )
+    shared_root = _resolve(
+        _env_value(active_env, "SABLE_SHARED_ROOT") or Path(domains_root) / "shared"
+    )
+    orchestrator_root = _resolve(
+        _env_value(active_env, "SABLE_ORCHESTRATOR_ROOT")
+        or Path(domains_root) / "orchestrator"
+    )
+    coding_root = _resolve(
+        _env_value(active_env, "SABLE_CODING_ROOT") or Path(domains_root) / "coding"
+    )
+    research_domain_root = _resolve(
+        _env_value(active_env, "SABLE_RESEARCH_DOMAIN_ROOT")
+        or Path(domains_root) / "research"
+    )
+    work_root = _resolve(_env_value(active_env, "SABLE_WORK_ROOT") or Path(domains_root) / "work")
+    ops_root = _resolve(_env_value(active_env, "SABLE_OPS_ROOT") or Path(domains_root) / "ops")
+    archive_root = _resolve(
+        _env_value(active_env, "SABLE_ARCHIVE_ROOT") or Path(domains_root) / "archive"
+    )
     memory_root = _resolve(
-        _env_value(active_env, "SABLE_MEMORY_ROOT") or Path(resolved_home_dir) / "memory"
+        _env_value(active_env, "SABLE_MEMORY_ROOT") or Path(orchestrator_root) / "legacy" / "memory"
     )
     knowledge_root = _resolve(
         _env_value(active_env, "SABLE_KNOWLEDGE_ROOT") or Path(memory_root) / "knowledge"
     )
     tasks_root = _resolve(_env_value(active_env, "SABLE_TASKS_ROOT") or Path(memory_root) / "tasks")
     skills_root = _resolve(
-        _env_value(active_env, "SABLE_SKILLS_ROOT") or Path(resolved_home_dir) / "skills"
+        _env_value(active_env, "SABLE_SKILLS_ROOT") or Path(shared_root) / "skills"
     )
     research_root = _resolve(
-        _env_value(active_env, "SABLE_RESEARCH_ROOT") or Path(knowledge_root) / "research"
+        _env_value(active_env, "SABLE_RESEARCH_ROOT") or Path(research_domain_root) / "projects"
     )
     autotweet_root = _resolve(
         _env_value(active_env, "SABLE_AUTOTWEET_ROOT")
-        or Path(knowledge_root) / "projects" / "sable" / "autotweet"
+        or Path(orchestrator_root) / "projects" / "autotweet"
     )
     signal_bridge_dir = _resolve(
         _env_value(active_env, "SABLE_SIGNAL_BRIDGE_DIR")
@@ -86,28 +117,37 @@ def create_instance_config(
     )
     project_knowledge_root = _resolve(
         _env_value(active_env, "SABLE_PROJECT_KNOWLEDGE_ROOT")
-        or Path(knowledge_root) / "projects" / "sable"
+        or Path(coding_root) / "projects" / "sable" / "knowledge"
     )
     project_tasks_path = _resolve(
         _env_value(active_env, "SABLE_PROJECT_TASKS_PATH")
-        or Path(tasks_root) / "projects" / "sable" / "TODO.md"
+        or Path(coding_root) / "projects" / "sable" / "TASKS.md"
     )
     scheduler_jobs_path = _resolve(
         _env_value(active_env, "SABLE_SCHEDULER_JOBS_PATH")
-        or Path(tasks_root) / "projects" / "sable" / "scheduler-jobs.json"
+        or Path(orchestrator_root) / "schedules" / "scheduler-jobs.json"
     )
     scheduler_state_path = _resolve(
         _env_value(active_env, "SABLE_SCHEDULER_STATE_PATH")
-        or Path(tasks_root) / "projects" / "sable" / "scheduler-state.json"
+        or Path(orchestrator_root) / "schedules" / "scheduler-state.json"
     )
     default_scheduler_jobs_path = _resolve(
         _env_value(active_env, "SABLE_DEFAULT_SCHEDULER_JOBS_PATH")
-        or Path(tasks_root) / "projects" / "sable" / "default-scheduler-jobs.json"
+        or Path(orchestrator_root) / "schedules" / "default-scheduler-jobs.json"
     )
+    runs_root = _resolve(_env_value(active_env, "SABLE_RUNS_ROOT") or Path(orchestrator_root) / "runs")
 
     return InstanceConfig(
         home_dir=resolved_home_dir,
         repo_root=resolved_repo_root,
+        domains_root=domains_root,
+        shared_root=shared_root,
+        orchestrator_root=orchestrator_root,
+        coding_root=coding_root,
+        research_domain_root=research_domain_root,
+        work_root=work_root,
+        ops_root=ops_root,
+        archive_root=archive_root,
         memory_root=memory_root,
         knowledge_root=knowledge_root,
         research_root=research_root,
@@ -115,6 +155,7 @@ def create_instance_config(
         signal_bridge_dir=signal_bridge_dir,
         tasks_root=tasks_root,
         skills_root=skills_root,
+        runs_root=runs_root,
         agents_path=agents_path,
         todo_path=todo_path,
         project_knowledge_root=project_knowledge_root,
