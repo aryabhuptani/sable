@@ -8,6 +8,7 @@ const test = require("node:test");
 const {
   buildRunnerConfig,
   buildRunnerInvocation,
+  controlJob,
   createJobId,
   defaultJobsRoot,
   defaultWorktreeDir,
@@ -70,6 +71,23 @@ test("background job parser supports run-kernel metadata", () => {
     () => parseArgs(["start", "--risk-tier", "6"]),
     /Expected an integer from 0 to 5/
   );
+});
+
+test("background job parser supports run control options", () => {
+  const options = parseArgs([
+    "control",
+    "--id",
+    "job-1",
+    "--action",
+    "steer",
+    "--instruction",
+    "Try the narrower eval first.",
+  ]);
+
+  assert.equal(options.command, "control");
+  assert.equal(options.id, "job-1");
+  assert.equal(options.action, "steer");
+  assert.equal(options.instruction, "Try the narrower eval first.");
 });
 
 test("background job parser applies agent profile defaults", () => {
@@ -906,4 +924,52 @@ test("background job list formatting is compact", () => {
     formatJobList([{ id: "job-1", status: "running", name: "Batch 1", cwd: "/tmp/work" }]),
     "job-1 [running:codex] Batch 1 /tmp/work"
   );
+});
+
+test("background job control writes run controls through the run kernel", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const cwd = path.join(tempDir, "workspace");
+  const jobsRoot = path.join(tempDir, "jobs");
+  await fs.mkdir(cwd, { recursive: true });
+
+  try {
+    await startJob({
+      ...parseArgs([
+        "start",
+        "--id",
+        "job-control",
+        "--name",
+        "Control Job",
+        "--cwd",
+        cwd,
+        "--prompt",
+        "Wait for steering.",
+        "--jobs-root",
+        jobsRoot,
+        "--dry-run",
+      ]),
+    });
+
+    const run = await controlJob({
+      ...parseArgs([
+        "control",
+        "--id",
+        "job-control",
+        "--action",
+        "steer",
+        "--instruction",
+        "Use the isolated eval runner.",
+        "--jobs-root",
+        jobsRoot,
+      ]),
+    });
+
+    assert.equal(run.next_action, "Steering queued: Use the isolated eval runner.");
+    assert.deepEqual(run.controls.map((control) => control.action), ["steer"]);
+    assert.deepEqual(run.controls.map((control) => control.actor), ["background-job-cli"]);
+    const controlFile = JSON.parse(await fs.readFile(path.join(jobsRoot, "job-control", "control.json"), "utf8"));
+    assert.equal(controlFile.controls[0].instruction, "Use the isolated eval runner.");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });

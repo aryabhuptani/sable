@@ -9,9 +9,9 @@ const DOMAIN_PROFILES = Object.freeze(["personal", "coding", "research", "work"]
 
 const VISIBILITY_HINTS = Object.freeze({
   silent: "Keep progress quiet; checkpoint only durable state needed for recovery.",
-  final_only: "Checkpoint before completion or when blocked; otherwise report only the final outcome.",
-  milestones: "Checkpoint meaningful milestones and before completion or blocking.",
-  interactive: "Checkpoint progress and decisions as work proceeds, including before completion or blocking.",
+  final_only: "Poll controls before major phases and before completion or blocking; otherwise report only the final outcome.",
+  milestones: "Poll controls and publish concise milestone updates at meaningful phase boundaries.",
+  interactive: "Poll controls and publish concise progress updates as work proceeds, especially before decisions, completion, or blocking.",
 });
 
 const DELIVERY_HINTS = Object.freeze({
@@ -62,7 +62,8 @@ function renderAgentTaskPreamble(packet) {
     `Policy: trigger=${packet.trigger}; visibility=${packet.visibility}; delivery=${packet.delivery}; risk=${packet.riskTier}.`,
     `Hierarchy: ${packet.hierarchyHint}`,
     `Risk: ${packet.riskHint} Do not exceed this tier; stop and surface a checkpoint if more authority is required.`,
-    `Checkpoint: ${packet.checkpointHint} Use $SABLE_RUN_CHECKPOINT when a checkpoint is needed.`,
+    `Control: ${packet.checkpointHint} Use $SABLE_RUN_CHECKPOINT before each major phase, after long-running commands, and before final output. If it reports cancellation or blocking, stop cleanly. If it includes steering instructions, incorporate the newest relevant instruction and mention that in the next update or final report.`,
+    "Progress: If $SABLE_RUN_UPDATE is available, use it for durable public milestones rather than chatty raw progress. Keep updates concise and safe to show to Arya.",
     `Delivery: ${packet.deliveryHint}`,
     "[End Sable domain task packet]",
   ];

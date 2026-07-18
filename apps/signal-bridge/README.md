@@ -90,9 +90,10 @@ The service reads the same `.env` file in this app directory, so changing number
 - Messages are processed one at a time. If a message arrives while Codex is already running, the sender gets:
   `Queued, will process after current task.`
 - Send `/cancel` to interrupt the current in-progress transcription or Codex turn without clearing the queued follow-up messages.
+- Long-running work should be launched as a detached delegated run through the background-job/run-ledger harness instead of holding this primary queue open for hours. Use `/runs`, `/run <id>`, `/run <id> steer <instruction>`, `/run <id> cancel`, and `/blockers` to inspect and control delegated runs from Signal.
 - `SIGTERM` now defers bridge shutdown until the current queue drains, so an in-flight reply can finish before the process exits.
 - When the bridge performs a watcher-driven restart, it sends `🟡 Restarting Connection to Sable` before exiting and `🟢 Reconnected to Sable` after the new process comes up.
-- Long-running Codex jobs stream short progress updates from the app-server turn/item protocol when available.
+- Live Codex turns stream short progress updates from the app-server turn/item protocol when available. Detached runs report through the run ledger according to their visibility policy.
 - Replies longer than 1500 characters are split into multiple Signal messages with a 500 ms delay between chunks.
 - Every inbound and outbound message is logged to stdout with timestamps.
 - The bridge also polls a persisted scheduler jobs file and runs due recurring workflows through the same normal queue path as Signal messages.

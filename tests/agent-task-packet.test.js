@@ -27,7 +27,7 @@ test("agent task packet combines canonical run metadata with profile defaults", 
     riskHint: "Make reversible changes inside assigned workspace.",
     hierarchyHint:
       "You report to orchestrator. Do not delegate to personal, coding, research, work or any other domain agent; no sideways delegation.",
-    checkpointHint: "Checkpoint meaningful milestones and before completion or blocking.",
+    checkpointHint: "Poll controls and publish concise milestone updates at meaningful phase boundaries.",
     deliveryHint: "Prepare a concise user-facing result for Signal delivery.",
   });
 });
@@ -50,10 +50,12 @@ test("task preamble is deterministic, bounded, and preserves the original prompt
   const combined = prependAgentTaskPreamble(original, packet);
 
   assert.equal(first, second);
-  assert.ok(first.length < 1200);
+  assert.ok(first.length < 1600);
   assert.match(first, /Role: research - Collects evidence/);
   assert.match(first, /no sideways delegation/);
   assert.match(first, /visibility=final_only; delivery=orchestrator_only; risk=1/);
+  assert.match(first, /Use \$SABLE_RUN_CHECKPOINT before each major phase/);
+  assert.match(first, /If \$SABLE_RUN_UPDATE is available/);
   assert.ok(combined.endsWith(original));
   assert.equal(combined.slice(-original.length), original);
 });

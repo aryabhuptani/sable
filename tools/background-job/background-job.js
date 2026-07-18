@@ -20,6 +20,7 @@ const {
   scanRuns: scanWatchdogRuns,
 } = require("../runtime/run-watchdog");
 const {
+  createBackgroundJobRunStore,
   createRun,
   describeRiskTier,
   readRun,
@@ -76,6 +77,8 @@ function parseArgs(argv) {
     worktreeBranch: "",
     worktreeDir: "",
     worktreeFrom: "",
+    action: "",
+    instruction: "",
   };
 
   for (let index = options.command === "help" ? 0 : 1; index < argv.length; index += 1) {
@@ -128,6 +131,10 @@ function parseArgs(argv) {
       options.disallowedTools = argv[++index] || "";
     } else if (arg === "--output-format") {
       options.outputFormat = argv[++index] || options.outputFormat;
+    } else if (arg === "--action") {
+      options.action = argv[++index] || "";
+    } else if (arg === "--instruction") {
+      options.instruction = argv[++index] || "";
     } else if (arg === "--recent-lines") {
       options.recentLines = parsePositiveInteger(argv[++index], DEFAULT_RECENT_LOG_LINES);
     } else if (arg === "--worktree-from") {
@@ -904,6 +911,30 @@ async function stopJob(options) {
   return JSON.parse(await fsp.readFile(paths.statusPath, "utf8"));
 }
 
+async function controlJob(options) {
+  if (!options.id) {
+    throw new Error("control requires --id.");
+  }
+  if (!options.action) {
+    throw new Error("control requires --action pause|resume|cancel|steer.");
+  }
+  const store = createBackgroundJobRunStore({
+    jobsRoot: options.jobsRoot || defaultJobsRoot(),
+  });
+  const result = await store.controlRun(options.id, {
+    action: options.action,
+    instruction: options.instruction || "",
+    actor: "background-job-cli",
+  });
+  if (!result) {
+    throw new Error(`No run matched ${options.id}.`);
+  }
+  if (result.ok === false) {
+    throw new Error(result.message || `Could not ${options.action} run ${options.id}.`);
+  }
+  return result.run || result;
+}
+
 async function reportJob(options) {
   const job = await loadJob(options);
   const paths = jobPaths(job.jobDir);
@@ -944,6 +975,7 @@ function usage() {
     "  npm run background-job -- list",
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
+    "  npm run background-job -- control --id JOB_ID --action pause|resume|cancel|steer [--instruction TEXT]",
     "  npm run background-job -- stop --id JOB_ID",
     "  npm run background-job -- watchdog [--jobs-root DIR] [--older-than-minutes N] [--fix] [--json|--text]",
     "  npm run background-job -- profiles",
@@ -995,6 +1027,10 @@ async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify(await reportJob(options), null, 2));
     return 0;
   }
+  if (options.command === "control") {
+    console.log(JSON.stringify(await controlJob(options), null, 2));
+    return 0;
+  }
   if (options.command === "stop") {
     console.log(JSON.stringify(await stopJob(options), null, 2));
     return 0;
@@ -1024,12 +1060,16 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
-  main().then((code) => process.exit(code));
+  main().then((code) => process.exit(code)).catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
 }
 
 module.exports = {
   buildRunnerConfig,
   buildRunnerInvocation,
+  controlJob,
   createJobId,
   defaultClaudeHome,
   defaultJobsRoot,
