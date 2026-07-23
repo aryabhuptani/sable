@@ -37,6 +37,31 @@ function buildAppServerTurnParams({
   };
 }
 
+function getTurnFailureMessage(turn, normalizeText = (value) =>
+  typeof value === "string" ? value.trim() : ""
+) {
+  if (!turn || normalizeText(turn.status).toLowerCase() !== "failed") {
+    return "";
+  }
+
+  const rawMessage =
+    normalizeText(turn.error?.message) ||
+    normalizeText(turn.error) ||
+    "The Codex runtime reported that the turn failed.";
+  const normalizedError = rawMessage.toLowerCase();
+
+  if (
+    normalizedError.includes("token_expired") ||
+    normalizedError.includes("refresh_token_reused") ||
+    normalizedError.includes("authentication token is expired") ||
+    normalizedError.includes("signing in again")
+  ) {
+    return "Sable's Codex login has expired and needs to be reauthenticated.";
+  }
+
+  return rawMessage;
+}
+
 function createAppServerTurnRunner({
   appServerMessages,
   codexCwd,
@@ -243,6 +268,9 @@ function createAppServerTurnRunner({
         if (message.method === "turn/completed") {
           if (normalizeText(message.params?.turn?.id) === turnId || !turnId) {
             runtimeHooks.noteTurnCompleted();
+            finalMessage =
+              finalMessage ||
+              getTurnFailureMessage(message.params?.turn, normalizeText);
             void succeed();
           }
         }
@@ -369,4 +397,5 @@ module.exports = {
   buildAppServerThreadParams,
   buildAppServerTurnParams,
   createAppServerTurnRunner,
+  getTurnFailureMessage,
 };
