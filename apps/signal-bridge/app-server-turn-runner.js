@@ -99,11 +99,12 @@ function createAppServerTurnRunner({
     imagePaths = [],
     jobControl = null,
     suppressLiveUpdates = false,
-    onInvalidSession = null
+    onInvalidSession = null,
+    replyRecipient = ""
   ) {
     return new Promise((resolve, reject) => {
       const startedAt = timestamp();
-      const activeSender = getActiveSender();
+      const activeSender = normalizeText(replyRecipient) || getActiveSender();
       const liveUpdates = createLiveUpdateChannel({
         batchWindowMs: runtimeHooks.liveUpdateBatchWindowMs,
         duplicateWindowMs: runtimeHooks.liveUpdateDuplicateWindowMs,
@@ -368,7 +369,8 @@ function createAppServerTurnRunner({
                 imagePaths,
                 null,
                 suppressLiveUpdates,
-                onInvalidSession
+                onInvalidSession,
+                activeSender
               );
               resolve({
                 ...freshResult,

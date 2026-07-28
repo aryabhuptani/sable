@@ -64,6 +64,7 @@ function parseArgs(argv) {
     trigger: undefined,
     visibility: undefined,
     delivery: undefined,
+    recipient: process.env.SABLE_SIGNAL_REPLY_TO || "",
     riskTier: undefined,
     model: "",
     permissionMode: process.env.SABLE_BACKGROUND_CLAUDE_PERMISSION_MODE || DEFAULT_CLAUDE_PERMISSION_MODE,
@@ -119,6 +120,8 @@ function parseArgs(argv) {
       options.visibility = argv[++index] || "";
     } else if (arg === "--delivery") {
       options.delivery = argv[++index] || "";
+    } else if (arg === "--recipient") {
+      options.recipient = argv[++index] || "";
     } else if (arg === "--risk-tier") {
       options.riskTier = parseRiskTier(argv[++index]);
     } else if (arg === "--model") {
@@ -350,6 +353,7 @@ async function startJob(options, { now = new Date(), spawnFn = spawn } = {}) {
     dryRun: Boolean(options.dryRun),
     jobDir,
     ...runMetadata,
+    signalRecipient: String(options.recipient || "").trim(),
     model: options.model || "",
     runner: runnerConfig.type,
     runnerBin: runnerConfig.bin,
@@ -589,6 +593,7 @@ async function createBackgroundRun(job, paths, { now = new Date() } = {}) {
     model: job.model || "",
     background_job_id: job.id,
     background_job_status_path: paths.statusPath,
+    signal_recipient: String(job.signalRecipient || job.recipient || "").trim(),
   }, { now });
 }
 
@@ -982,7 +987,7 @@ function usage() {
     "  node tools/background-job/batch-notify.js init --batch-file FILE --job JOB_ID [--job JOB_ID...]",
     "",
     "Starts detached bounded background agent jobs with durable logs/status. Codex is the default runner; Claude Code can be selected with --runner claude.",
-    "Run metadata: --agent-profile PROFILE --trigger manual|scheduled|callback|autonomous --visibility silent|final_only|milestones|interactive --delivery none|orchestrator_only|signal --risk-tier 0..5.",
+    "Run metadata: --agent-profile PROFILE --trigger manual|scheduled|callback|autonomous --visibility silent|final_only|milestones|interactive --delivery none|orchestrator_only|signal [--recipient +1555] --risk-tier 0..5.",
     "Pass --callback-command COMMAND to start so the worker runs COMMAND after completion with SABLE_BACKGROUND_JOB_* env vars.",
     "For sibling batches, put the same callback on every job: node tools/background-job/batch-notify.js callback --batch-file FILE.",
   ].join("\n");

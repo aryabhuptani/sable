@@ -283,7 +283,8 @@ function createBridgeJobRuntime(options = {}) {
         imagePaths,
         jobControl,
         backgroundJob || shouldSuppressJobReplies(job),
-        () => clearSessionState(sessionKind)
+        () => clearSessionState(sessionKind),
+        job.sender
       );
 
       if (result.sessionId) {

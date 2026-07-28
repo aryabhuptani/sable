@@ -184,8 +184,12 @@ test("job runtime runs prompt jobs, stores session ids, and cleans materialized 
 });
 
 test("job runtime suppresses scheduled silent replies", async () => {
+  const calls = [];
   const { replies, runtime, sessions } = createRuntime({
-    runCodex: async () => ({ sessionId: "bg-session", message: "hidden" }),
+    runCodex: async (...args) => {
+      calls.push(args);
+      return { sessionId: "bg-session", message: "hidden" };
+    },
   });
 
   await runtime.processJob({
@@ -198,4 +202,5 @@ test("job runtime suppresses scheduled silent replies", async () => {
 
   assert.deepEqual(replies, []);
   assert.equal(sessions.backgroundSessionId, "bg-session");
+  assert.equal(calls[0][6], "+1555");
 });

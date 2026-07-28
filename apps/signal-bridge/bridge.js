@@ -703,7 +703,8 @@ async function runCodex(
   imagePaths = [],
   jobControl = null,
   suppressLiveUpdates = false,
-  onInvalidSession = null
+  onInvalidSession = null,
+  replyRecipient = ""
 ) {
   recordTestLaunchArgs();
 
@@ -727,7 +728,8 @@ async function runCodex(
     imagePaths,
     jobControl,
     suppressLiveUpdates,
-    onInvalidSession
+    onInvalidSession,
+    replyRecipient
   );
 }
 
@@ -737,7 +739,8 @@ function runCodexViaAppServer(
   imagePaths = [],
   jobControl = null,
   suppressLiveUpdates = false,
-  onInvalidSession = null
+  onInvalidSession = null,
+  replyRecipient = ""
 ) {
   return appServerTurnRunner.runCodexViaAppServer(
     prompt,
@@ -745,7 +748,8 @@ function runCodexViaAppServer(
     imagePaths,
     jobControl,
     suppressLiveUpdates,
-    onInvalidSession
+    onInvalidSession,
+    replyRecipient
   );
 }
 

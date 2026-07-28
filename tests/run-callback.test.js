@@ -51,6 +51,7 @@ test("run callback queues concise public text and records callback state", async
       status: "completed",
       public_summary: "Callback tests pass.",
       next_action: "Review the patch.",
+      signal_recipient: "+15551112222",
     }, { now: new Date("2026-07-13T10:00:00.000Z") });
 
     const result = await handleRunCallback(
@@ -66,6 +67,7 @@ test("run callback queues concise public text and records callback state", async
 
     assert.equal(result.notificationQueued, true);
     assert.equal(queued.length, 1);
+    assert.equal(queued[0].recipient, "+15551112222");
     assert.match(queued[0].message, /Sable run completed: Implement callback wakeups/);
     assert.match(queued[0].message, /Summary: Callback tests pass/);
     assert.doesNotMatch(queued[0].message, /stdout|trace/i);

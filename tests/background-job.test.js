@@ -58,6 +58,8 @@ test("background job parser supports run-kernel metadata", () => {
     "silent",
     "--delivery",
     "none",
+    "--recipient",
+    "+15551112222",
     "--risk-tier",
     "1",
   ]);
@@ -66,6 +68,7 @@ test("background job parser supports run-kernel metadata", () => {
   assert.equal(options.trigger, "scheduled");
   assert.equal(options.visibility, "silent");
   assert.equal(options.delivery, "none");
+  assert.equal(options.recipient, "+15551112222");
   assert.equal(options.riskTier, 1);
   assert.throws(
     () => parseArgs(["start", "--risk-tier", "6"]),
@@ -339,6 +342,7 @@ test("background job dry-run writes durable prompt and status files", async () =
         visibility: "milestones",
         delivery: "orchestrator_only",
         riskTier: 2,
+        recipient: "+15551112222",
       },
       { now: new Date("2026-05-07T12:00:00.000Z") }
     );
@@ -379,6 +383,7 @@ test("background job dry-run writes durable prompt and status files", async () =
         model: "",
         background_job_id: "job-1",
         background_job_status_path: path.join(jobsRoot, "job-1", "status.json"),
+        signal_recipient: "+15551112222",
         updated_at: "2026-05-07T12:00:00.000Z",
       }
     );

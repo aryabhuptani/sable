@@ -151,6 +151,7 @@ async function handleRunCallback(options, deps = {}) {
       env,
       idPrefix: "run-callback",
       message,
+      recipient: run.signal_recipient,
     });
   }
   const timestamp = now.toISOString();
