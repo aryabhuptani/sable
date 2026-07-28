@@ -10,8 +10,9 @@ function statePaths(env = process.env) {
   const root = path.resolve(expandHome(env.SABLE_WHATSAPP_STATE_DIR || env.SABLE_WHATSAPP_SESSION_PATH || path.join(instance.homeDir, ".local", "state", "sable-whatsapp")));
   return {
     root,
-    profileDir: path.join(root, "profile"),
+    profileDir: path.resolve(expandHome(env.SABLE_WHATSAPP_PROFILE_DIR || path.join(root, "profile"))),
     artifactsDir: path.join(root, "artifacts"),
+    lockPath: path.join(root, "browser-worker.lock"),
     databasePath: path.resolve(expandHome(env.SABLE_WHATSAPP_DATABASE_PATH || path.join(root, "messages.sqlite3"))),
   };
 }

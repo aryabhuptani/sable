@@ -11,7 +11,7 @@ const cli = require("../tools/whatsapp/whatsapp_cli");
 const { normalizeDomMessage } = require("../tools/whatsapp/dom");
 const { SelectorDiagnosticError, WhatsAppBrowserAdapter, firstVisible } = require("../tools/whatsapp/browser-adapter");
 const { SCHEMA_VERSION, WhatsAppStore } = require("../tools/whatsapp/store");
-const { crawlChat } = require("../tools/whatsapp/sync");
+const { crawlChat, syncApprovedChats } = require("../tools/whatsapp/sync");
 
 async function tempState(name) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), name));
@@ -74,7 +74,7 @@ test("SQLite migration upgrades an existing v1 index", async () => {
   store.close();
   store = new WhatsAppStore(databasePath);
   try {
-    assert.equal(store.schemaVersion(), 2);
+    assert.equal(store.schemaVersion(), SCHEMA_VERSION);
     assert.equal(store.ftsAvailable, true);
   } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
 });
@@ -122,6 +122,33 @@ test("crawl stops deterministically at max scrolls", async () => {
   } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
 });
 
+test("approved-chat sync isolates failures and continues with remaining chats", async () => {
+  const { root } = await tempState("sable-wa-isolation-");
+  const store = new WhatsAppStore(path.join(root, "index.sqlite3"));
+  const approvedChats = [{ id: "bad", name: "Bad" }, { id: "good", name: "Good" }];
+  const adapter = {
+    findAndOpenChat: async (approved) => {
+      if (approved.id === "bad") throw new Error("selector drift");
+      return { ...approved, approved: true };
+    },
+    readVisibleMessages: async () => [message("m1", "2026-07-20T00:00:00Z")],
+    scrollHistoryUp: async () => {},
+  };
+  try {
+    const results = await syncApprovedChats({
+      adapter,
+      store,
+      approvedChats,
+      limits: { maxScrolls: 0 },
+    });
+    assert.equal(results.length, 2);
+    assert.equal(results[0].ok, false);
+    assert.match(results[0].error, /selector drift/);
+    assert.equal(results[1].ok, true);
+    assert.equal(store.messagesForChat("good").length, 1);
+  } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
+});
+
 test("CLI searches and exports the local index without live WhatsApp", async () => {
   const { root, env } = await tempState("sable-wa-cli-");
   const approvedPath = path.join(root, "approved.json");
@@ -152,7 +179,7 @@ test("CLI doctor is deterministic and validates config, Playwright, state, and S
     assert.equal(result.code, 0);
     const report = JSON.parse(result.output);
     assert.equal(report.ok, true);
-    assert.deepEqual(report.checks.map((check) => check.name), ["approved-config", "approved-config-json", "playwright", "state-directory", "sqlite"]);
+    assert.deepEqual(report.checks.map((check) => check.name), ["approved-config", "approved-config-json", "playwright", "state-directory", "sqlite", "sync-health"]);
   } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 

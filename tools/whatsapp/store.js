@@ -4,12 +4,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 class WhatsAppStore {
   constructor(databasePath) {
+    this.databasePath = databasePath;
     fs.mkdirSync(path.dirname(databasePath), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(databasePath);
+    try { fs.chmodSync(databasePath, 0o600); } catch {}
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     this.migrate();
   }
@@ -32,6 +34,18 @@ class WhatsAppStore {
     } else {
       this.ftsAvailable = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='messages_fts'").get());
     }
+    if (current < 3) this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,
+        chats_ok INTEGER NOT NULL DEFAULT 0,
+        chats_failed INTEGER NOT NULL DEFAULT 0,
+        messages_seen INTEGER NOT NULL DEFAULT 0,
+        error TEXT
+      );
+    `);
     this.db.prepare("INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(SCHEMA_VERSION));
   }
 
@@ -70,6 +84,16 @@ class WhatsAppStore {
       .run(chatId, value.oldestMessageId || null, value.oldestTimestamp || null, value.newestMessageId || null, value.newestTimestamp || null, value.completed ? 1 : 0, new Date().toISOString());
   }
   getCheckpoint(chatId) { return this.db.prepare("SELECT * FROM sync_checkpoints WHERE chat_id=?").get(chatId) || null; }
+  beginSyncRun() {
+    return Number(this.db.prepare("INSERT INTO sync_runs(started_at,status) VALUES(?,?)").run(new Date().toISOString(), "running").lastInsertRowid);
+  }
+  finishSyncRun(id, { status, chatsOk = 0, chatsFailed = 0, messagesSeen = 0, error = null }) {
+    this.db.prepare("UPDATE sync_runs SET finished_at=?,status=?,chats_ok=?,chats_failed=?,messages_seen=?,error=? WHERE id=?")
+      .run(new Date().toISOString(), status, chatsOk, chatsFailed, messagesSeen, error, id);
+  }
+  latestSyncRun() {
+    return this.db.prepare("SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1").get() || null;
+  }
   listChats() { return this.db.prepare("SELECT c.*,COUNT(m.id) AS message_count FROM chats c LEFT JOIN messages m ON m.chat_id=c.id WHERE c.approved=1 GROUP BY c.id ORDER BY COALESCE(c.last_message_at,'') DESC,c.name").all(); }
   search(query, { chatId, limit = 50 } = {}) {
     if (!String(query || "").trim()) return [];

@@ -53,9 +53,17 @@ async function syncApprovedChats({ adapter, store, approvedChats, limits }) {
   if (!approvedChats.length) throw new Error("No approved WhatsApp chats configured.");
   const results = [];
   for (const approved of approvedChats) {
-    const chat = await adapter.findAndOpenChat(approved);
-    if (!isApprovedChat(chat, approvedChats)) throw new Error(`Browser resolved an unapproved chat: ${chat.name}`);
-    results.push(await crawlChat({ adapter, store, chat, approvedChats, limits }));
+    try {
+      const chat = await adapter.findAndOpenChat(approved);
+      if (!isApprovedChat(chat, [approved])) throw new Error(`Browser resolved an unapproved chat: ${chat.name}`);
+      results.push({ ok: true, ...(await crawlChat({ adapter, store, chat, approvedChats: [approved], limits })) });
+    } catch (error) {
+      results.push({
+        ok: false,
+        chat: { id: approved.id || "", name: approved.name || approved.id || "(unknown)" },
+        error: error.message,
+      });
+    }
   }
   return results;
 }

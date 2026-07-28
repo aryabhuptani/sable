@@ -108,13 +108,21 @@ function commandInitConfig(args, env = process.env) {
 }
 async function withAdapter(args, env, callback) {
   const paths = ensureState(statePaths(env));
+  const releaseLock = acquireWorkerLock(paths.lockPath);
   const adapter = new WhatsAppBrowserAdapter({ paths, headless: boolean(args.headless, true), timeoutMs: integer(args["ready-timeout-ms"], 300_000) });
-  try { await adapter.connect(); return await callback(adapter, paths); } finally { await adapter.close(); }
+  try { await adapter.connect(); return await callback(adapter, paths); }
+  finally { await adapter.close(); releaseLock(); }
 }
 async function commandConnect(args, env = process.env) {
   return withAdapter(args, env, async (adapter, paths) => {
-    const status = await adapter.status();
-    console.log(JSON.stringify({ ...status, profileDir: paths.profileDir }, null, 2));
+    const status = adapter.connectionStatus || await adapter.status();
+    if (!status.connected && status.loginRequired) {
+      await adapter.page.waitForTimeout(integer(args["login-settle-ms"], 3_000));
+    }
+    const loginArtifact = !status.connected && args["capture-login"] !== "false"
+      ? await adapter.captureArtifact("whatsapp-login")
+      : null;
+    console.log(JSON.stringify({ ...status, profileDir: paths.profileDir, loginArtifact }, null, 2));
     if (!status.connected && args.headless !== "false") console.error("Login required. Re-run with --headless false and scan the QR code.");
     if (args.wait === "true") await adapter.waitUntilReady();
     return status.connected ? 0 : 2;
@@ -126,14 +134,28 @@ async function commandSync(args, env = process.env) {
   return withAdapter(args, env, async (adapter, paths) => {
     await adapter.waitUntilReady();
     const store = new WhatsAppStore(paths.databasePath);
+    const runId = store.beginSyncRun();
     try {
       const results = await syncApprovedChats({ adapter, store, approvedChats, limits: {
         until: args.until, maxMessages: args["max-messages"], maxScrolls: args["max-scrolls"],
         maxTimeMs: args["max-time-ms"], ignoreCheckpoint: args["ignore-checkpoint"] === "true",
       } });
-      for (const result of results) console.log(`${result.chat.name}: indexed=${result.messages} scrolls=${result.scrolls} stopped=${result.stopReason}`);
+      const failures = results.filter((result) => !result.ok);
+      const successes = results.filter((result) => result.ok);
+      for (const result of successes) console.log(`${result.chat.name}: indexed=${result.messages} scrolls=${result.scrolls} stopped=${result.stopReason}`);
+      for (const result of failures) console.error(`${result.chat.name}: sync failed: ${result.error}`);
+      store.finishSyncRun(runId, {
+        status: failures.length ? "partial" : "ok",
+        chatsOk: successes.length,
+        chatsFailed: failures.length,
+        messagesSeen: successes.reduce((sum, result) => sum + result.messages, 0),
+        error: failures.map((result) => `${result.chat.name}: ${result.error}`).join("; ") || null,
+      });
+      return failures.length ? 1 : 0;
+    } catch (error) {
+      store.finishSyncRun(runId, { status: "failed", chatsFailed: approvedChats.length, error: error.message });
+      throw error;
     } finally { store.close(); }
-    return 0;
   });
 }
 function commandSearch(args, env = process.env) {
@@ -165,8 +187,9 @@ function commandStatus(args, env = process.env) {
   let playwright = true;
   try { loadPlaywright(); } catch { playwright = false; }
   let indexedChats = 0;
-  if (fs.existsSync(paths.databasePath)) { const store = new WhatsAppStore(paths.databasePath); try { indexedChats = store.listChats().length; } finally { store.close(); } }
-  console.log(JSON.stringify({ stateRoot: paths.root, profileDir: paths.profileDir, databasePath: paths.databasePath, databaseExists: fs.existsSync(paths.databasePath), approvedChats: approved.length, indexedChats, playwright }, null, 2));
+  let latestSync = null;
+  if (fs.existsSync(paths.databasePath)) { const store = new WhatsAppStore(paths.databasePath); try { indexedChats = store.listChats().length; latestSync = store.latestSyncRun(); } finally { store.close(); } }
+  console.log(JSON.stringify({ stateRoot: paths.root, profileDir: paths.profileDir, databasePath: paths.databasePath, databaseExists: fs.existsSync(paths.databasePath), approvedChats: approved.length, indexedChats, playwright, latestSync }, null, 2));
   return 0;
 }
 function commandDoctor(args, env = process.env) {
@@ -176,7 +199,17 @@ function commandDoctor(args, env = process.env) {
   try { loadApprovedChats({ env, filePath: approvedChatsPathFromArgs(args, env) }); checks.push({ name: "approved-config-json", ok: true }); } catch (error) { checks.push({ name: "approved-config-json", ok: false, detail: error.message }); }
   try { loadPlaywright(); checks.push({ name: "playwright", ok: true }); } catch (error) { checks.push({ name: "playwright", ok: false, detail: error.message }); }
   try { ensureState(paths); fs.accessSync(paths.root, fs.constants.R_OK | fs.constants.W_OK); checks.push({ name: "state-directory", ok: true, path: paths.root }); } catch (error) { checks.push({ name: "state-directory", ok: false, detail: error.message }); }
-  try { const store = new WhatsAppStore(paths.databasePath); checks.push({ name: "sqlite", ok: store.schemaVersion() === 2, schemaVersion: store.schemaVersion(), fts: store.ftsAvailable }); store.close(); } catch (error) { checks.push({ name: "sqlite", ok: false, detail: error.message }); }
+  try {
+    const store = new WhatsAppStore(paths.databasePath);
+    const latestSync = store.latestSyncRun();
+    checks.push({ name: "sqlite", ok: store.schemaVersion() === 3, schemaVersion: store.schemaVersion(), fts: store.ftsAvailable });
+    checks.push({
+      name: "sync-health",
+      ok: !latestSync || latestSync.status === "ok",
+      detail: latestSync ? `${latestSync.status} at ${latestSync.finished_at || latestSync.started_at}` : "No sync has completed yet.",
+    });
+    store.close();
+  } catch (error) { checks.push({ name: "sqlite", ok: false, detail: error.message }); }
   const ok = checks.every((check) => check.ok);
   console.log(JSON.stringify({ ok, checks }, null, 2));
   return ok ? 0 : 1;
@@ -188,6 +221,7 @@ async function asyncMain(argv = process.argv.slice(2), env = process.env) {
   const commands = {
     triage: commandTriage, "list-chats": commandListChats, "init-config": commandInitConfig,
     connect: commandConnect, status: commandStatus, sync: commandSync, search: commandSearch,
+    "search-messages": commandSearch,
     "export-approved": commandExportApproved, doctor: commandDoctor,
   };
   if (!commands[args.command]) { printUsage(); return 1; }
@@ -212,6 +246,25 @@ function integer(value, fallback) { const parsed = Number.parseInt(String(value 
 function boolean(value, fallback) { const normalized = text(value).toLowerCase(); if (!normalized) return fallback; return ["1", "true", "yes"].includes(normalized); }
 function validDate(value) { return value instanceof Date && !Number.isNaN(value.getTime()); }
 function truncate(value, limit) { const input = String(value || ""); return input.length <= limit ? input : `${input.slice(0, limit - 1)}…`; }
+function acquireWorkerLock(lockPath) {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+  try {
+    const fd = fs.openSync(lockPath, "wx", 0o600);
+    fs.writeFileSync(fd, `${process.pid}\n`, "utf8");
+    fs.closeSync(fd);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const existingPid = Number.parseInt(fs.readFileSync(lockPath, "utf8"), 10);
+    let running = Number.isFinite(existingPid);
+    if (running) {
+      try { process.kill(existingPid, 0); } catch (probeError) { if (probeError.code === "ESRCH") running = false; }
+    }
+    if (running) throw new Error(`Another WhatsApp browser worker is active (pid ${existingPid}).`);
+    fs.unlinkSync(lockPath);
+    return acquireWorkerLock(lockPath);
+  }
+  return () => { try { fs.unlinkSync(lockPath); } catch {} };
+}
 
 if (require.main === module) asyncMain().then((code) => process.exit(code)).catch((error) => { console.error(error.message); process.exit(1); });
 module.exports = {

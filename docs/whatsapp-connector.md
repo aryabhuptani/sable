@@ -21,6 +21,8 @@ npm run whatsapp:cli -- connect --headless false --wait
 ```
 
 The profile lives under `<instance-home>/.local/state/sable-whatsapp/profile`. It contains browser credentials and must never be copied into the repository. Close other processes using this profile before starting a sync.
+The connector enforces a single browser worker with a private PID lock. A live
+worker is never displaced; a stale lock from a dead process is recovered safely.
 
 ## Normal operation
 
@@ -36,7 +38,7 @@ Then schedule a conservative incremental sync, for example every 15 minutes:
 npm run whatsapp:cli -- sync --max-messages 1000 --max-scrolls 100 --max-time-ms 300000
 ```
 
-Each approved chat is located through WhatsApp's browser search, so it need not already be visible in the sidebar. Crawling stops on the existing oldest checkpoint, the requested timestamp, maximum messages, maximum scrolls, maximum elapsed time, or three scroll cycles without new messages. Upserts are idempotent.
+Each approved chat is located through WhatsApp's browser search, so it need not already be visible in the sidebar. The opened title is checked exactly before any message is indexed. Crawling stops on the existing oldest checkpoint, the requested timestamp, maximum messages, maximum scrolls, maximum elapsed time, or three scroll cycles without new messages. Upserts are idempotent, failures are isolated per chat, and every run records health in SQLite.
 
 Useful local-only commands:
 
@@ -51,6 +53,8 @@ npm run whatsapp:cli -- doctor
 ```
 
 `triage` remains the `/whatsapp` plugin contract. It reads the local index and never opens a browser, so Signal review stays quick and does not trigger login or network access.
+Recurring workflows must run `sync` first and check `doctor`; an unhealthy or
+partial sync must never be treated as an empty inbox.
 
 ## State, backups, and recovery
 
