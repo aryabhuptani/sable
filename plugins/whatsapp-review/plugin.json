@@ -2,11 +2,11 @@
   "$schema": "../schema/plugin-manifest.schema.json",
   "id": "whatsapp-review",
   "name": "WhatsApp Review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "pluginApiVersion": 1,
   "status": "experimental",
   "category": "communications",
-  "description": "Read-first WhatsApp triage through WhatsApp Web with an approved-chat allowlist.",
+  "description": "Read-only WhatsApp Web ingestion and local indexed triage with an approved-chat allowlist.",
   "runtime": {
     "type": "node-cli",
     "currentEntryPoints": [
@@ -18,7 +18,10 @@
   "capabilities": [
     "commands.whatsapp.triage",
     "triage.approved_chat_filter",
-    "triage.read_first"
+    "triage.read_first",
+    "index.sqlite_fts",
+    "sync.browser_history",
+    "export.approved_chats"
   ],
   "commands": [
     {
@@ -35,21 +38,26 @@
     {
       "name": "SABLE_WHATSAPP_SESSION_PATH",
       "required": false,
-      "description": "Path to the local WhatsApp Web session directory."
+      "description": "Legacy alias for the private local WhatsApp state directory."
+    },
+    {
+      "name": "SABLE_WHATSAPP_STATE_DIR",
+      "required": false,
+      "description": "Path to the private browser profile, SQLite index, and diagnostic artifacts."
     }
   ],
   "requiredSecrets": [],
   "diagnostics": [
     {
-      "name": "approved chat config",
+      "name": "deterministic local doctor",
       "type": "cli",
-      "command": "node tools/whatsapp/whatsapp_cli.js init-config"
+      "command": "node tools/whatsapp/whatsapp_cli.js doctor"
     },
     {
-      "name": "triage dry run",
+      "name": "local index status",
       "type": "cli",
-      "command": "node tools/whatsapp/whatsapp_cli.js triage --limit 5"
+      "command": "node tools/whatsapp/whatsapp_cli.js status"
     }
   ],
-  "privateDataPolicy": "Do not store WhatsApp session files, contact names, chat ids, message text, or approved-chat allowlists in the plugin manifest."
+  "privateDataPolicy": "Store browser credentials, approved-chat configuration, indexed contact/chat/message data, attachments metadata, exports, and diagnostics only under private instance state; never commit them."
 }

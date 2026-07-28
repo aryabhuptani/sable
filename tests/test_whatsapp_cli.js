@@ -1,350 +1,190 @@
+"use strict";
+
 const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const Module = require("node:module");
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const whatsapp = require("../tools/whatsapp/whatsapp_cli");
+const cli = require("../tools/whatsapp/whatsapp_cli");
+const { normalizeDomMessage } = require("../tools/whatsapp/dom");
+const { SelectorDiagnosticError, WhatsAppBrowserAdapter, firstVisible } = require("../tools/whatsapp/browser-adapter");
+const { SCHEMA_VERSION, WhatsAppStore } = require("../tools/whatsapp/store");
+const { crawlChat } = require("../tools/whatsapp/sync");
 
-function exportApprovedArgs({ approvedPath, outputPath }) {
-  return ["export-approved", "--approved-chats", approvedPath, "--out", outputPath];
+async function tempState(name) {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), name));
+  return { root, env: { SABLE_INSTANCE_HOME: root, SABLE_WHATSAPP_STATE_DIR: path.join(root, "state") } };
+}
+async function capture(args, env) {
+  const original = console.log;
+  const lines = [];
+  console.log = (...values) => lines.push(values.join(" "));
+  try { return { code: await cli.asyncMain(args, env), output: lines.join("\n") }; }
+  finally { console.log = original; }
+}
+function message(id, timestamp, text = id) {
+  return { id, timestamp, text, sender: "Alice", fromMe: false };
 }
 
-async function assertFileMissing(filePath) {
-  await assert.rejects(() => fs.access(filePath), { code: "ENOENT" });
-}
+test("defaults follow instance state and approved config", () => {
+  assert.equal(cli.defaultApprovedChatsPath({ SABLE_INSTANCE_HOME: "/srv/alex" }), "/srv/alex/.config/sable/whatsapp-approved-chats.json");
+  assert.equal(cli.defaultSessionPath({ SABLE_INSTANCE_HOME: "/srv/alex" }), "/srv/alex/.local/state/sable-whatsapp");
+});
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+test("allowlist matches only exact id or exact name", () => {
+  const approved = [{ id: "123@c.us", name: "Alice" }, { id: "", name: "Book Club" }];
+  assert.equal(cli.isApprovedChat({ id: "123@c.us", name: "Other" }, approved), true);
+  assert.equal(cli.isApprovedChat({ id: "x", name: "book club" }, approved), true);
+  assert.equal(cli.isApprovedChat({ id: "x", name: "Book" }, approved), false);
+});
 
-async function runCliCapturingLog(args, env) {
-  const originalLog = console.log;
-  let output = "";
+test("DOM fixture normalization is stable and retains attachment metadata", () => {
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "whatsapp", "message.json"), "utf8"));
+  const first = normalizeDomMessage(raw, { id: "alice", name: "Alice" });
+  const second = normalizeDomMessage(raw, { id: "alice", name: "Alice" });
+  assert.equal(first.id, second.id);
+  assert.equal(first.timestamp, "2026-07-20T09:14:00.000Z");
+  assert.deepEqual(first.attachment, { type: "document", filename: "plans.pdf", mimeType: "application/pdf", sizeBytes: 42, caption: "Trip plans" });
+});
+
+test("SQLite migrations, idempotent upserts, FTS search, and attachments", async () => {
+  const { root } = await tempState("sable-wa-store-");
+  const store = new WhatsAppStore(path.join(root, "index.sqlite3"));
   try {
-    console.log = (message) => {
-      output = message;
-    };
-    const code = await whatsapp.asyncMain(args, env);
-    return { code, output };
-  } finally {
-    console.log = originalLog;
-  }
-}
+    assert.equal(store.schemaVersion(), SCHEMA_VERSION);
+    const chat = { id: "alice", name: "Alice", approved: true };
+    const item = normalizeDomMessage({ id: "m1", timestamp: "2026-07-20T09:14:00Z", sender: "Alice", text: "unique telescope phrase", attachment: { type: "image", filename: "sky.jpg" } }, chat);
+    store.upsertMessages(chat, [item]);
+    store.upsertMessages(chat, [{ ...item, text: "updated telescope phrase" }]);
+    assert.equal(store.messagesForChat("alice").length, 1);
+    assert.equal(store.search("telescope").length, 1);
+    assert.equal(store.search("telescope")[0].filename, "sky.jpg");
+    assert.equal(store.listChats()[0].message_count, 1);
+  } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
+});
 
-async function withMissingPuppeteer(callback) {
-  const originalLoad = Module._load;
+test("SQLite migration upgrades an existing v1 index", async () => {
+  const { root } = await tempState("sable-wa-migrate-");
+  const databasePath = path.join(root, "index.sqlite3");
+  let store = new WhatsAppStore(databasePath);
+  store.db.exec("DROP TABLE messages_fts");
+  store.db.prepare("UPDATE schema_meta SET value='1' WHERE key='schema_version'").run();
+  store.close();
+  store = new WhatsAppStore(databasePath);
   try {
-    Module._load = function loadWithMissingPuppeteer(request) {
-      if (request === "puppeteer") {
-        const error = new Error("Cannot find module 'puppeteer'");
-        error.code = "MODULE_NOT_FOUND";
-        throw error;
-      }
-      return originalLoad.apply(this, arguments);
-    };
-    return await callback();
-  } finally {
-    Module._load = originalLoad;
-  }
-}
-
-test("whatsapp approved-chat defaults follow instance config", () => {
-  assert.equal(
-    whatsapp.defaultApprovedChatsPath({}),
-    "/home/arya/.config/sable/whatsapp-approved-chats.json"
-  );
-  assert.equal(
-    whatsapp.defaultApprovedChatsPath({ SABLE_INSTANCE_HOME: "/srv/alex" }),
-    "/srv/alex/.config/sable/whatsapp-approved-chats.json"
-  );
-  assert.equal(
-    whatsapp.defaultSessionPath({ SABLE_INSTANCE_HOME: "/srv/alex" }),
-    "/srv/alex/.local/state/sable-whatsapp"
-  );
+    assert.equal(store.schemaVersion(), 2);
+    assert.equal(store.ftsAvailable, true);
+  } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp allowlist matches by id or exact chat name", () => {
-  const approved = [
-    { id: "123@c.us", name: "Alice" },
-    { name: "Book Club" },
-  ];
-
-  assert.equal(whatsapp.isApprovedChat({ id: "123@c.us", name: "Someone" }, approved), true);
-  assert.equal(whatsapp.isApprovedChat({ id: "other@g.us", name: "Book Club" }, approved), true);
-  assert.equal(whatsapp.isApprovedChat({ id: "other@g.us", name: "Unapproved" }, approved), false);
-});
-
-test("whatsapp approved-chat config merges env and file entries without duplicates", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-approved-"));
-  const approvedPath = path.join(tempDir, "approved.json");
-
+test("crawl deduplicates and stops on known checkpoint", async () => {
+  const { root } = await tempState("sable-wa-crawl-");
+  const store = new WhatsAppStore(path.join(root, "index.sqlite3"));
+  const chat = { id: "alice", name: "Alice", approved: true };
+  store.upsertMessages(chat, [normalizeDomMessage(message("known", "2026-07-19T00:00:00Z"), chat)]);
+  store.checkpoint("alice", { oldestMessageId: "known", oldestTimestamp: "2026-07-19T00:00:00Z" });
+  let page = 0;
+  const adapter = {
+    readVisibleMessages: async () => page === 0
+      ? [message("new", "2026-07-20T00:00:00Z"), message("dup", "2026-07-20T01:00:00Z")]
+      : [message("dup", "2026-07-20T01:00:00Z"), message("known", "2026-07-19T00:00:00Z")],
+    scrollHistoryUp: async () => { page += 1; },
+  };
   try {
-    await fs.writeFile(
-      approvedPath,
-      JSON.stringify({
-        approvedChats: [
-          "Bob",
-          { id: "book@g.us", name: "Book Club" },
-        ],
-      }),
-      "utf8"
-    );
-
-    const approved = whatsapp.loadApprovedChats({
-      env: { SABLE_WHATSAPP_APPROVED_CHATS: "Alice, Bob" },
-      filePath: approvedPath,
-    });
-
-    assert.deepEqual(approved, [
-      { id: "Alice", name: "Alice" },
-      { id: "Bob", name: "Bob" },
-      { id: "book@g.us", name: "Book Club" },
-    ]);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+    const result = await crawlChat({ adapter, store, chat, approvedChats: [{ id: "alice" }], limits: { maxScrolls: 10 } });
+    assert.equal(result.stopReason, "known-checkpoint");
+    assert.equal(result.messages, 3);
+    assert.equal(store.messagesForChat("alice").length, 3);
+  } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp triage report surfaces only approved chats", () => {
-  const now = new Date("2026-05-12T12:00:00Z");
-  const report = whatsapp.formatTriageReport(
-    [
-      {
-        id: "a@c.us",
-        name: "Alice",
-        unreadCount: 1,
-        lastMessageAt: "2026-05-12T11:30:00Z",
-        snippet: "are you around?",
-      },
-      {
-        id: "spam@g.us",
-        name: "Noisy Group",
-        unreadCount: 99,
-        lastMessageAt: "2026-05-12T11:30:00Z",
-        snippet: "ignored",
-      },
-    ],
-    {
-      approvedChats: [{ id: "a@c.us" }],
-      now,
-    }
-  );
-
-  assert.match(report, /1 approved chat surfaced/);
-  assert.match(report, /Alice/);
-  assert.doesNotMatch(report, /Noisy Group/);
-  assert.match(report, /Ignored \/ filtered: 1/);
+test("crawl enforces allowlist before browser reads", async () => {
+  let read = false;
+  const adapter = { readVisibleMessages: async () => { read = true; return []; } };
+  await assert.rejects(() => crawlChat({ adapter, store: {}, chat: { id: "bob", name: "Bob" }, approvedChats: [{ id: "alice" }] }), /unapproved/);
+  assert.equal(read, false);
 });
 
-test("whatsapp cli can triage a fixture with approved-chat config", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-"));
-  const approvedPath = path.join(tempDir, "approved.json");
-  const inputPath = path.join(tempDir, "chats.json");
-
+test("crawl stops deterministically at max scrolls", async () => {
+  const { root } = await tempState("sable-wa-bounds-");
+  const store = new WhatsAppStore(path.join(root, "index.sqlite3"));
+  let n = 0;
+  const adapter = {
+    readVisibleMessages: async () => [message(`m${n}`, `2026-07-2${n}T00:00:00Z`)],
+    scrollHistoryUp: async () => { n += 1; },
+  };
   try {
-    await fs.writeFile(
-      approvedPath,
-      JSON.stringify({ approvedChats: [{ name: "Alice" }] }),
-      "utf8"
-    );
-    await fs.writeFile(
-      inputPath,
-      JSON.stringify([
-        { name: "Alice", unreadCount: 1, lastMessageAt: "2999-05-12T11:30:00Z", snippet: "ping" },
-        { name: "Bob", unreadCount: 1, lastMessageAt: "2999-05-12T11:30:00Z", snippet: "hidden" },
-      ]),
-      "utf8"
-    );
-
-    const { code, output } = await runCliCapturingLog([
-      "triage",
-      "--approved-chats",
-      approvedPath,
-      "--input-json",
-      inputPath,
-      "--limit",
-      "5",
-    ]);
-
-    assert.equal(code, 0);
-    assert.match(output, /Alice/);
-    assert.doesNotMatch(output, /Bob/);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+    const result = await crawlChat({ adapter, store, chat: { id: "alice", name: "Alice" }, approvedChats: [{ id: "alice" }], limits: { maxScrolls: 2 } });
+    assert.equal(result.stopReason, "max-scrolls");
+    assert.equal(result.scrolls, 2);
+  } finally { store.close(); await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp triage honors approved-config alias over default config", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-triage-approved-config-"));
-  const instanceHome = path.join(tempDir, "instance");
-  const defaultApprovedPath = path.join(instanceHome, ".config", "sable", "whatsapp-approved-chats.json");
-  const explicitApprovedPath = path.join(tempDir, "travel-approved.json");
-  const inputPath = path.join(tempDir, "chats.json");
-
+test("CLI searches and exports the local index without live WhatsApp", async () => {
+  const { root, env } = await tempState("sable-wa-cli-");
+  const approvedPath = path.join(root, "approved.json");
+  await fsp.writeFile(approvedPath, JSON.stringify({ approvedChats: [{ id: "alice", name: "Alice" }] }));
+  env.SABLE_WHATSAPP_APPROVED_CHATS_PATH = approvedPath;
+  const dbPath = path.join(env.SABLE_WHATSAPP_STATE_DIR, "messages.sqlite3");
+  const store = new WhatsAppStore(dbPath);
+  store.upsertMessages({ id: "alice", name: "Alice" }, [normalizeDomMessage(message("m1", "2026-07-20T00:00:00Z", "needle text"), { id: "alice" })]);
+  store.close();
+  const outputPath = path.join(root, "export.json");
   try {
-    await fs.mkdir(path.dirname(defaultApprovedPath), { recursive: true });
-    await fs.writeFile(
-      defaultApprovedPath,
-      JSON.stringify({ approvedChats: [{ name: "Default Chat" }] }),
-      "utf8"
-    );
-    await fs.writeFile(
-      explicitApprovedPath,
-      JSON.stringify({ approvedChats: [{ name: "Travel Chat" }] }),
-      "utf8"
-    );
-    await fs.writeFile(
-      inputPath,
-      JSON.stringify([
-        { name: "Default Chat", unreadCount: 1, lastMessageAt: "2999-05-12T11:30:00Z", snippet: "hidden" },
-        { name: "Travel Chat", unreadCount: 1, lastMessageAt: "2999-05-12T11:30:00Z", snippet: "surface" },
-      ]),
-      "utf8"
-    );
-
-    const { code, output } = await runCliCapturingLog(
-      [
-        "triage",
-        "--approved-config",
-        explicitApprovedPath,
-        "--input-json",
-        inputPath,
-        "--limit",
-        "5",
-      ],
-      { SABLE_INSTANCE_HOME: instanceHome }
-    );
-
-    assert.equal(code, 0);
-    assert.match(output, /Travel Chat/);
-    assert.doesNotMatch(output, /Default Chat/);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+    const search = await capture(["search", "--query", "needle"], env);
+    assert.equal(search.code, 0);
+    assert.match(search.output, /needle text/);
+    const exported = await capture(["export-approved", "--out", outputPath, "--format", "json"], env);
+    assert.equal(exported.code, 0);
+    assert.equal(JSON.parse(await fsp.readFile(outputPath, "utf8"))[0].messages.length, 1);
+  } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp export-approved refuses empty approved-chat config before opening browser", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-export-"));
-  const approvedPath = path.join(tempDir, "approved.json");
-  const outputPath = path.join(tempDir, "export.md");
-
+test("CLI doctor is deterministic and validates config, Playwright, state, and SQLite", async () => {
+  const { root, env } = await tempState("sable-wa-doctor-");
+  const approvedPath = path.join(root, "approved.json");
+  await fsp.writeFile(approvedPath, JSON.stringify({ approvedChats: [{ name: "Alice" }] }));
+  env.SABLE_WHATSAPP_APPROVED_CHATS_PATH = approvedPath;
   try {
-    await fs.writeFile(approvedPath, JSON.stringify({ approvedChats: [] }), "utf8");
-
-    await assert.rejects(
-      () =>
-        whatsapp.asyncMain(exportApprovedArgs({ approvedPath, outputPath })),
-      /No approved WhatsApp chats configured/
-    );
-
-    await assertFileMissing(outputPath);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+    const result = await capture(["doctor"], env);
+    assert.equal(result.code, 0);
+    const report = JSON.parse(result.output);
+    assert.equal(report.ok, true);
+    assert.deepEqual(report.checks.map((check) => check.name), ["approved-config", "approved-config-json", "playwright", "state-directory", "sqlite"]);
+  } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp export-approved honors approved-config alias over default config", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-approved-config-"));
-  const instanceHome = path.join(tempDir, "instance");
-  const defaultApprovedPath = path.join(instanceHome, ".config", "sable", "whatsapp-approved-chats.json");
-  const explicitApprovedPath = path.join(tempDir, "admin-approved.json");
-  const outputPath = path.join(tempDir, "export.md");
-
+test("triage fixture remains allowlist-first for plugin compatibility", async () => {
+  const { root, env } = await tempState("sable-wa-triage-");
+  const approved = path.join(root, "approved.json");
+  const input = path.join(root, "chats.json");
+  await fsp.writeFile(approved, JSON.stringify({ approvedChats: [{ name: "Alice" }] }));
+  await fsp.writeFile(input, JSON.stringify([{ name: "Alice", unreadCount: 1, lastMessageAt: "2999-01-01", snippet: "ping" }, { name: "Bob", unreadCount: 3, snippet: "hidden" }]));
   try {
-    await fs.mkdir(path.dirname(defaultApprovedPath), { recursive: true });
-    await fs.writeFile(
-      defaultApprovedPath,
-      JSON.stringify({ approvedChats: [{ name: "Default Chat" }] }),
-      "utf8"
-    );
-    await fs.writeFile(explicitApprovedPath, JSON.stringify({ approvedChats: [] }), "utf8");
-
-    await assert.rejects(
-      () =>
-        whatsapp.asyncMain(
-          ["export-approved", "--approved-config", explicitApprovedPath, "--out", outputPath],
-          { SABLE_INSTANCE_HOME: instanceHome }
-        ),
-      new RegExp(`No approved WhatsApp chats configured in ${escapeRegExp(explicitApprovedPath)}`)
-    );
-
-    await assertFileMissing(outputPath);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+    const result = await capture(["triage", "--approved-chats", approved, "--input-json", input], env);
+    assert.match(result.output, /Alice/);
+    assert.doesNotMatch(result.output, /Bob/);
+  } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 
-test("whatsapp export-approved uses approved-config alias before browser dependency loading", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-approved-config-browser-"));
-  const instanceHome = path.join(tempDir, "instance");
-  const defaultApprovedPath = path.join(instanceHome, ".config", "sable", "whatsapp-approved-chats.json");
-  const explicitApprovedPath = path.join(tempDir, "admin-approved.json");
-  const outputPath = path.join(tempDir, "export.md");
-
-  try {
-    await fs.mkdir(path.dirname(defaultApprovedPath), { recursive: true });
-    await fs.writeFile(defaultApprovedPath, JSON.stringify({ approvedChats: [] }), "utf8");
-    await fs.writeFile(
-      explicitApprovedPath,
-      JSON.stringify({ approvedChats: [{ name: "Bhuptani admin" }] }),
-      "utf8"
-    );
-
-    await assert.rejects(
-      () =>
-        withMissingPuppeteer(() =>
-          whatsapp.asyncMain(
-            ["export-approved", "--approved-config", explicitApprovedPath, "--out", outputPath],
-            { SABLE_INSTANCE_HOME: instanceHome }
-          )
-        ),
-      /puppeteer is not installed/
-    );
-
-    await assertFileMissing(outputPath);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("whatsapp export-approved fails clearly before writing output when puppeteer is unavailable", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-whatsapp-export-dep-"));
-  const approvedPath = path.join(tempDir, "approved.json");
-  const outputPath = path.join(tempDir, "export.md");
-
-  try {
-    await fs.writeFile(
-      approvedPath,
-      JSON.stringify({ approvedChats: [{ name: "Arjun's passport application" }] }),
-      "utf8"
-    );
-
-    await assert.rejects(
-      () =>
-        withMissingPuppeteer(() =>
-          whatsapp.asyncMain(exportApprovedArgs({ approvedPath, outputPath }))
-        ),
-      /puppeteer is not installed/
-    );
-
-    await assertFileMissing(outputPath);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("whatsapp approved-chat export formats bounded chat text", () => {
-  const output = whatsapp.formatApprovedChatExport([
-    {
-      name: "Arjun's passport application",
-      header: "Arjun's passport application\nAndreia, Dad, You",
-      text: "Today\nAndreia Cruz\nthank you\n09:59",
-    },
-  ]);
-
-  assert.match(output, /# Arjun's passport application/);
-  assert.match(output, /Header: Arjun's passport application/);
-  assert.match(output, /```text\nToday/);
+test("changed selectors produce actionable screenshot and HTML diagnostics", async () => {
+  const { root } = await tempState("sable-wa-diag-");
+  const artifactsDir = path.join(root, "artifacts");
+  const fakePage = {
+    locator: () => ({ first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    waitForTimeout: async () => {},
+    screenshot: async ({ path: target }) => fsp.writeFile(target, "png"),
+    content: async () => "<html>changed</html>",
+    url: () => "https://web.whatsapp.com/",
+  };
+  const adapter = new WhatsAppBrowserAdapter({ paths: { artifactsDir } });
+  adapter.page = fakePage;
+  const error = await adapter.diagnosticError("chat list changed");
+  assert.ok(error instanceof SelectorDiagnosticError);
+  assert.match(error.message, /Diagnostic:/);
+  assert.equal((await fsp.readdir(artifactsDir)).filter((name) => name.endsWith(".png")).length, 1);
+  assert.equal(await firstVisible(fakePage, ["#missing"], 0), null);
+  await fsp.rm(root, { recursive: true, force: true });
 });

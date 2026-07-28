@@ -1,0 +1,11 @@
+{
+  "prePlainText": "[09:14, 20/07/2026] Alice:",
+  "text": "Trip plans",
+  "attachment": {
+    "type": "document",
+    "filename": "plans.pdf",
+    "mimeType": "application/pdf",
+    "sizeBytes": 42,
+    "caption": "Trip plans"
+  }
+}
