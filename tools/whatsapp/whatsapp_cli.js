@@ -107,7 +107,9 @@ function commandInitConfig(args, env = process.env) {
   return 0;
 }
 async function withAdapter(args, env, callback) {
-  const paths = ensureState(statePaths(env));
+  const paths = statePaths(env);
+  if (args["artifact-dir"]) paths.artifactsDir = path.resolve(args["artifact-dir"]);
+  ensureState(paths);
   const releaseLock = acquireWorkerLock(paths.lockPath);
   const adapter = new WhatsAppBrowserAdapter({ paths, headless: boolean(args.headless, true), timeoutMs: integer(args["ready-timeout-ms"], 300_000) });
   try { await adapter.connect(); return await callback(adapter, paths); }
