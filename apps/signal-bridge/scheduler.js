@@ -2,6 +2,9 @@
 
 const fs = require("fs");
 const path = require("path");
+const { getAgentProfile } = require("../../tools/runtime/agent-profiles");
+
+const SCHEDULE_DELIVERIES = new Set(["none", "orchestrator_only", "signal"]);
 
 const DAY_NAMES = [
   "sunday",
@@ -117,12 +120,23 @@ function createScheduledWorkflowJob({
   workflowPrompt,
   replyMode = "default",
   timezone = "",
+  agentProfile = "",
+  model = "",
+  delivery = "",
+  recipient = "",
   now = new Date(),
 }) {
   const recurrence = buildRecurrence(recurrenceType, dayOfWeek, intervalMinutes);
   const time = recurrence?.type === "interval" ? null : parseTimeText(timeText);
   const cleanedPrompt = normalizeText(workflowPrompt);
   const normalizedReplyMode = normalizeReplyMode(replyMode);
+  const workerRouting = normalizeWorkerRouting({
+    agentProfile,
+    model,
+    delivery,
+    recipient,
+    sender,
+  });
 
   if (
     !sender ||
@@ -149,7 +163,52 @@ function createScheduledWorkflowJob({
     nextRunAt: computeNextRunAt(recurrence, time, now),
     lastRunAt: "",
     scheduleKind: "local",
+    ...workerRouting,
   };
+}
+
+function normalizeWorkerRouting({
+  agentProfile = "",
+  model = "",
+  delivery = "",
+  recipient = "",
+  sender = "",
+} = {}) {
+  const normalizedProfile = normalizeText(agentProfile).toLowerCase();
+  const normalizedModel = normalizeText(model);
+  const normalizedDelivery = normalizeText(delivery).toLowerCase();
+  const normalizedRecipient = normalizeText(recipient);
+
+  if (!normalizedProfile) {
+    if (normalizedModel || normalizedDelivery || normalizedRecipient) {
+      throw new Error("--agent-profile is required when worker routing fields are provided.");
+    }
+    return {};
+  }
+
+  const profile = getAgentProfile(normalizedProfile);
+  const resolvedDelivery = normalizedDelivery || profile.defaultDelivery;
+  if (!SCHEDULE_DELIVERIES.has(resolvedDelivery)) {
+    throw new Error(
+      `Unsupported --delivery: ${delivery}. Expected one of: ${[...SCHEDULE_DELIVERIES].join(", ")}.`
+    );
+  }
+
+  const routing = {
+    agentProfile: profile.agentProfile,
+    delivery: resolvedDelivery,
+  };
+  if (normalizedModel) routing.model = normalizedModel;
+  if (resolvedDelivery === "signal") {
+    const resolvedRecipient = normalizedRecipient || normalizeText(sender);
+    if (!resolvedRecipient || resolvedRecipient === "__default_sender__") {
+      throw new Error("Signal delivery requires --recipient or a concrete scheduled sender.");
+    }
+    routing.recipient = resolvedRecipient;
+  } else if (normalizedRecipient) {
+    routing.recipient = normalizedRecipient;
+  }
+  return routing;
 }
 
 function buildRecurrence(type, dayOfWeek, intervalMinutes) {
@@ -383,6 +442,7 @@ function formatScheduleConfirmation(job) {
     `Scheduled recurring workflow ${job.id}.`,
     formatScheduleHeadline(job),
     `Next run: ${formatTimestamp(job.nextRunAt)}`,
+    ...formatWorkerRouting(job),
     `Workflow: ${job.workflowPrompt}`,
   ].join("\n");
 }
@@ -404,10 +464,25 @@ function formatScheduleList(jobs) {
         `${job.id} [${formatScheduleKind(job)}]: ${formatScheduleHeadline(job)}`,
         `next: ${formatTimestamp(job.nextRunAt)}`,
         `reply mode: ${formatReplyMode(job.replyMode)}`,
+        ...formatWorkerRouting(job).map((line) => line.toLowerCase()),
         `workflow: ${job.workflowPrompt}`,
       ].join("\n")
     )
     .join("\n\n");
+}
+
+function formatWorkerRouting(job) {
+  if (!normalizeText(job?.agentProfile)) {
+    return ["Execution: legacy orchestrator prompt"];
+  }
+  const model = normalizeText(job.model) || "profile default";
+  const delivery = normalizeText(job.delivery) || "profile default";
+  const recipient = normalizeText(job.recipient);
+  return [
+    `Execution: ${job.agentProfile} worker`,
+    `Model: ${model}`,
+    `Delivery: ${delivery}${recipient ? ` to ${recipient}` : ""}`,
+  ];
 }
 
 function dayNameToIndex(dayName) {
@@ -514,6 +589,7 @@ module.exports = {
   loadSchedulerJobs,
   loadSchedulerState,
   normalizeJobTimezoneMode,
+  normalizeWorkerRouting,
   parseTimeText,
   saveSchedulerJobs,
   saveSchedulerState,

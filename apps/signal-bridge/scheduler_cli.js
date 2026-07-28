@@ -55,6 +55,10 @@ function main() {
       timeText: args.time,
       workflowPrompt: args.prompt,
       replyMode,
+      agentProfile: args["agent-profile"],
+      model: args.model,
+      delivery: args.delivery,
+      recipient: args.recipient,
     });
     if (job.time && job.timezone === "active") {
       const state = loadSchedulerState(statePath);
@@ -149,8 +153,8 @@ function printUsage() {
   console.error(
     [
       "Usage:",
-      "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--file path]",
-      "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--file path]",
+      "  scheduler_cli.js add --recurrence daily|weekday|weekly --time 8:00AM --prompt \"...\" [--day monday] [--sender +1555] [--silent true] [--agent-profile personal|work|coding|research|orchestrator] [--model MODEL] [--delivery none|orchestrator_only|signal] [--recipient +1555] [--file path]",
+      "  scheduler_cli.js add --recurrence interval --minutes 5 --prompt \"...\" [--sender +1555] [--silent true] [--agent-profile PROFILE] [--model MODEL] [--delivery DELIVERY] [--recipient +1555] [--file path]",
       "  scheduler_cli.js list [--file path] [--default-file path]",
       "  scheduler_cli.js timezone [--set Europe/Lisbon] [--state-file path] [--source note]",
       "  scheduler_cli.js remove --id sched-abc [--file path] [--default-file path] [--include-defaults true]",

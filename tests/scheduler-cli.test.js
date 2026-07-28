@@ -114,10 +114,56 @@ test("scheduler cli supports interval recurring workflows", async () => {
   }
 });
 
+test("scheduler cli persists validated typed worker routing", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-worker-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+
+  try {
+    await runCli([
+      "add",
+      "--file", filePath,
+      "--sender", "+15551112222",
+      "--recurrence", "daily",
+      "--time", "9:00AM",
+      "--prompt", "Check the tax email thread",
+      "--agent-profile", "personal",
+      "--model", "gpt-5.6-luna",
+      "--delivery", "signal",
+    ]);
+
+    const stored = JSON.parse(await fs.readFile(filePath, "utf8"));
+    assert.equal(stored.jobs[0].agentProfile, "personal");
+    assert.equal(stored.jobs[0].model, "gpt-5.6-luna");
+    assert.equal(stored.jobs[0].delivery, "signal");
+    assert.equal(stored.jobs[0].recipient, "+15551112222");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("scheduler cli rejects partial or invalid worker routing", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-invalid-worker-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+  const base = [
+    "add", "--file", filePath, "--sender", "+15551112222",
+    "--recurrence", "daily", "--time", "9:00AM", "--prompt", "Run task",
+  ];
+
+  try {
+    await assert.rejects(runCli([...base, "--model", "gpt-5.6-luna"]), /agent-profile is required/);
+    await assert.rejects(
+      runCli([...base, "--agent-profile", "personal", "--delivery", "carrier-pigeon"]),
+      /Unsupported --delivery/
+    );
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("scheduler cli default jobs path follows instance config", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-instance-"));
-  const tasksRoot = path.join(tempDir, "tasks");
-  const filePath = path.join(tasksRoot, "projects", "sable", "scheduler-jobs.json");
+  const orchestratorRoot = path.join(tempDir, "domains", "orchestrator");
+  const filePath = path.join(orchestratorRoot, "schedules", "scheduler-jobs.json");
 
   try {
     await runCli(
@@ -133,7 +179,7 @@ test("scheduler cli default jobs path follows instance config", async () => {
         "Run the morning brief",
       ],
       {
-        SABLE_TASKS_ROOT: tasksRoot,
+        SABLE_ORCHESTRATOR_ROOT: orchestratorRoot,
         SABLE_SCHEDULER_JOBS_PATH: "",
       }
     );

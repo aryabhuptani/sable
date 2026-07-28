@@ -75,6 +75,10 @@ const {
   truncateText,
 } = require("./bridge-utils");
 const { createInstanceConfig } = require("../../tools/instance/instance-config");
+const {
+  parseArgs: parseBackgroundJobArgs,
+  startJob: startBackgroundJob,
+} = require("../../tools/background-job/background-job");
 
 require("dotenv").config();
 
@@ -274,6 +278,21 @@ const schedulerRuntime = createBridgeSchedulerRuntime({
   schedulerJobsPath: SCHEDULER_JOBS_PATH,
   schedulerStatePath: SCHEDULER_STATE_PATH,
   timestamp,
+  launchScheduledWorker: async (request) => {
+    const args = [
+      "start",
+      "--name", request.name,
+      "--cwd", INSTANCE_CONFIG.homeDir,
+      "--prompt", request.prompt,
+      "--agent-profile", request.agentProfile,
+      "--trigger", request.trigger,
+      "--visibility", request.visibility,
+      "--delivery", request.delivery,
+    ];
+    if (request.model) args.push("--model", request.model);
+    if (request.recipient) args.push("--recipient", request.recipient);
+    return startBackgroundJob(parseBackgroundJobArgs(args));
+  },
 });
 const appServerMessages = createAppServerMessageHelpers({
   formatProgressMessage,

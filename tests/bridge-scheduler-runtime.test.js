@@ -37,6 +37,7 @@ function createRuntime(jobs, defaultJobs = [], overrides = {}) {
     schedulerJobsPath: "/tmp/jobs.json",
     schedulerStatePath: "/tmp/state.json",
     timestamp: () => "2026-05-04T10:00:00.000Z",
+    launchScheduledWorker: overrides.launchScheduledWorker,
   });
   return {
     runtime,
@@ -82,6 +83,69 @@ test("scheduler runtime queues due jobs and advances schedule state", async () =
   assert.equal(dueJob.updatedAt, "2026-05-04T10:00:00.000Z");
   assert.equal(ensured, 1);
   assert.equal(getSaved()["/tmp/jobs.json"].length, 2);
+});
+
+test("scheduler runtime launches typed domain workers directly with resolved Signal recipient", async () => {
+  const dueJob = {
+    id: "tax-check",
+    active: true,
+    nextRunAt: "2026-05-04T09:00:00.000Z",
+    sender: "__default_sender__",
+    workflowPrompt: "Check the tax email thread",
+    replyMode: "default",
+    agentProfile: "personal",
+    model: "gpt-5.6-luna",
+    delivery: "signal",
+  };
+  const launched = [];
+  const queued = [];
+  let ensured = 0;
+  const { runtime, getSaved } = createRuntime([dueJob], [], {
+    launchScheduledWorker: async (request) => launched.push(request),
+  });
+
+  await runtime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: (job) => queued.push(job),
+    ensureBackgroundProcessing: () => {
+      ensured += 1;
+    },
+  });
+
+  assert.deepEqual(queued, []);
+  assert.equal(ensured, 0);
+  assert.equal(launched.length, 1);
+  assert.equal(launched[0].agentProfile, "personal");
+  assert.equal(launched[0].model, "gpt-5.6-luna");
+  assert.equal(launched[0].trigger, "scheduled");
+  assert.equal(launched[0].visibility, "final_only");
+  assert.equal(launched[0].delivery, "signal");
+  assert.equal(launched[0].recipient, "+1555");
+  assert.equal(getSaved()["/tmp/jobs.json"][0].lastRunAt, "2026-05-04T10:00:00.000Z");
+});
+
+test("scheduler runtime does not advance a typed schedule when worker launch fails", async () => {
+  const dueJob = {
+    id: "broken-worker",
+    active: true,
+    nextRunAt: "2026-05-04T09:00:00.000Z",
+    sender: "+1555",
+    workflowPrompt: "Run task",
+    agentProfile: "personal",
+    delivery: "signal",
+  };
+  const { runtime, getSaved } = createRuntime([dueJob], [], {
+    launchScheduledWorker: async () => {
+      throw new Error("launch failed");
+    },
+  });
+
+  await runtime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: () => {},
+    ensureBackgroundProcessing: () => {},
+  });
+  assert.equal(dueJob.lastRunAt, undefined);
+  assert.equal(dueJob.nextRunAt, "2026-05-04T09:00:00.000Z");
+  assert.deepEqual(getSaved(), {});
 });
 
 test("scheduler runtime removes jobs and formats refreshed listings", () => {

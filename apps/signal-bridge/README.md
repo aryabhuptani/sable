@@ -116,17 +116,24 @@ The service reads the same `.env` file in this app directory, so changing number
 - User-facing recurring workflows follow Sable's active timezone state, stored at `SABLE_SCHEDULER_STATE_PATH` when set or the instance default:
   `/home/arya/domains/orchestrator/schedules/scheduler-state.json`
 - Silent maintenance workflows default to host time. Set a job's `timezone` to `active` or `host` to override that default.
-- Due jobs are picked up by the bridge heartbeat and executed through the normal Codex/Signal queue.
+- Due legacy jobs are picked up by the bridge heartbeat and executed through the normal
+  orchestrator Codex/Signal queue. Jobs with typed worker routing launch the existing detached
+  background-job harness directly, so domain, model, delivery, and recipient do not depend on
+  prompt interpretation.
 - Management escape hatches:
   - `/schedules`
   - `/unschedule <id>`
 - Local CLI:
   - `node scheduler_cli.js add --recurrence daily --time 8:00AM --prompt "Give me a daily briefing of my day"`
+  - `node scheduler_cli.js add --recurrence daily --time 9:00AM --prompt "Check the tax thread" --agent-profile personal --model gpt-5.6-luna --delivery signal --recipient +1555`
   - `node scheduler_cli.js add --recurrence weekly --day monday --time 9:00AM --prompt "Generate a grocery list for me"`
   - `node scheduler_cli.js timezone --set America/Los_Angeles`
   - `node scheduler_cli.js list`
   - `node scheduler_cli.js remove --id <schedule-id>`
 - Natural-language scheduling is intended to route through the recurring-workflow scheduling skill, which should call the CLI and persist the job file rather than relying on the bridge to regex-parse English.
+- Typed routing requires `--agent-profile`. `--model`, `--delivery`, and `--recipient` are rejected
+  without it. Signal delivery defaults the recipient to the resolved scheduled sender, but explicit
+  `--recipient` remains preferable for auditable callback delivery.
 
 ## Voice Notes
 

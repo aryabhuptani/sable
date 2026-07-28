@@ -17,6 +17,7 @@ function createBridgeSchedulerRuntime(options = {}) {
     now = () => new Date(),
     saveSchedulerJobs,
     timestamp = () => new Date().toISOString(),
+    launchScheduledWorker = null,
   } = options;
 
   let defaultSchedulerJobs = loadDefaultJobs();
@@ -93,6 +94,7 @@ function createBridgeSchedulerRuntime(options = {}) {
 
     const nowDate = now();
     let changed = false;
+    let queuedLegacyJob = false;
 
     if (refreshTimezoneSensitiveJobs(nowDate)) {
       changed = true;
@@ -108,7 +110,25 @@ function createBridgeSchedulerRuntime(options = {}) {
         continue;
       }
 
-      enqueueBackgroundJob(queueScheduledWorkflowRun(scheduledJob));
+      if (scheduledJob.agentProfile) {
+        if (typeof launchScheduledWorker !== "function") {
+          logger.error?.(
+            `[${timestamp()}] Refusing typed scheduled workflow ${scheduledJob.id || "(unknown)"}: no worker launcher is configured.`
+          );
+          continue;
+        }
+        try {
+          await launchScheduledWorker(buildScheduledWorkerRequest(scheduledJob));
+        } catch (error) {
+          logger.error?.(
+            `[${timestamp()}] Failed launching typed scheduled workflow ${scheduledJob.id || "(unknown)"}: ${error.message}`
+          );
+          continue;
+        }
+      } else {
+        enqueueBackgroundJob(queueScheduledWorkflowRun(scheduledJob));
+        queuedLegacyJob = true;
+      }
       scheduledJob.lastRunAt = nowDate.toISOString();
       scheduledJob.nextRunAt = computeFollowingRunAt(
         scheduledJob,
@@ -122,7 +142,9 @@ function createBridgeSchedulerRuntime(options = {}) {
 
     if (changed) {
       persistJobs();
-      ensureBackgroundProcessing();
+      if (queuedLegacyJob) {
+        ensureBackgroundProcessing();
+      }
     }
   }
 
@@ -212,11 +234,40 @@ function createBridgeSchedulerRuntime(options = {}) {
     };
   }
 
+  function buildScheduledWorkerRequest(scheduledJob) {
+    const sender =
+      scheduledJob.sender === "__default_sender__"
+        ? defaultScheduledSender
+        : normalizeText(scheduledJob.sender);
+    const delivery = normalizeText(scheduledJob.delivery).toLowerCase();
+    const recipient = normalizeText(scheduledJob.recipient) || sender;
+    if (delivery === "signal" && !recipient) {
+      throw new Error(`Scheduled workflow ${scheduledJob.id || "(unknown)"} has Signal delivery but no recipient.`);
+    }
+    return {
+      scheduleId: scheduledJob.id,
+      name: `Scheduled: ${scheduledJob.id || "workflow"}`,
+      prompt: [
+        scheduledJob.workflowPrompt,
+        "",
+        "This is a scheduled recurring workflow triggered automatically by Sable.",
+      ].join("\n"),
+      agentProfile: normalizeText(scheduledJob.agentProfile),
+      model: normalizeText(scheduledJob.model),
+      delivery,
+      recipient,
+      sender,
+      trigger: "scheduled",
+      visibility: scheduledJob.replyMode === "silent" ? "silent" : "final_only",
+    };
+  }
+
   return {
     checkForDueScheduledJobs,
     getJobs,
     listSchedules,
     queueScheduledWorkflowRun,
+    buildScheduledWorkerRequest,
     refreshJobs,
     removeScheduledJob,
   };
