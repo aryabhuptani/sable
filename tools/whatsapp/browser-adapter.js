@@ -182,6 +182,29 @@ class WhatsAppBrowserAdapter {
     return { screenshot, html };
   }
 
+  async startRefreshingScreenshot(outputPath, intervalMs = 10_000) {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true, mode: 0o700 });
+    let stopped = false;
+    let timer = null;
+    const capture = async () => {
+      if (stopped) return;
+      const temporaryPath = `${outputPath}.${process.pid}.tmp`;
+      try {
+        await this.page.screenshot({ path: temporaryPath, fullPage: true });
+        fs.chmodSync(temporaryPath, 0o600);
+        fs.renameSync(temporaryPath, outputPath);
+      } catch {
+        try { fs.unlinkSync(temporaryPath); } catch {}
+      }
+      if (!stopped) timer = setTimeout(capture, intervalMs);
+    };
+    await capture();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }
+
   async close() { if (this.context) await this.context.close(); }
 }
 

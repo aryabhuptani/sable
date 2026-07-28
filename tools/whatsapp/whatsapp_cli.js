@@ -124,9 +124,20 @@ async function commandConnect(args, env = process.env) {
     const loginArtifact = !status.connected && args["capture-login"] !== "false"
       ? await adapter.captureArtifact("whatsapp-login")
       : null;
+    let stopRefreshing = () => {};
+    if (loginArtifact && args.wait === "true") {
+      loginArtifact.currentScreenshot = path.join(paths.artifactsDir, "current.png");
+      stopRefreshing = await adapter.startRefreshingScreenshot(
+        loginArtifact.currentScreenshot,
+        integer(args["login-refresh-ms"], 10_000)
+      );
+    }
     console.log(JSON.stringify({ ...status, profileDir: paths.profileDir, loginArtifact }, null, 2));
     if (!status.connected && args.headless !== "false") console.error("Login required. Re-run with --headless false and scan the QR code.");
-    if (args.wait === "true") await adapter.waitUntilReady();
+    if (args.wait === "true") {
+      try { await adapter.waitUntilReady(); }
+      finally { stopRefreshing(); }
+    }
     return status.connected ? 0 : 2;
   });
 }
