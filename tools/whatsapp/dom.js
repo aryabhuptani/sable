@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 function normalizeDomMessage(raw, chat) {
   const text = normalizeText(raw.text || raw.body);
   const timestamp = normalizeTimestamp(raw.prePlainText) || normalizeTimestamp(raw.timestamp);
-  const sender = normalizeSender(raw.sender || raw.prePlainText, raw.fromMe);
+  const sender = normalizeSender(raw.sender, raw.prePlainText, raw.fromMe);
   const id = normalizeText(raw.id) || stableMessageId({ chatId: chat.id, sender, timestamp, text, attachment: raw.attachment });
   return {
     id,

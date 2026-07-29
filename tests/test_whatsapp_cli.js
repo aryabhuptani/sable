@@ -46,6 +46,8 @@ test("DOM fixture normalization is stable and retains attachment metadata", () =
   const second = normalizeDomMessage(raw, { id: "alice", name: "Alice" });
   assert.equal(first.id, second.id);
   assert.equal(first.timestamp, "2026-07-20T09:14:00.000Z");
+  assert.equal(first.sender, "Alice");
+  assert.equal(normalizeDomMessage({ ...raw, fromMe: true }, { id: "alice" }).sender, "You");
   assert.deepEqual(first.attachment, { type: "document", filename: "plans.pdf", mimeType: "application/pdf", sizeBytes: 42, caption: "Trip plans" });
 });
 
@@ -213,5 +215,25 @@ test("changed selectors produce actionable screenshot and HTML diagnostics", asy
   assert.match(error.message, /Diagnostic:/);
   assert.equal((await fsp.readdir(artifactsDir)).filter((name) => name.endsWith(".png")).length, 1);
   assert.equal(await firstVisible(fakePage, ["#missing"], 0), null);
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test("login wait refresh maintains a private current screenshot artifact", async () => {
+  const { root } = await tempState("sable-wa-current-");
+  const artifactsDir = path.join(root, "artifacts");
+  const outputPath = path.join(artifactsDir, "current.png");
+  const adapter = new WhatsAppBrowserAdapter({ paths: { artifactsDir } });
+  adapter.page = {
+    screenshot: async ({ path: target }) => {
+      assert.match(target, /\.tmp\.png$/);
+      await fsp.writeFile(target, "qr");
+    },
+  };
+
+  const stopRefreshing = await adapter.startRefreshingScreenshot(outputPath, 60_000);
+  stopRefreshing();
+
+  assert.equal(await fsp.readFile(outputPath, "utf8"), "qr");
+  assert.equal((fs.statSync(outputPath).mode & 0o777), 0o600);
   await fsp.rm(root, { recursive: true, force: true });
 });

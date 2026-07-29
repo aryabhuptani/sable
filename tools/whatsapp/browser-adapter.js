@@ -188,7 +188,8 @@ class WhatsAppBrowserAdapter {
     let timer = null;
     const capture = async () => {
       if (stopped) return;
-      const temporaryPath = `${outputPath}.${process.pid}.tmp`;
+      const extension = path.extname(outputPath) || ".png";
+      const temporaryPath = `${outputPath}.${process.pid}.tmp${extension}`;
       try {
         await this.page.screenshot({ path: temporaryPath, fullPage: true });
         fs.chmodSync(temporaryPath, 0o600);
