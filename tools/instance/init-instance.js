@@ -147,8 +147,12 @@ function initInstance({
   writeFile(path.join(instance.domainsRoot, "README.md"), renderDomainsReadme());
   writeFile(path.join(instance.sharedRoot, "PROFILE.md"), renderSharedProfile());
   writeFile(path.join(instance.orchestratorRoot, "PROFILE.md"), renderOrchestratorProfile());
-  writeFile(path.join(instance.codingRoot, "PROFILE.md"), renderCodingProfile());
-  writeFile(path.join(instance.researchDomainRoot, "PROFILE.md"), renderResearchProfile());
+  if (instance.codingRoot === instance.researchDomainRoot) {
+    writeFile(path.join(instance.codingRoot, "PROFILE.md"), renderLabProfile());
+  } else {
+    writeFile(path.join(instance.codingRoot, "PROFILE.md"), renderCodingProfile());
+    writeFile(path.join(instance.researchDomainRoot, "PROFILE.md"), renderResearchProfile());
+  }
   writeFile(path.join(instance.workRoot, "PROFILE.md"), renderWorkProfile());
   writeFile(path.join(instance.personalRoot, "PROFILE.md"), renderPersonalProfile());
   writeFile(path.join(instance.archiveRoot, "PROFILE.md"), renderArchiveProfile());
@@ -235,8 +239,7 @@ function renderInstanceEnv(instance) {
     `SABLE_DOMAINS_ROOT=${shellValue(instance.domainsRoot)}`,
     `SABLE_SHARED_ROOT=${shellValue(instance.sharedRoot)}`,
     `SABLE_ORCHESTRATOR_ROOT=${shellValue(instance.orchestratorRoot)}`,
-    `SABLE_CODING_ROOT=${shellValue(instance.codingRoot)}`,
-    `SABLE_RESEARCH_DOMAIN_ROOT=${shellValue(instance.researchDomainRoot)}`,
+    `SABLE_LAB_ROOT=${shellValue(instance.labRoot)}`,
     `SABLE_WORK_ROOT=${shellValue(instance.workRoot)}`,
     `SABLE_PERSONAL_ROOT=${shellValue(instance.personalRoot)}`,
     `SABLE_ARCHIVE_ROOT=${shellValue(instance.archiveRoot)}`,
@@ -267,8 +270,7 @@ function renderDomainsReadme() {
     "",
     "- `shared/` - baseline context and common skills.",
     "- `orchestrator/` - routing, schedules, run control, callbacks, and synthesis.",
-    "- `coding/` - code repositories, tests, deployments, and engineering context.",
-    "- `research/` - research projects, benchmarks, experiments, and traces.",
+    "- `lab/` - code repositories, research projects, benchmarks, experiments, tests, deployments, and traces.",
     "- `work/` - work/org context, meetings, strategy, and agendas.",
     "- `personal/` - personal/admin execution, documents, finance, travel, household workflows.",
     "- `archive/` - inactive historical retrieval.",
@@ -294,6 +296,17 @@ function renderOrchestratorProfile() {
     "The orchestrator owns conversation, routing, schedules, run control, callbacks, and final synthesis.",
     "",
     "Domain agents should report back to the orchestrator instead of delegating sideways.",
+    "",
+  ].join("\n");
+}
+
+function renderLabProfile() {
+  return [
+    "# Lab Domain Profile",
+    "",
+    "Lab owns software implementation, research, experiments, evaluation, and the project knowledge attached to that work.",
+    "",
+    "Keep implementation and research evidence together when they belong to the same project.",
     "",
   ].join("\n");
 }

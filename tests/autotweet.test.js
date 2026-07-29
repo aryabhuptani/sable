@@ -130,8 +130,8 @@ enabled: true
 
 test("autotweet runtime paths follow instance config", () => {
   assert.deepEqual(getDefaultAutotweetRuntimePaths({ env: {} }), {
-    codexCwd: "/home/arya/domains/coding/projects/sable",
-    projectDir: "/home/arya/domains/coding/projects/sable/apps/signal-bridge",
+    codexCwd: "/home/arya/domains/lab/projects/sable",
+    projectDir: "/home/arya/domains/lab/projects/sable/apps/signal-bridge",
     runLogDir: "/home/arya/domains/orchestrator/projects/autotweet/run-logs",
     historyPath: "/home/arya/domains/orchestrator/projects/autotweet/run-logs/history.jsonl",
     lastRunPath: "/home/arya/domains/orchestrator/projects/autotweet/run-logs/last-run.json",

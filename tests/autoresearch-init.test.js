@@ -18,14 +18,14 @@ test("autoresearch slugify produces stable slugs", () => {
 });
 
 test("autoresearch default research root follows instance config", () => {
-  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/domains/research/projects");
+  assert.equal(getDefaultResearchRoot({ env: {} }), "/home/arya/domains/lab/projects");
   assert.equal(
     getDefaultResearchRoot({
       env: {
         SABLE_DOMAINS_ROOT: "/data/alex/domains",
       },
     }),
-    "/data/alex/domains/research/projects"
+    "/data/alex/domains/lab/projects"
   );
   assert.equal(
     getDefaultResearchRoot({

@@ -46,7 +46,7 @@ As of 2026-07-02, the local runtime is:
 - Hermes profile mounts:
   - `/home/arya/domains:/home/arya/domains:ro`
   - `/home/arya/domains/shared/skills:/home/arya/domains/shared/skills:ro`
-  - `/home/arya/domains/coding/projects/sable:/home/arya/domains/coding/projects/sable:ro`
+  - `/home/arya/domains/lab/projects/sable:/home/arya/domains/lab/projects/sable:ro`
   - `/home/arya/homeassistant:/home/arya/homeassistant:ro`
 
 The older `hermes-sable-trial` container is stopped and should be treated as superseded by `hermes-sable-native`.

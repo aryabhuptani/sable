@@ -17,9 +17,15 @@ function createInstanceConfig({
   const orchestratorRoot = path.resolve(
     env.SABLE_ORCHESTRATOR_ROOT || path.join(domainsRoot, "orchestrator")
   );
-  const codingRoot = path.resolve(env.SABLE_CODING_ROOT || path.join(domainsRoot, "coding"));
+  const labRoot = path.resolve(
+    env.SABLE_LAB_ROOT ||
+      env.SABLE_CODING_ROOT ||
+      env.SABLE_RESEARCH_DOMAIN_ROOT ||
+      path.join(domainsRoot, "lab")
+  );
+  const codingRoot = labRoot;
   const researchDomainRoot = path.resolve(
-    env.SABLE_RESEARCH_DOMAIN_ROOT || path.join(domainsRoot, "research")
+    env.SABLE_RESEARCH_DOMAIN_ROOT || labRoot
   );
   const workRoot = path.resolve(env.SABLE_WORK_ROOT || path.join(domainsRoot, "work"));
   const personalRoot = path.resolve(
@@ -49,6 +55,7 @@ function createInstanceConfig({
     homeDir: resolvedHomeDir,
     repoRoot: resolvedRepoRoot,
     domainsRoot,
+    labRoot,
     sharedRoot,
     orchestratorRoot,
     codingRoot,

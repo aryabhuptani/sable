@@ -4,7 +4,7 @@ import sys
 import unittest
 
 
-MODULE_PATH = pathlib.Path("/home/arya/domains/coding/projects/sable/tools/instance/instance_config.py")
+MODULE_PATH = pathlib.Path("/home/arya/domains/lab/projects/sable/tools/instance/instance_config.py")
 SPEC = importlib.util.spec_from_file_location("instance_config", MODULE_PATH)
 instance_config = importlib.util.module_from_spec(SPEC)
 sys.modules["instance_config"] = instance_config
@@ -17,25 +17,25 @@ class InstanceConfigTests(unittest.TestCase):
         config = instance_config.create_instance_config(env={})
 
         self.assertEqual(config.home_dir, "/home/arya")
-        self.assertEqual(config.repo_root, "/home/arya/domains/coding/projects/sable")
+        self.assertEqual(config.repo_root, "/home/arya/domains/lab/projects/sable")
         self.assertEqual(config.domains_root, "/home/arya/domains")
         self.assertEqual(config.shared_root, "/home/arya/domains/shared")
         self.assertEqual(config.orchestrator_root, "/home/arya/domains/orchestrator")
-        self.assertEqual(config.coding_root, "/home/arya/domains/coding")
-        self.assertEqual(config.research_domain_root, "/home/arya/domains/research")
+        self.assertEqual(config.coding_root, "/home/arya/domains/lab")
+        self.assertEqual(config.research_domain_root, "/home/arya/domains/lab")
         self.assertEqual(config.work_root, "/home/arya/domains/work")
         self.assertEqual(config.personal_root, "/home/arya/domains/personal")
         self.assertEqual(config.ops_root, "/home/arya/domains/personal")
         self.assertEqual(config.memory_root, "/home/arya/domains")
         self.assertEqual(config.knowledge_root, "/home/arya/domains")
-        self.assertEqual(config.research_root, "/home/arya/domains/research/projects")
+        self.assertEqual(config.research_root, "/home/arya/domains/lab/projects")
         self.assertEqual(
             config.autotweet_root,
             "/home/arya/domains/orchestrator/projects/autotweet",
         )
         self.assertEqual(
             config.signal_bridge_dir,
-            "/home/arya/domains/coding/projects/sable/apps/signal-bridge",
+            "/home/arya/domains/lab/projects/sable/apps/signal-bridge",
         )
         self.assertEqual(config.tasks_root, "/home/arya/domains")
         self.assertEqual(config.skills_root, "/home/arya/domains/shared/skills")
@@ -43,11 +43,11 @@ class InstanceConfigTests(unittest.TestCase):
         self.assertEqual(config.todo_path, "/home/arya/TODO.md")
         self.assertEqual(
             config.project_knowledge_root,
-            "/home/arya/domains/coding/projects/sable/knowledge",
+            "/home/arya/domains/lab/projects/sable/knowledge",
         )
         self.assertEqual(
             config.project_tasks_path,
-            "/home/arya/domains/coding/projects/sable/TASKS.md",
+            "/home/arya/domains/lab/projects/sable/TASKS.md",
         )
         self.assertEqual(
             config.scheduler_jobs_path,
@@ -90,7 +90,8 @@ class InstanceConfigTests(unittest.TestCase):
         self.assertEqual(config.repo_root, "/srv/sable-core")
         self.assertEqual(config.domains_root, "/domains/alex")
         self.assertEqual(config.orchestrator_root, "/domains/alex/orchestrator")
-        self.assertEqual(config.coding_root, "/domains/alex/coding")
+        self.assertEqual(config.lab_root, "/domains/alex/lab")
+        self.assertEqual(config.coding_root, "/domains/alex/lab")
         self.assertEqual(config.personal_root, "/domains/alex/personal")
         self.assertEqual(config.ops_root, "/domains/alex/personal")
         self.assertEqual(config.memory_root, "/data/alex/memory")

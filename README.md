@@ -51,8 +51,8 @@ Refactor policy:
 
 ## Philosophy
 
-- code lives in `/home/arya/domains/coding/projects/`
-- research context lives in `/home/arya/domains/research/projects/`
+- code lives in `/home/arya/domains/lab/projects/`
+- research context lives in `/home/arya/domains/lab/projects/`
 - work/org context lives in `/home/arya/domains/work/projects/`
 - personal/admin context lives in `/home/arya/domains/personal/projects/`
 - orchestration state lives in `/home/arya/domains/orchestrator/`
@@ -66,12 +66,12 @@ The scheduler is also not a reminder system. It is for recurring workflows like 
 Current Arya defaults come from instance config and can be overridden per deployment:
 
 - `SABLE_INSTANCE_HOME` / `SABLE_HOME`: instance home, default `/home/arya`
-- `SABLE_REPO_ROOT`: repo root, default `/home/arya/domains/coding/projects/sable`
+- `SABLE_REPO_ROOT`: repo root, default `/home/arya/domains/lab/projects/sable`
 - `SABLE_CODEX_CWD`: bridge Codex working directory, default `/home/arya`
 - `SABLE_DOMAINS_ROOT`: domain root, default `/home/arya/domains`
 - `SABLE_SCHEDULER_JOBS_PATH`: scheduler jobs file, default `/home/arya/domains/orchestrator/schedules/scheduler-jobs.json`
-- `SABLE_RESEARCH_ROOT`: research project root, default `/home/arya/domains/research/projects`
-- `SABLE_TELEGRAM_CLI_PATH`: Telegram CLI, default `/home/arya/domains/coding/projects/sable/tools/telegram/telegram_cli.py`
+- `SABLE_RESEARCH_ROOT`: research project root, default `/home/arya/domains/lab/projects`
+- `SABLE_TELEGRAM_CLI_PATH`: Telegram CLI, default `/home/arya/domains/lab/projects/sable/tools/telegram/telegram_cli.py`
 - `SABLE_OBSIDIAN_VAULT_ROOT` / `SABLE_OBSIDIAN_VAULT_NAME`: Obsidian vault link target, default root `/home/arya/domains`
 - `SABLE_PLUGIN_PATHS`: extra local plugin roots, default includes `<instance-home>/plugins`
 - `VOICE_NOTES_MODEL_PATH`: local faster-whisper model path, default `/home/arya/models/faster-whisper-base.en`
@@ -100,7 +100,7 @@ Sable now includes a minimal research knowledge-base scaffold utility:
 - Optional slug override:
   `npm run kb:init -- "<topic title>" --slug <topic-slug>`
 
-This creates a topic-local knowledge base under `SABLE_RESEARCH_ROOT`, which defaults to `/home/arya/domains/research/projects/` for Arya's current instance, with:
+This creates a topic-local knowledge base under `SABLE_RESEARCH_ROOT`, which defaults to `/home/arya/domains/lab/projects/` for Arya's current instance, with:
 
 - `KB.md`
 - `raw/inbox/`

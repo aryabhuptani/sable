@@ -16,6 +16,7 @@ class InstanceConfig:
     home_dir: str
     repo_root: str
     domains_root: str
+    lab_root: str
     shared_root: str
     orchestrator_root: str
     coding_root: str
@@ -77,12 +78,16 @@ def create_instance_config(
         _env_value(active_env, "SABLE_ORCHESTRATOR_ROOT")
         or Path(domains_root) / "orchestrator"
     )
-    coding_root = _resolve(
-        _env_value(active_env, "SABLE_CODING_ROOT") or Path(domains_root) / "coding"
+    lab_root = _resolve(
+        _env_value(active_env, "SABLE_LAB_ROOT")
+        or _env_value(active_env, "SABLE_CODING_ROOT")
+        or _env_value(active_env, "SABLE_RESEARCH_DOMAIN_ROOT")
+        or Path(domains_root) / "lab"
     )
+    coding_root = lab_root
     research_domain_root = _resolve(
         _env_value(active_env, "SABLE_RESEARCH_DOMAIN_ROOT")
-        or Path(domains_root) / "research"
+        or lab_root
     )
     work_root = _resolve(_env_value(active_env, "SABLE_WORK_ROOT") or Path(domains_root) / "work")
     personal_root = _resolve(
@@ -144,6 +149,7 @@ def create_instance_config(
         home_dir=resolved_home_dir,
         repo_root=resolved_repo_root,
         domains_root=domains_root,
+        lab_root=lab_root,
         shared_root=shared_root,
         orchestrator_root=orchestrator_root,
         coding_root=coding_root,

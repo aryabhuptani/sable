@@ -14,23 +14,23 @@ test("instance config defaults to Arya's current local layout", () => {
   assert.equal(config.domainsRoot, "/home/arya/domains");
   assert.equal(config.sharedRoot, "/home/arya/domains/shared");
   assert.equal(config.orchestratorRoot, "/home/arya/domains/orchestrator");
-  assert.equal(config.codingRoot, "/home/arya/domains/coding");
-  assert.equal(config.researchDomainRoot, "/home/arya/domains/research");
+  assert.equal(config.codingRoot, "/home/arya/domains/lab");
+  assert.equal(config.researchDomainRoot, "/home/arya/domains/lab");
   assert.equal(config.workRoot, "/home/arya/domains/work");
   assert.equal(config.personalRoot, "/home/arya/domains/personal");
   assert.equal(config.opsRoot, "/home/arya/domains/personal");
   assert.equal(config.memoryRoot, "/home/arya/domains");
   assert.equal(config.knowledgeRoot, "/home/arya/domains");
-  assert.equal(config.researchRoot, "/home/arya/domains/research/projects");
+  assert.equal(config.researchRoot, "/home/arya/domains/lab/projects");
   assert.equal(config.autotweetRoot, "/home/arya/domains/orchestrator/projects/autotweet");
-  assert.equal(config.signalBridgeDir, "/home/arya/domains/coding/projects/sable/apps/signal-bridge");
+  assert.equal(config.signalBridgeDir, "/home/arya/domains/lab/projects/sable/apps/signal-bridge");
   assert.equal(config.tasksRoot, "/home/arya/domains");
   assert.equal(config.skillsRoot, "/home/arya/domains/shared/skills");
   assert.equal(config.agentsPath, "/home/arya/AGENTS.md");
   assert.equal(config.todoPath, "/home/arya/TODO.md");
   assert.equal(config.runsRoot, "/home/arya/domains/orchestrator/runs");
-  assert.equal(config.projectKnowledgeRoot, "/home/arya/domains/coding/projects/sable/knowledge");
-  assert.equal(config.projectTasksPath, "/home/arya/domains/coding/projects/sable/TASKS.md");
+  assert.equal(config.projectKnowledgeRoot, "/home/arya/domains/lab/projects/sable/knowledge");
+  assert.equal(config.projectTasksPath, "/home/arya/domains/lab/projects/sable/TASKS.md");
   assert.equal(
     config.defaultSchedulerJobsPath,
     "/home/arya/domains/orchestrator/schedules/default-scheduler-jobs.json"
@@ -58,7 +58,8 @@ test("instance config supports future non-Arya install paths through env overrid
   assert.equal(config.repoRoot, "/srv/sable-core");
   assert.equal(config.domainsRoot, "/domains/alex");
   assert.equal(config.orchestratorRoot, "/domains/alex/orchestrator");
-  assert.equal(config.codingRoot, "/domains/alex/coding");
+  assert.equal(config.labRoot, "/domains/alex/lab");
+  assert.equal(config.codingRoot, "/domains/alex/lab");
   assert.equal(config.personalRoot, "/domains/alex/personal");
   assert.equal(config.opsRoot, "/domains/alex/personal");
   assert.equal(config.memoryRoot, "/data/alex/memory");
@@ -68,8 +69,8 @@ test("instance config supports future non-Arya install paths through env overrid
   assert.equal(config.signalBridgeDir, "/srv/alex/signal-bridge");
   assert.equal(config.tasksRoot, "/domains/alex");
   assert.equal(config.skillsRoot, "/data/alex/skills");
-  assert.equal(config.projectKnowledgeRoot, "/domains/alex/coding/projects/sable/knowledge");
-  assert.equal(config.projectTasksPath, "/domains/alex/coding/projects/sable/TASKS.md");
+  assert.equal(config.projectKnowledgeRoot, "/domains/alex/lab/projects/sable/knowledge");
+  assert.equal(config.projectTasksPath, "/domains/alex/lab/projects/sable/TASKS.md");
   assert.equal(
     config.defaultSchedulerJobsPath,
     "/domains/alex/orchestrator/schedules/default-scheduler-jobs.json"
