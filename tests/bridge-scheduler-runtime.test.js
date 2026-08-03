@@ -123,6 +123,73 @@ test("scheduler runtime launches typed domain workers directly with resolved Sig
   assert.equal(getSaved()["/tmp/jobs.json"][0].lastRunAt, "2026-05-04T10:00:00.000Z");
 });
 
+test("scheduler runtime executes on the inclusive active-timezone end date and then deactivates", async () => {
+  const dueJob = {
+    id: "edap-check",
+    active: true,
+    recurrence: { type: "daily" },
+    time: { hour: 14, minute: 0, text: "2:00 PM" },
+    timezone: "active",
+    scheduledTimezone: "Europe/Lisbon",
+    nextRunAt: "2026-08-10T13:00:00.000Z",
+    endDate: "2026-08-10",
+    sender: "+1555",
+    workflowPrompt: "Check EDAP",
+    agentProfile: "personal",
+    delivery: "signal",
+  };
+  const launched = [];
+  const { runtime, getSaved } = createRuntime([dueJob], [], {
+    now: () => new Date("2026-08-10T13:00:05.000Z"),
+    loadSchedulerState: () => ({ activeTimezone: "Europe/Lisbon" }),
+    launchScheduledWorker: async (request) => launched.push(request),
+  });
+
+  await runtime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: () => {},
+    ensureBackgroundProcessing: () => {},
+  });
+
+  assert.equal(launched.length, 1);
+  assert.equal(dueJob.lastRunAt, "2026-08-10T13:00:05.000Z");
+  assert.equal(dueJob.active, false);
+  assert.equal(dueJob.nextRunAt, "");
+  assert.equal(getSaved()["/tmp/jobs.json"][0].active, false);
+});
+
+test("scheduler runtime never launches a missed job after its active-timezone end date", async () => {
+  const expiredJob = {
+    id: "expired-edap-check",
+    active: true,
+    recurrence: { type: "daily" },
+    time: { hour: 14, minute: 0, text: "2:00 PM" },
+    timezone: "active",
+    scheduledTimezone: "Europe/Lisbon",
+    nextRunAt: "2026-08-10T13:00:00.000Z",
+    endDate: "2026-08-10",
+    sender: "+1555",
+    workflowPrompt: "Check EDAP",
+    agentProfile: "personal",
+    delivery: "signal",
+  };
+  const launched = [];
+  const { runtime, getSaved } = createRuntime([expiredJob], [], {
+    now: () => new Date("2026-08-11T13:00:00.000Z"),
+    loadSchedulerState: () => ({ activeTimezone: "Europe/Lisbon" }),
+    launchScheduledWorker: async (request) => launched.push(request),
+  });
+
+  await runtime.checkForDueScheduledJobs({
+    enqueueBackgroundJob: () => {},
+    ensureBackgroundProcessing: () => {},
+  });
+
+  assert.deepEqual(launched, []);
+  assert.equal(expiredJob.active, false);
+  assert.equal(expiredJob.nextRunAt, "");
+  assert.equal(getSaved()["/tmp/jobs.json"][0].active, false);
+});
+
 test("scheduler runtime does not advance a typed schedule when worker launch fails", async () => {
   const dueJob = {
     id: "broken-worker",

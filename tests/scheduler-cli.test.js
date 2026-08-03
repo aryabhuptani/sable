@@ -114,6 +114,38 @@ test("scheduler cli supports interval recurring workflows", async () => {
   }
 });
 
+test("scheduler cli persists and validates an inclusive end date", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-until-"));
+  const filePath = path.join(tempDir, "scheduler-jobs.json");
+  const statePath = path.join(tempDir, "scheduler-state.json");
+
+  try {
+    await fs.writeFile(
+      statePath,
+      JSON.stringify({ activeTimezone: "Europe/Lisbon", updatedAt: "", source: "test" }),
+      "utf8"
+    );
+    await runCli([
+      "add", "--file", filePath, "--state-file", statePath,
+      "--sender", "+15551112222", "--recurrence", "daily", "--time", "2:00PM",
+      "--until", "2026-08-10", "--prompt", "Check the EDAP chat",
+    ]);
+
+    const stored = JSON.parse(await fs.readFile(filePath, "utf8"));
+    assert.equal(stored.jobs[0].endDate, "2026-08-10");
+
+    await assert.rejects(
+      runCli([
+        "add", "--file", filePath, "--sender", "+15551112222",
+        "--recurrence", "daily", "--time", "2:00PM", "--until", "2026-02-30",
+        "--prompt", "Invalid date",
+      ])
+    );
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("scheduler cli persists validated typed worker routing", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-scheduler-cli-worker-"));
   const filePath = path.join(tempDir, "scheduler-jobs.json");

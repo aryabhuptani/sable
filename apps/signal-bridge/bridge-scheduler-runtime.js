@@ -105,6 +105,14 @@ function createBridgeSchedulerRuntime(options = {}) {
         continue;
       }
 
+      if (isAfterEndDate(scheduledJob, nowDate)) {
+        scheduledJob.active = false;
+        scheduledJob.nextRunAt = "";
+        scheduledJob.updatedAt = timestamp();
+        changed = true;
+        continue;
+      }
+
       const nextRunMs = Date.parse(scheduledJob.nextRunAt);
       if (Number.isNaN(nextRunMs) || nextRunMs > nowDate.getTime()) {
         continue;
@@ -130,11 +138,16 @@ function createBridgeSchedulerRuntime(options = {}) {
         queuedLegacyJob = true;
       }
       scheduledJob.lastRunAt = nowDate.toISOString();
-      scheduledJob.nextRunAt = computeFollowingRunAt(
-        scheduledJob,
-        nowDate,
-        getComputeOptionsForJob(scheduledJob)
-      );
+      if (isOnEndDate(scheduledJob, nowDate)) {
+        scheduledJob.active = false;
+        scheduledJob.nextRunAt = "";
+      } else {
+        scheduledJob.nextRunAt = computeFollowingRunAt(
+          scheduledJob,
+          nowDate,
+          getComputeOptionsForJob(scheduledJob)
+        );
+      }
       scheduledJob.scheduledTimezone = getScheduledTimezoneForJob(scheduledJob);
       scheduledJob.updatedAt = timestamp();
       changed = true;
@@ -204,6 +217,16 @@ function createBridgeSchedulerRuntime(options = {}) {
     return "";
   }
 
+  function isAfterEndDate(job, date) {
+    const endDate = normalizeDateKey(job?.endDate);
+    return endDate && getLocalDateKey(date, getScheduledTimezoneForJob(job)) > endDate;
+  }
+
+  function isOnEndDate(job, date) {
+    const endDate = normalizeDateKey(job?.endDate);
+    return endDate && getLocalDateKey(date, getScheduledTimezoneForJob(job)) === endDate;
+  }
+
   function queueScheduledWorkflowRun(scheduledJob) {
     const sender =
       scheduledJob.sender === "__default_sender__"
@@ -271,6 +294,33 @@ function createBridgeSchedulerRuntime(options = {}) {
     refreshJobs,
     removeScheduledJob,
   };
+}
+
+function normalizeDateKey(value) {
+  const normalized = defaultNormalizeText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : "";
+}
+
+function getLocalDateKey(date, timezone = "") {
+  if (!timezone) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function mergeJobs(defaultJobs, localJobs) {

@@ -124,12 +124,14 @@ function createScheduledWorkflowJob({
   model = "",
   delivery = "",
   recipient = "",
+  endDateText = "",
   now = new Date(),
 }) {
   const recurrence = buildRecurrence(recurrenceType, dayOfWeek, intervalMinutes);
   const time = recurrence?.type === "interval" ? null : parseTimeText(timeText);
   const cleanedPrompt = normalizeText(workflowPrompt);
   const normalizedReplyMode = normalizeReplyMode(replyMode);
+  const endDate = normalizeEndDate(endDateText);
   const workerRouting = normalizeWorkerRouting({
     agentProfile,
     model,
@@ -143,7 +145,8 @@ function createScheduledWorkflowJob({
     !recurrence ||
     (!time && recurrence.type !== "interval") ||
     !cleanedPrompt ||
-    !normalizedReplyMode
+    !normalizedReplyMode ||
+    (normalizeText(endDateText) && !endDate)
   ) {
     throw new Error("Missing required scheduler job fields.");
   }
@@ -163,8 +166,27 @@ function createScheduledWorkflowJob({
     nextRunAt: computeNextRunAt(recurrence, time, now),
     lastRunAt: "",
     scheduleKind: "local",
+    ...(endDate ? { endDate } : {}),
     ...workerRouting,
   };
+}
+
+function normalizeEndDate(value) {
+  const normalized = normalizeText(value);
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return normalized;
 }
 
 function normalizeWorkerRouting({
@@ -442,6 +464,7 @@ function formatScheduleConfirmation(job) {
     `Scheduled recurring workflow ${job.id}.`,
     formatScheduleHeadline(job),
     `Next run: ${formatTimestamp(job.nextRunAt)}`,
+    ...(job.endDate ? [`Ends after: ${job.endDate}`] : []),
     ...formatWorkerRouting(job),
     `Workflow: ${job.workflowPrompt}`,
   ].join("\n");
@@ -463,6 +486,7 @@ function formatScheduleList(jobs) {
       [
         `${job.id} [${formatScheduleKind(job)}]: ${formatScheduleHeadline(job)}`,
         `next: ${formatTimestamp(job.nextRunAt)}`,
+        ...(job.endDate ? [`ends after: ${job.endDate}`] : []),
         `reply mode: ${formatReplyMode(job.replyMode)}`,
         ...formatWorkerRouting(job).map((line) => line.toLowerCase()),
         `workflow: ${job.workflowPrompt}`,
