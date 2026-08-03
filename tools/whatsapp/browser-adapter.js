@@ -88,9 +88,9 @@ class WhatsAppBrowserAdapter {
     }
     const main = await firstVisible(this.page, SELECTORS.main, 5_000);
     if (!main) throw await this.diagnosticError(`Chat opened but conversation panel was not found: ${target}`);
-    const header = await this.page.locator("#main header").first().innerText().catch(() => target);
+    const header = await this.page.locator("#main header").first().innerText().catch(() => "");
     const resolvedName = header.split("\n")[0].trim();
-    if (resolvedName.localeCompare(target, undefined, { sensitivity: "accent" }) !== 0) {
+    if (resolvedName !== target) {
       throw await this.diagnosticError(`Browser search opened "${resolvedName || "(unknown)"}" instead of approved chat "${target}".`);
     }
     const dataId = await this.page.locator("#main").getAttribute("data-id").catch(() => "");
@@ -128,6 +128,42 @@ class WhatsAppBrowserAdapter {
         attachment,
       };
     }), chat.id);
+  }
+
+  async readVisibleDocumentMessages(chat) {
+    const selector = await firstVisible(this.page, SELECTORS.message, 3_000);
+    if (!selector) throw await this.diagnosticError("Conversation message selectors did not match.");
+    return this.page.locator(selector).evaluateAll((nodes, chatId) => {
+      let documentIndex = -1;
+      return nodes.map((node) => {
+      const pre = node.querySelector("[data-pre-plain-text]")?.getAttribute("data-pre-plain-text") || node.getAttribute("data-pre-plain-text") || "";
+      const textNode = node.querySelector("[data-testid='selectable-text']") || node.querySelector(".selectable-text");
+      const documentNode = node.querySelector("[data-testid*='document'], [data-icon='document'], a[download]");
+      if (documentNode) documentIndex += 1;
+      const filename = documentNode?.getAttribute("download") || documentNode?.textContent?.trim() || "";
+      return {
+        id: node.getAttribute("data-id") || node.closest("[data-id]")?.getAttribute("data-id") || "",
+        chatId, documentIndex, prePlainText: pre,
+        timestamp: node.querySelector("[data-testid='msg-meta']")?.textContent || "",
+        sender: "", text: textNode?.textContent?.trim() || "",
+        attachment: documentNode ? { type: "document", filename, mimeType: /\.pdf$/i.test(filename) ? "application/pdf" : "", caption: textNode?.textContent?.trim() || "" } : null,
+      };
+      });
+    }, chat.id);
+  }
+
+  async downloadDocument(message, outputPath) {
+    const selector = await firstVisible(this.page, SELECTORS.documentMessage, 2_000);
+    if (!selector) throw await this.diagnosticError("Document message selector no longer matches.");
+    const row = this.page.locator(selector).nth(message.documentIndex);
+    const controlSelector = await firstVisible(row, SELECTORS.documentDownload, 2_000);
+    if (!controlSelector) throw await this.diagnosticError(`Download control was not found for ${message.attachment?.filename || "PDF"}.`);
+    const downloadPromise = this.page.waitForEvent("download", { timeout: this.timeoutMs });
+    await row.locator(controlSelector).first().click();
+    const download = await downloadPromise;
+    await download.saveAs(outputPath);
+    const failure = await download.failure();
+    if (failure) throw new Error(`WhatsApp PDF download failed: ${failure}`);
   }
 
   async scrollHistoryUp() {
@@ -216,7 +252,9 @@ async function firstVisible(page, selectors, timeoutMs) {
       const locator = page.locator(selector).first();
       if (await locator.count().catch(() => 0) && await locator.isVisible().catch(() => false)) return selector;
     }
-    await page.waitForTimeout(Math.min(100, Math.max(0, deadline - Date.now())));
+    const delay = Math.min(100, Math.max(0, deadline - Date.now()));
+    if (typeof page.waitForTimeout === "function") await page.waitForTimeout(delay);
+    else await new Promise((resolve) => setTimeout(resolve, delay));
   } while (Date.now() < deadline);
   return null;
 }

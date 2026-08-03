@@ -2,6 +2,21 @@
 
 Sable's WhatsApp connector is read-only and allowlist-first. A persistent Playwright/Chromium profile reads WhatsApp Web, while a local SQLite database provides durable history, incremental checkpoints, full-text search, attachment metadata, and export. It does not use Baileys, `whatsapp-web.js`, or Puppeteer, and it has no sending command.
 
+## Scheduled direct scans (no index)
+
+Workflows that only need new PDF attachments can use the persistent browser profile without creating or reading SQLite:
+
+```bash
+npm run whatsapp:cli -- direct-scan \
+  --chat-title EDAP-PLA \
+  --workflow edap-pla-exercises \
+  --output-dir /private/path/edap-pla
+```
+
+The exact title must be present in the approved-chat config. The command examines currently visible messages newer than its JSON checkpoint, downloads PDFs, and emits deterministic JSON. A PDF is retained when its filename, caption, or extracted text contains `exercicio`/`exercício` or `consolidacao`/`consolidação`, case- and accent-insensitively. `pdftotext` must be installed when content inspection is needed.
+
+The checkpoint defaults to `workflows/<workflow>.json` under WhatsApp private state and advances only after every selected download succeeds or after a clean scan. A missing/mismatched chat header, changed message/download selector, invisible saved checkpoint, extraction failure, or download failure exits nonzero without advancing it. This command never sends, reacts, archives, or otherwise mutates WhatsApp.
+
 ## Install and one-time login
 
 Install dependencies and the Chromium build from the repository:

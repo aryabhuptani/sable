@@ -11,6 +11,7 @@ const { WhatsAppBrowserAdapter, loadPlaywright } = require("./browser-adapter");
 const { WhatsAppStore } = require("./store");
 const { syncApprovedChats } = require("./sync");
 const { exportApproved, markdown } = require("./export");
+const { directScan } = require("./direct-scan");
 
 const DEFAULT_TRIAGE_LIMIT = 25;
 const DEFAULT_STALE_DAYS = 21;
@@ -171,6 +172,21 @@ async function commandSync(args, env = process.env) {
     } finally { store.close(); }
   });
 }
+async function commandDirectScan(args, env = process.env) {
+  const chatTitle = text(args["chat-title"]);
+  if (!chatTitle) throw new Error("Pass --chat-title with the exact approved chat title.");
+  const approvedChats = loadApprovedChats({ env, filePath: approvedChatsPathFromArgs(args, env) });
+  if (!approvedChats.some((chat) => chat.name === chatTitle)) throw new Error(`Exact chat title is not approved: ${chatTitle}`);
+  return withAdapter(args, env, async (adapter, paths) => {
+    await adapter.waitUntilReady();
+    const workflow = text(args.workflow) || foldWorkflow(chatTitle);
+    const checkpointPath = path.resolve(args.checkpoint || path.join(paths.root, "workflows", `${workflow}.json`));
+    const outputDir = path.resolve(args["output-dir"] || path.join(paths.root, "downloads", workflow));
+    const result = await directScan({ adapter, chatTitle, checkpointPath, outputDir });
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  });
+}
 function commandSearch(args, env = process.env) {
   const query = args.query || args.q;
   if (!query) throw new Error("Pass --query for local search.");
@@ -233,7 +249,7 @@ async function asyncMain(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   const commands = {
     triage: commandTriage, "list-chats": commandListChats, "init-config": commandInitConfig,
-    connect: commandConnect, status: commandStatus, sync: commandSync, search: commandSearch,
+    connect: commandConnect, status: commandStatus, sync: commandSync, "direct-scan": commandDirectScan, search: commandSearch,
     "search-messages": commandSearch,
     "export-approved": commandExportApproved, doctor: commandDoctor,
   };
@@ -247,6 +263,7 @@ function printUsage() {
     "  connect [--headless false] [--wait] [--ready-timeout-ms 300000]",
     "  status",
     "  sync [--approved-config path] [--until ISO] [--max-messages 5000] [--max-scrolls 500] [--max-time-ms 600000]",
+    "  direct-scan --chat-title exact --workflow name --output-dir private-dir [--checkpoint path]",
     "  search --query text [--chat id] [--limit 50] [--json]",
     "  list-chats [--limit 50]",
     "  triage [--limit 25] [--stale-days 21] [--input-json path]",
@@ -259,6 +276,7 @@ function integer(value, fallback) { const parsed = Number.parseInt(String(value 
 function boolean(value, fallback) { const normalized = text(value).toLowerCase(); if (!normalized) return fallback; return ["1", "true", "yes"].includes(normalized); }
 function validDate(value) { return value instanceof Date && !Number.isNaN(value.getTime()); }
 function truncate(value, limit) { const input = String(value || ""); return input.length <= limit ? input : `${input.slice(0, limit - 1)}…`; }
+function foldWorkflow(value) { return text(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "direct-scan"; }
 function acquireWorkerLock(lockPath) {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
   try {

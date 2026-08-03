@@ -12,6 +12,7 @@ const { normalizeDomMessage } = require("../tools/whatsapp/dom");
 const { SelectorDiagnosticError, WhatsAppBrowserAdapter, firstVisible } = require("../tools/whatsapp/browser-adapter");
 const { SCHEMA_VERSION, WhatsAppStore } = require("../tools/whatsapp/store");
 const { crawlChat, syncApprovedChats } = require("../tools/whatsapp/sync");
+const { containsTarget, directScan, readCheckpoint } = require("../tools/whatsapp/direct-scan");
 
 async function tempState(name) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), name));
@@ -235,5 +236,53 @@ test("login wait refresh maintains a private current screenshot artifact", async
 
   assert.equal(await fsp.readFile(outputPath, "utf8"), "qr");
   assert.equal((fs.statSync(outputPath).mode & 0o777), 0o600);
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test("direct scan matches accents and downloads only target PDFs without SQLite", async () => {
+  const { root } = await tempState("sable-wa-direct-");
+  const messages = JSON.parse(await fsp.readFile(path.join(__dirname, "fixtures", "whatsapp", "direct-scan-messages.json"), "utf8"));
+  const checkpointPath = path.join(root, "checkpoint.json");
+  const outputDir = path.join(root, "private-downloads");
+  const adapter = {
+    findAndOpenChat: async ({ name }) => ({ id: "name:edap-pla", name }),
+    readVisibleDocumentMessages: async () => messages,
+    downloadDocument: async (message, target) => fsp.writeFile(target, message.attachment.body),
+  };
+  const result = await directScan({
+    adapter, chatTitle: "EDAP-PLA", checkpointPath, outputDir,
+    extractText: (filePath) => fs.readFileSync(filePath, "utf8") === "fixture-pdf-two" ? "Consolidação semanal" : "",
+  });
+  assert.equal(containsTarget("EXERCÍCIO"), true);
+  assert.equal(containsTarget("consolidacao"), true);
+  assert.deepEqual(result.matchingPdfs.map(({ filename, matchedBy }) => ({ filename, matchedBy })), [
+    { filename: "Exercício 4.pdf", matchedBy: "metadata" },
+    { filename: "notes.pdf", matchedBy: "pdf-text" },
+  ]);
+  assert.equal(result.scannedMessages, 4);
+  assert.equal(readCheckpoint(checkpointPath, "EDAP-PLA").lastMessageKey, "m4");
+  assert.equal((fs.statSync(result.matchingPdfs[0].path).mode & 0o777), 0o600);
+  const second = await directScan({ adapter, chatTitle: "EDAP-PLA", checkpointPath, outputDir, extractText: () => "" });
+  assert.deepEqual(second, { version: 1, chatTitle: "EDAP-PLA", scannedMessages: 0, matchingPdfs: [] });
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test("direct scan fails closed and does not advance checkpoint on a download failure", async () => {
+  const { root } = await tempState("sable-wa-direct-fail-");
+  const checkpointPath = path.join(root, "checkpoint.json");
+  const outputDir = path.join(root, "downloads");
+  const messages = [{ id: "m1", attachment: { filename: "exercicio.pdf", mimeType: "application/pdf" }, documentIndex: 0 }];
+  await assert.rejects(directScan({
+    adapter: {
+      findAndOpenChat: async () => ({ name: "EDAP-PLA" }),
+      readVisibleDocumentMessages: async () => messages,
+      downloadDocument: async () => { throw new Error("download failed"); },
+    }, chatTitle: "EDAP-PLA", checkpointPath, outputDir,
+  }), /download failed/);
+  assert.equal(fs.existsSync(checkpointPath), false);
+  await assert.rejects(directScan({
+    adapter: { findAndOpenChat: async () => ({ name: "EDAP PLA" }) },
+    chatTitle: "EDAP-PLA", checkpointPath, outputDir,
+  }), /Exact-chat mismatch/);
   await fsp.rm(root, { recursive: true, force: true });
 });

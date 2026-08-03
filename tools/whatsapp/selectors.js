@@ -14,6 +14,8 @@ const SELECTORS = Object.freeze({
   searchResults: ["#pane-side [role='listitem']", "#pane-side [role='row']", "#pane-side span[title]"],
   main: ["#main"],
   message: ["#main [data-id]", "#main [data-testid='msg-container']", "#main [role='row'] [data-pre-plain-text]"],
+  documentMessage: ["#main [data-id]:has([data-testid*='document'])", "#main [data-testid='msg-container']:has([data-icon='document'])", "#main [data-id]:has(a[download])"],
+  documentDownload: ["[data-icon='download']", "[aria-label='Download']", "a[download]"],
   scroller: ["#main [data-testid='conversation-panel-messages']", "#main [role='application']", "#main .copyable-area"],
 });
 

@@ -1,0 +1,6 @@
+[
+  {"id":"m1","text":"ordinary update","attachment":null},
+  {"id":"m2","text":"","attachment":{"type":"document","filename":"Exercício 4.pdf","mimeType":"application/pdf","caption":"","body":"fixture-pdf-one"},"documentIndex":0},
+  {"id":"m3","text":"weekly notes","attachment":{"type":"document","filename":"notes.pdf","mimeType":"application/pdf","caption":"","body":"fixture-pdf-two"},"documentIndex":1},
+  {"id":"m4","text":"newest ordinary message","attachment":null}
+]
