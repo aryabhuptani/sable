@@ -66,6 +66,7 @@ class WhatsAppBrowserAdapter {
 
   async findAndOpenChat(approved) {
     await this.waitUntilReady();
+    await this.dismissBlockingDialogs();
     const target = String(approved.name || "").trim();
     if (!target) {
       throw new Error(`Approved chat ${approved.id || "(unknown)"} needs an exact name for browser discovery.`);
@@ -73,7 +74,8 @@ class WhatsAppBrowserAdapter {
     const searchSelector = await firstVisible(this.page, SELECTORS.search, 3_000);
     if (!searchSelector) throw await this.diagnosticError("WhatsApp chat search input was not found.");
     const search = this.page.locator(searchSelector).first();
-    await search.click();
+    try { await search.click(); }
+    catch { throw await this.diagnosticError("WhatsApp chat search input could not be focused."); }
     await search.fill(target);
     await this.page.waitForTimeout(800);
     const exact = this.page.locator(`#pane-side span[title=${JSON.stringify(target)}]`).first();
@@ -100,6 +102,20 @@ class WhatsAppBrowserAdapter {
       isGroup: String(approved.id || "").endsWith("@g.us"),
       browserDataId: dataId,
     };
+  }
+
+  async dismissBlockingDialogs() {
+    const dialogs = this.page.locator("[role='dialog'][aria-modal='true']");
+    const count = await dialogs.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      const dialog = dialogs.nth(index);
+      if (!await dialog.isVisible().catch(() => false)) continue;
+      const close = dialog.getByRole("button", { name: /^(Close|Fechar)$/i }).first();
+      if (await close.count().catch(() => 0)) {
+        await close.click();
+        await dialog.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
+      }
+    }
   }
 
   async readVisibleMessages(chat) {
