@@ -182,7 +182,12 @@ async function commandDirectScan(args, env = process.env) {
     const workflow = text(args.workflow) || foldWorkflow(chatTitle);
     const checkpointPath = path.resolve(args.checkpoint || path.join(paths.root, "workflows", `${workflow}.json`));
     const outputDir = path.resolve(args["output-dir"] || path.join(paths.root, "downloads", workflow));
-    const result = await directScan({ adapter, chatTitle, checkpointPath, outputDir });
+    const result = await directScan({
+      adapter, chatTitle, checkpointPath, outputDir,
+      maxMessages: integer(args["max-messages"], 500),
+      maxScrolls: integer(args["max-scrolls"], 50),
+      maxTimeMs: integer(args["max-time-ms"], 120_000),
+    });
     console.log(JSON.stringify(result, null, 2));
     return 0;
   });
@@ -263,7 +268,7 @@ function printUsage() {
     "  connect [--headless false] [--wait] [--ready-timeout-ms 300000]",
     "  status",
     "  sync [--approved-config path] [--until ISO] [--max-messages 5000] [--max-scrolls 500] [--max-time-ms 600000]",
-    "  direct-scan --chat-title exact --workflow name --output-dir private-dir [--checkpoint path]",
+    "  direct-scan --chat-title exact --workflow name --output-dir private-dir [--checkpoint path] [--max-messages 500] [--max-scrolls 50] [--max-time-ms 120000]",
     "  search --query text [--chat id] [--limit 50] [--json]",
     "  list-chats [--limit 50]",
     "  triage [--limit 25] [--stale-days 21] [--input-json path]",

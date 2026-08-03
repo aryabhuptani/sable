@@ -53,36 +53,66 @@ function writeCheckpoint(checkpointPath, checkpoint) {
   fs.renameSync(temporary, checkpointPath);
 }
 
-async function directScan({ adapter, chatTitle, checkpointPath, outputDir, extractText = extractPdfText }) {
+async function directScan({
+  adapter, chatTitle, checkpointPath, outputDir, extractText = extractPdfText,
+  maxMessages = 500, maxScrolls = 50, maxTimeMs = 120_000, now = () => Date.now(),
+}) {
   if (!chatTitle || !checkpointPath || !outputDir) throw new Error("directScan requires chatTitle, checkpointPath, and outputDir.");
+  if (!Number.isInteger(maxMessages) || maxMessages < 1 || !Number.isInteger(maxScrolls) || maxScrolls < 0 || !Number.isFinite(maxTimeMs) || maxTimeMs < 1) {
+    throw new Error("directScan bounds require maxMessages >= 1, maxScrolls >= 0, and maxTimeMs >= 1.");
+  }
   const checkpoint = readCheckpoint(checkpointPath, chatTitle);
   const chat = await adapter.findAndOpenChat({ name: chatTitle });
   if (chat.name !== chatTitle) throw new Error(`Exact-chat mismatch: opened "${chat.name}" instead of "${chatTitle}".`);
-  const messages = await adapter.readVisibleDocumentMessages(chat);
-  if (!Array.isArray(messages)) throw new Error("WhatsApp document selector returned an invalid result.");
-  const keyed = messages.map((message) => ({ ...message, key: messageKey(message) }));
-  const checkpointIndex = checkpoint.lastMessageKey ? keyed.findIndex((message) => message.key === checkpoint.lastMessageKey) : -1;
-  if (checkpoint.lastMessageKey && checkpointIndex < 0) {
-    throw new Error("Saved checkpoint is not visible; refusing an incomplete scan.");
-  }
-  const newer = checkpointIndex < 0 ? keyed : keyed.slice(checkpointIndex + 1);
   fs.mkdirSync(outputDir, { recursive: true, mode: 0o700 });
   const matches = [];
-  for (const message of newer) {
-    if (!isPdf(message)) continue;
-    const filename = safeFilename(message.attachment.filename, `whatsapp-${message.key.replace(/[^a-z0-9]/gi, "").slice(-16)}.pdf`);
-    const outputPath = uniqueOutputPath(outputDir, filename, message.key);
-    await adapter.downloadDocument(message, outputPath);
-    fs.chmodSync(outputPath, 0o600);
-    let matchedBy = null;
-    if (containsTarget(`${filename}\n${message.attachment.caption || ""}\n${message.text || ""}`)) matchedBy = "metadata";
-    else if (containsTarget(extractText(outputPath))) matchedBy = "pdf-text";
-    if (matchedBy) matches.push({ messageKey: message.key, filename, path: outputPath, matchedBy });
-    else fs.unlinkSync(outputPath);
+  const seen = new Set();
+  const startedAt = now();
+  let newest = checkpoint.lastMessageKey;
+  let scrolls = 0;
+  let noProgress = 0;
+  let checkpointFound = !checkpoint.lastMessageKey;
+  let stopReason = "max-scrolls";
+  while (true) {
+    const messages = await adapter.readVisibleDocumentMessages(chat);
+    if (!Array.isArray(messages)) throw new Error("WhatsApp document selector returned an invalid result.");
+    const keyed = messages.map((message) => ({ ...message, key: messageKey(message) }));
+    if (!newest && keyed.length) newest = keyed.at(-1).key;
+    const checkpointIndex = checkpoint.lastMessageKey ? keyed.findIndex((message) => message.key === checkpoint.lastMessageKey) : -1;
+    const eligible = checkpointIndex >= 0 ? keyed.slice(checkpointIndex + 1) : keyed;
+    const remaining = Math.max(0, maxMessages - seen.size);
+    const unseen = eligible.filter((message) => !seen.has(message.key));
+    if (checkpointIndex >= 0 && unseen.length <= remaining) checkpointFound = true;
+    const candidates = remaining ? unseen.slice(-remaining) : [];
+    let added = 0;
+    for (const message of candidates) {
+      seen.add(message.key);
+      added += 1;
+      if (!isPdf(message)) continue;
+      const filename = safeFilename(message.attachment.filename, `whatsapp-${message.key.replace(/[^a-z0-9]/gi, "").slice(-16)}.pdf`);
+      const outputPath = uniqueOutputPath(outputDir, filename, message.key);
+      await adapter.downloadDocument(message, outputPath);
+      fs.chmodSync(outputPath, 0o600);
+      let matchedBy = null;
+      if (containsTarget(`${filename}\n${message.attachment.caption || ""}\n${message.text || ""}`)) matchedBy = "metadata";
+      else if (containsTarget(extractText(outputPath))) matchedBy = "pdf-text";
+      if (matchedBy) matches.push({ messageKey: message.key, filename, path: outputPath, matchedBy });
+      else fs.unlinkSync(outputPath);
+    }
+    noProgress = added ? 0 : noProgress + 1;
+    if (checkpointFound && checkpoint.lastMessageKey) { stopReason = "checkpoint"; break; }
+    if (seen.size >= maxMessages) { stopReason = "max-messages"; break; }
+    if (now() - startedAt >= maxTimeMs) { stopReason = "max-time"; break; }
+    if (scrolls >= maxScrolls) { stopReason = "max-scrolls"; break; }
+    if (noProgress >= 3) { stopReason = "no-progress"; break; }
+    await adapter.scrollHistoryUp();
+    scrolls += 1;
   }
-  const newest = keyed.at(-1)?.key || checkpoint.lastMessageKey;
+  if (checkpoint.lastMessageKey && !checkpointFound) {
+    throw new Error(`Saved checkpoint was not reached within scan bounds (${stopReason}); refusing an incomplete scan.`);
+  }
   writeCheckpoint(checkpointPath, { version: 1, chatTitle, lastMessageKey: newest });
-  return { version: 1, chatTitle, scannedMessages: newer.length, matchingPdfs: matches };
+  return { version: 1, chatTitle, scannedMessages: seen.size, scrolls, stopReason, matchingPdfs: matches };
 }
 
 module.exports = {

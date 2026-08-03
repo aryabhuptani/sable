@@ -10,12 +10,15 @@ Workflows that only need new PDF attachments can use the persistent browser prof
 npm run whatsapp:cli -- direct-scan \
   --chat-title EDAP-PLA \
   --workflow edap-pla-exercises \
-  --output-dir /private/path/edap-pla
+  --output-dir /private/path/edap-pla \
+  --max-messages 500 --max-scrolls 50 --max-time-ms 120000
 ```
 
 The exact title must be present in the approved-chat config. The command examines currently visible messages newer than its JSON checkpoint, downloads PDFs, and emits deterministic JSON. A PDF is retained when its filename, caption, or extracted text contains `exercicio`/`exercício` or `consolidacao`/`consolidação`, case- and accent-insensitively. `pdftotext` must be installed when content inspection is needed.
 
-The checkpoint defaults to `workflows/<workflow>.json` under WhatsApp private state and advances only after every selected download succeeds or after a clean scan. A missing/mismatched chat header, changed message/download selector, invisible saved checkpoint, extraction failure, or download failure exits nonzero without advancing it. This command never sends, reacts, archives, or otherwise mutates WhatsApp.
+On a fresh workflow the scanner walks backward through virtualized history until a configured message, scroll, time, or no-progress bound. On later runs it walks backward only until it reaches the saved checkpoint; failing to reach that checkpoint within the bounds is an error, never a silently partial success.
+
+The checkpoint defaults to `workflows/<workflow>.json` under WhatsApp private state and advances only after every selected download succeeds or after a clean, complete scan. A missing/mismatched chat header, changed message/download selector, unreachable saved checkpoint, extraction failure, or download failure exits nonzero without advancing it. This command never sends, reacts, archives, or otherwise mutates WhatsApp.
 
 ## Install and one-time login
 

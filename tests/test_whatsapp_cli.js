@@ -252,6 +252,7 @@ test("direct scan matches accents and downloads only target PDFs without SQLite"
   const result = await directScan({
     adapter, chatTitle: "EDAP-PLA", checkpointPath, outputDir,
     extractText: (filePath) => fs.readFileSync(filePath, "utf8") === "fixture-pdf-two" ? "Consolidação semanal" : "",
+    maxScrolls: 0,
   });
   assert.equal(containsTarget("EXERCÍCIO"), true);
   assert.equal(containsTarget("consolidacao"), true);
@@ -262,8 +263,51 @@ test("direct scan matches accents and downloads only target PDFs without SQLite"
   assert.equal(result.scannedMessages, 4);
   assert.equal(readCheckpoint(checkpointPath, "EDAP-PLA").lastMessageKey, "m4");
   assert.equal((fs.statSync(result.matchingPdfs[0].path).mode & 0o777), 0o600);
-  const second = await directScan({ adapter, chatTitle: "EDAP-PLA", checkpointPath, outputDir, extractText: () => "" });
-  assert.deepEqual(second, { version: 1, chatTitle: "EDAP-PLA", scannedMessages: 0, matchingPdfs: [] });
+  const second = await directScan({ adapter, chatTitle: "EDAP-PLA", checkpointPath, outputDir, extractText: () => "", maxScrolls: 0 });
+  assert.deepEqual(second, { version: 1, chatTitle: "EDAP-PLA", scannedMessages: 0, scrolls: 0, stopReason: "checkpoint", matchingPdfs: [] });
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test("fresh direct scan walks backward within bounds and checkpoints the initial newest message", async () => {
+  const { root } = await tempState("sable-wa-direct-history-");
+  const checkpointPath = path.join(root, "checkpoint.json");
+  const outputDir = path.join(root, "downloads");
+  const recent = [{ id: "m4", text: "Friday" }, { id: "m5", text: "Monday" }];
+  const history = [
+    { id: "m1", attachment: { filename: "consolidacao-semanal.pdf", mimeType: "application/pdf", body: "pdf" }, documentIndex: 0 },
+    { id: "m2", text: "older update" }, ...recent,
+  ];
+  let snapshot = 0;
+  const result = await directScan({
+    adapter: {
+      findAndOpenChat: async () => ({ name: "EDAP-PLA" }),
+      readVisibleDocumentMessages: async () => snapshot ? history : recent,
+      scrollHistoryUp: async () => { snapshot += 1; },
+      downloadDocument: async (message, target) => fsp.writeFile(target, message.attachment.body),
+    },
+    chatTitle: "EDAP-PLA", checkpointPath, outputDir, maxMessages: 20, maxScrolls: 2, maxTimeMs: 10_000,
+  });
+  assert.equal(result.scannedMessages, 4);
+  assert.equal(result.scrolls, 2);
+  assert.equal(result.stopReason, "max-scrolls");
+  assert.deepEqual(result.matchingPdfs.map((item) => item.filename), ["consolidacao-semanal.pdf"]);
+  assert.equal(readCheckpoint(checkpointPath, "EDAP-PLA").lastMessageKey, "m5");
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test("incremental direct scan refuses to advance when bounds do not reach checkpoint", async () => {
+  const { root } = await tempState("sable-wa-direct-bounds-");
+  const checkpointPath = path.join(root, "checkpoint.json");
+  await fsp.writeFile(checkpointPath, JSON.stringify({ version: 1, chatTitle: "EDAP-PLA", lastMessageKey: "old-checkpoint" }));
+  const before = await fsp.readFile(checkpointPath, "utf8");
+  await assert.rejects(directScan({
+    adapter: {
+      findAndOpenChat: async () => ({ name: "EDAP-PLA" }),
+      readVisibleDocumentMessages: async () => [{ id: "new-message" }],
+      scrollHistoryUp: async () => {},
+    }, chatTitle: "EDAP-PLA", checkpointPath, outputDir: path.join(root, "downloads"), maxScrolls: 1,
+  }), /checkpoint was not reached within scan bounds \(max-scrolls\)/i);
+  assert.equal(await fsp.readFile(checkpointPath, "utf8"), before);
   await fsp.rm(root, { recursive: true, force: true });
 });
 
