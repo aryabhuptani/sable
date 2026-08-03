@@ -118,3 +118,70 @@ test("run kernel exposes risk gates and checkpoint state", async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("archives only terminal runs and removes them from the live ledger", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-archive-"));
+  try {
+    await createRun(path.join(tempDir, "active"), { run_id: "active", status: "running" });
+    await createRun(path.join(tempDir, "done"), { run_id: "done", status: "completed", final_summary: "Finished safely." });
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, now: () => new Date("2026-08-03T10:00:00Z") });
+    assert.equal((await store.archiveRun("active")).code, "RUN_NOT_TERMINAL");
+    const result = await store.archiveRun("done", { actor: "obsidian" });
+    assert.equal(result.ok, true);
+    assert.equal(result.run.status, "completed");
+    assert.equal(result.run.final_summary, "Finished safely.");
+    assert.equal(result.run.archived_by, "obsidian");
+    assert.deepEqual((await store.listRuns()).map((run) => run.run_id), ["active"]);
+    assert.equal((await fs.lstat(path.join(tempDir, ".archive", "done"))).isDirectory(), true);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("archive pruning has split retention and protects pinned, referenced, and latest scheduled runs", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-prune-"));
+  const archiveRoot = path.join(tempDir, ".archive");
+  try {
+    const makeArchive = async (id, archivedAt, extra = {}) => {
+      const runDir = path.join(archiveRoot, id);
+      await createRun(runDir, { run_id: id, status: "completed", archived_at: archivedAt, ...extra }, { now: new Date(archivedAt) });
+      await fs.writeFile(path.join(runDir, "stdout.jsonl"), "heavy");
+      await fs.writeFile(path.join(runDir, "last-message.txt"), "final summary");
+    };
+    await makeArchive("heavy", "2026-06-20T00:00:00Z");
+    await makeArchive("expired", "2026-04-01T00:00:00Z");
+    await makeArchive("pinned", "2026-04-01T00:00:00Z", { pinned: true });
+    await makeArchive("referenced", "2026-04-01T00:00:00Z", { references: ["report"] });
+    await makeArchive("schedule-old", "2026-04-01T00:00:00Z", { schedule_id: "daily" });
+    await makeArchive("schedule-latest", "2026-04-02T00:00:00Z", { schedule_id: "daily" });
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, now: () => new Date("2026-08-03T00:00:00Z") });
+    const dry = await store.pruneArchives({ dryRun: true });
+    assert.equal(dry.archivesPruned, 2);
+    assert.equal(dry.heavyFilesPruned, 1);
+    assert.equal(dry.protected, 3);
+    const result = await store.pruneArchives();
+    assert.deepEqual(result, { scanned: 6, protected: 3, heavyFilesPruned: 1, archivesPruned: 2, dryRun: false });
+    await assert.rejects(fs.access(path.join(archiveRoot, "heavy", "stdout.jsonl")));
+    assert.equal(await fs.readFile(path.join(archiveRoot, "heavy", "last-message.txt"), "utf8"), "final summary");
+    await assert.rejects(fs.access(path.join(archiveRoot, "expired")));
+    await assert.rejects(fs.access(path.join(archiveRoot, "schedule-old")));
+    assert.equal((await fs.lstat(path.join(archiveRoot, "pinned"))).isDirectory(), true);
+    assert.equal((await fs.lstat(path.join(archiveRoot, "schedule-latest"))).isDirectory(), true);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("archive pruning refuses symlinked archive directories", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-symlink-"));
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-outside-"));
+  try {
+    await fs.mkdir(path.join(tempDir, ".archive"));
+    await fs.symlink(outside, path.join(tempDir, ".archive", "escape"));
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir });
+    assert.deepEqual(await store.pruneArchives(), { scanned: 0, protected: 0, heavyFilesPruned: 0, archivesPruned: 0, dryRun: false });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});

@@ -51,6 +51,7 @@ function parseArgs(argv) {
     promptFile: "",
     jobsRoot: "",
     dryRun: false,
+    silent: false,
     fix: false,
     runner: process.env.SABLE_BACKGROUND_RUNNER || "codex",
     runnerBin: "",
@@ -73,6 +74,8 @@ function parseArgs(argv) {
     outputFormat: process.env.SABLE_BACKGROUND_CLAUDE_OUTPUT_FORMAT || DEFAULT_CLAUDE_OUTPUT_FORMAT,
     recentLines: DEFAULT_RECENT_LOG_LINES,
     olderThanMinutes: undefined,
+    heavyDays: 30,
+    metadataDays: 90,
     watchdogFormat: "text",
     worktreeBase: "HEAD",
     worktreeBranch: "",
@@ -150,10 +153,16 @@ function parseArgs(argv) {
       options.worktreeBase = argv[++index] || "HEAD";
     } else if (arg === "--dry-run") {
       options.dryRun = true;
+    } else if (arg === "--silent") {
+      options.silent = true;
     } else if (arg === "--fix") {
       options.fix = true;
     } else if (arg === "--older-than-minutes") {
       options.olderThanMinutes = parsePositiveNumber(argv[++index], "--older-than-minutes");
+    } else if (arg === "--heavy-days") {
+      options.heavyDays = parsePositiveNumber(argv[++index], "--heavy-days");
+    } else if (arg === "--metadata-days") {
+      options.metadataDays = parsePositiveNumber(argv[++index], "--metadata-days");
     } else if (arg === "--json") {
       options.watchdogFormat = "json";
     } else if (arg === "--text") {
@@ -940,6 +949,20 @@ async function controlJob(options) {
   return result.run || result;
 }
 
+async function archiveJob(options) {
+  if (!options.id) throw new Error("archive requires --id.");
+  const store = createBackgroundJobRunStore({ jobsRoot: options.jobsRoot || defaultJobsRoot() });
+  const result = await store.archiveRun(options.id, { actor: "background-job-cli" });
+  if (!result) throw new Error(`No run matched ${options.id}.`);
+  if (result.ok === false) throw new Error(result.message || `Could not archive run ${options.id}.`);
+  return result.run;
+}
+
+async function pruneArchivedJobs(options) {
+  const store = createBackgroundJobRunStore({ jobsRoot: options.jobsRoot || defaultJobsRoot() });
+  return store.pruneArchives({ dryRun: options.dryRun, heavyDays: options.heavyDays, metadataDays: options.metadataDays });
+}
+
 async function reportJob(options) {
   const job = await loadJob(options);
   const paths = jobPaths(job.jobDir);
@@ -981,6 +1004,8 @@ function usage() {
     "  npm run background-job -- status --id JOB_ID",
     "  npm run background-job -- report --id JOB_ID",
     "  npm run background-job -- control --id JOB_ID --action pause|resume|cancel|steer [--instruction TEXT]",
+    "  npm run background-job -- archive --id JOB_ID",
+    "  npm run background-job -- prune-archives [--heavy-days 30] [--metadata-days 90] [--dry-run] [--silent]",
     "  npm run background-job -- stop --id JOB_ID",
     "  npm run background-job -- watchdog [--jobs-root DIR] [--older-than-minutes N] [--fix] [--json|--text]",
     "  npm run background-job -- profiles",
@@ -1036,6 +1061,15 @@ async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify(await controlJob(options), null, 2));
     return 0;
   }
+  if (options.command === "archive") {
+    console.log(JSON.stringify(await archiveJob(options), null, 2));
+    return 0;
+  }
+  if (options.command === "prune-archives") {
+    const result = await pruneArchivedJobs(options);
+    if (!options.silent) console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
   if (options.command === "stop") {
     console.log(JSON.stringify(await stopJob(options), null, 2));
     return 0;
@@ -1072,6 +1106,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  archiveJob,
   buildRunnerConfig,
   buildRunnerInvocation,
   controlJob,
@@ -1083,6 +1118,7 @@ module.exports = {
   formatJobList,
   jobPaths,
   normalizeRunner,
+  pruneArchivedJobs,
   parseArgs,
   resolveWorktreePlan,
   startJob,

@@ -14,6 +14,9 @@ const RISK_TIERS = Object.freeze({
 });
 const MIN_RISK_TIER = 0;
 const MAX_RISK_TIER = 5;
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "stopped"]);
+const DEFAULT_ARCHIVE_RETENTION = Object.freeze({ heavyDays: 30, metadataDays: 90 });
+const HEAVY_ARCHIVE_FILES = new Set(["stderr.log", "stdout.jsonl", "prompt.md", "control.json"]);
 
 function runPaths(runDir) {
   return {
@@ -231,6 +234,80 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
     return runs.slice(0, limit);
   }
 
+  async function archiveRun(runId, { actor = "runtime" } = {}) {
+    const runDir = await findRunDir(runId);
+    if (!runDir) return null;
+    await assertOwnedRunDirectory(runDir, jobsRoot);
+    if (!(await isOwnedRegularFile(runPaths(runDir).runPath, runDir))) throw new Error("Unsafe run metadata file.");
+    if (!(await isOwnedRegularFile(runPaths(runDir).eventsPath, runDir))) throw new Error("Unsafe run event file.");
+    const current = await readRun(runDir);
+    const status = String(current.status || "").toLowerCase();
+    if (!TERMINAL_RUN_STATUSES.has(status)) {
+      return { ok: false, code: "RUN_NOT_TERMINAL", message: "Only completed, failed, or cancelled runs can be archived." };
+    }
+    const archiveRoot = path.join(jobsRoot, ".archive");
+    await ensureOwnedDirectory(archiveRoot, jobsRoot);
+    const destination = path.join(archiveRoot, path.basename(runDir));
+    try {
+      await fs.lstat(destination);
+      return { ok: false, code: "ARCHIVE_CONFLICT", message: "An archived run with this id already exists." };
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    const timestamp = now().toISOString();
+    await updateRun(runDir, { archived_at: timestamp, archived_by: actor }, { now: new Date(timestamp) });
+    await appendRunEvent(runDir, { type: "archived", actor, summary: "Run archived." }, { now: new Date(timestamp) });
+    await fs.rename(runDir, destination);
+    return { ok: true, run: await readRun(destination), archiveDir: destination };
+  }
+
+  async function pruneArchives({
+    dryRun = false,
+    heavyDays = DEFAULT_ARCHIVE_RETENTION.heavyDays,
+    metadataDays = DEFAULT_ARCHIVE_RETENTION.metadataDays,
+    protectedRunIds = [],
+  } = {}) {
+    validateRetentionDays(heavyDays, metadataDays);
+    const archiveRoot = path.join(jobsRoot, ".archive");
+    const entries = await safeReadDir(archiveRoot);
+    const records = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const archiveDir = path.join(archiveRoot, entry.name);
+      try {
+        await assertOwnedRunDirectory(archiveDir, archiveRoot);
+        if (!(await isOwnedRegularFile(runPaths(archiveDir).runPath, archiveDir))) continue;
+        records.push({ archiveDir, run: await readRun(archiveDir) });
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    const protectedIds = buildProtectedRunIds(records, protectedRunIds);
+    const result = { scanned: records.length, protected: 0, heavyFilesPruned: 0, archivesPruned: 0, dryRun };
+    const nowMs = now().getTime();
+    for (const { archiveDir, run } of records) {
+      const runId = String(run.run_id || run.background_job_id || path.basename(archiveDir));
+      if (protectedIds.has(runId)) { result.protected += 1; continue; }
+      const archivedMs = Date.parse(run.archived_at || run.updated_at || run.created_at || "");
+      if (!Number.isFinite(archivedMs)) continue;
+      const ageDays = (nowMs - archivedMs) / 86_400_000;
+      if (ageDays >= metadataDays) {
+        result.archivesPruned += 1;
+        if (!dryRun) await removeOwnedArchiveDirectory(archiveDir, archiveRoot);
+        continue;
+      }
+      if (ageDays >= heavyDays) {
+        for (const name of HEAVY_ARCHIVE_FILES) {
+          const filePath = path.join(archiveDir, name);
+          if (!(await isOwnedRegularFile(filePath, archiveDir))) continue;
+          result.heavyFilesPruned += 1;
+          if (!dryRun) await fs.unlink(filePath);
+        }
+      }
+    }
+    return result;
+  }
+
   async function getRun(runId) {
     const runDir = await findRunDir(runId);
     return runDir ? readRun(runDir) : null;
@@ -285,8 +362,11 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
   }
 
   async function findRunDir(runId) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(String(runId || ""))) return null;
     const exactDir = path.join(jobsRoot, runId);
     try {
+      await assertOwnedRunDirectory(exactDir, jobsRoot);
+      if (!(await isOwnedRegularFile(runPaths(exactDir).runPath, exactDir))) return null;
       const exactRun = await readRun(exactDir);
       if (exactRun.run_id === runId || exactRun.background_job_id === runId) {
         return exactDir;
@@ -304,6 +384,8 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
       }
       const runDir = path.join(jobsRoot, entry.name);
       try {
+        await assertOwnedRunDirectory(runDir, jobsRoot);
+        if (!(await isOwnedRegularFile(runPaths(runDir).runPath, runDir))) continue;
         const run = await readRun(runDir);
         if (run.run_id === runId || run.background_job_id === runId) {
           return runDir;
@@ -318,10 +400,74 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
   }
 
   return {
+    archiveRun,
     controlRun,
     getRun,
     listRuns,
+    pruneArchives,
   };
+}
+
+function validateRetentionDays(heavyDays, metadataDays) {
+  if (!Number.isFinite(heavyDays) || heavyDays < 0 || !Number.isFinite(metadataDays) || metadataDays < heavyDays) {
+    throw new Error("Archive retention must use non-negative days with metadata retention at least as long as heavy-file retention.");
+  }
+}
+
+function buildProtectedRunIds(records, explicitIds) {
+  const ids = new Set((explicitIds || []).map(String));
+  const latestBySchedule = new Map();
+  for (const { run } of records) {
+    const id = String(run.run_id || run.background_job_id || "");
+    if (!id) continue;
+    if (run.pinned === true || (Array.isArray(run.references) && run.references.length > 0) || run.referenced === true) ids.add(id);
+    const scheduleId = String(run.schedule_id || run.scheduleId || "");
+    if (!scheduleId) continue;
+    const date = Date.parse(run.archived_at || run.updated_at || run.created_at || "") || 0;
+    if (!latestBySchedule.has(scheduleId) || latestBySchedule.get(scheduleId).date < date) latestBySchedule.set(scheduleId, { id, date });
+  }
+  for (const value of latestBySchedule.values()) ids.add(value.id);
+  return ids;
+}
+
+async function ensureOwnedDirectory(directory, parent) {
+  await fs.mkdir(directory, { recursive: true });
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Unsafe archive directory.");
+  const [realDirectory, realParent] = await Promise.all([fs.realpath(directory), fs.realpath(parent)]);
+  if (path.dirname(realDirectory) !== realParent) throw new Error("Archive directory escapes its configured root.");
+}
+
+async function assertOwnedRunDirectory(directory, parent) {
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Unsafe run directory.");
+  const [realDirectory, realParent] = await Promise.all([fs.realpath(directory), fs.realpath(parent)]);
+  if (path.dirname(realDirectory) !== realParent) throw new Error("Run directory escapes its configured root.");
+}
+
+async function isOwnedRegularFile(filePath, parent) {
+  try {
+    const stat = await fs.lstat(filePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) return false;
+    return path.dirname(await fs.realpath(filePath)) === await fs.realpath(parent);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function removeOwnedArchiveDirectory(directory, archiveRoot) {
+  await assertOwnedRunDirectory(directory, archiveRoot);
+  await assertTreeContainsNoSymlinks(directory);
+  await fs.rm(directory, { recursive: true });
+}
+
+async function assertTreeContainsNoSymlinks(directory) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) throw new Error("Refusing to prune an archive containing symlinks.");
+    if (entry.isDirectory()) await assertTreeContainsNoSymlinks(path.join(directory, entry.name));
+  }
 }
 
 async function safeReadDir(directory) {
@@ -363,6 +509,7 @@ module.exports = {
   checkRiskTier,
   createBackgroundJobRunStore,
   createRun,
+  DEFAULT_ARCHIVE_RETENTION,
   describeRiskTier,
   readRun,
   readRunCheckpoint,
