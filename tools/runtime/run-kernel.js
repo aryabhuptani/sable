@@ -235,7 +235,12 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
   }
 
   async function archiveRun(runId, { actor = "runtime" } = {}) {
-    const runDir = await findRunDir(runId);
+    let runDir = await findRunDir(runId);
+    if (!runDir) {
+      const legacy = await migrateLegacyRun(runId);
+      if (legacy?.ok === false) return legacy;
+      runDir = legacy;
+    }
     if (!runDir) return null;
     await assertOwnedRunDirectory(runDir, jobsRoot);
     if (!(await isOwnedRegularFile(runPaths(runDir).runPath, runDir))) throw new Error("Unsafe run metadata file.");
@@ -259,6 +264,42 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
     await appendRunEvent(runDir, { type: "archived", actor, summary: "Run archived." }, { now: new Date(timestamp) });
     await fs.rename(runDir, destination);
     return { ok: true, run: await readRun(destination), archiveDir: destination };
+  }
+
+  async function migrateLegacyRun(runId) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(String(runId || ""))) return null;
+    const runDir = path.join(jobsRoot, runId);
+    try {
+      await assertOwnedRunDirectory(runDir, jobsRoot);
+      const statusPath = path.join(runDir, "status.json");
+      if (!(await isOwnedRegularFile(statusPath, runDir))) return null;
+      const status = JSON.parse(await fs.readFile(statusPath, "utf8"));
+      if (String(status.id || runId) !== runId) return null;
+      const terminalStatus = String(status.status || "").toLowerCase();
+      if (!TERMINAL_RUN_STATUSES.has(terminalStatus)) {
+        return { ok: false, code: "RUN_NOT_TERMINAL", message: "Only completed, failed, or cancelled runs can be archived." };
+      }
+      await createRun(runDir, {
+        run_id: runId,
+        background_job_id: String(status.backgroundJobId || status.background_job_id || runId),
+        status: terminalStatus,
+        phase: terminalStatus,
+        agent_profile: status.agentProfile || status.agent_profile || null,
+        goal: status.name || runId,
+        schedule_id: status.scheduleId || status.schedule_id || null,
+        pinned: status.pinned === true,
+        referenced: status.referenced === true,
+        references: Array.isArray(status.references) ? status.references : [],
+        created_at: status.createdAt || status.created_at,
+        updated_at: status.updatedAt || status.updated_at,
+        completed_at: status.completedAt || status.completed_at,
+        legacy_migrated: true,
+      }, { now: now() });
+      return runDir;
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   async function pruneArchives({

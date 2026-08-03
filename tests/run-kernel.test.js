@@ -138,6 +138,45 @@ test("archives only terminal runs and removes them from the live ledger", async 
   }
 });
 
+test("migrates legacy terminal runs into the canonical archive and retention ledger", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-legacy-"));
+  try {
+    const legacyDir = path.join(tempDir, "legacy-done");
+    await fs.mkdir(legacyDir);
+    await fs.writeFile(path.join(legacyDir, "status.json"), JSON.stringify({
+      id: "legacy-done", status: "completed", name: "Legacy task", agentProfile: "lab",
+      scheduleId: "daily", pinned: true, references: ["report"],
+      createdAt: "2026-04-01T00:00:00Z", updatedAt: "2026-04-02T00:00:00Z",
+    }));
+    await fs.writeFile(path.join(legacyDir, "stderr.log"), "heavy");
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, now: () => new Date("2026-08-03T00:00:00Z") });
+    const result = await store.archiveRun("legacy-done", { actor: "obsidian" });
+    assert.equal(result.ok, true);
+    assert.equal(result.run.legacy_migrated, true);
+    assert.equal(result.run.schedule_id, "daily");
+    assert.equal(result.run.pinned, true);
+    assert.deepEqual(result.run.references, ["report"]);
+    assert.equal((await store.pruneArchives()).protected, 1);
+    assert.equal(await fs.readFile(path.join(tempDir, ".archive", "legacy-done", "stderr.log"), "utf8"), "heavy");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("refuses to migrate active legacy runs", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-legacy-active-"));
+  try {
+    const legacyDir = path.join(tempDir, "legacy-active");
+    await fs.mkdir(legacyDir);
+    await fs.writeFile(path.join(legacyDir, "status.json"), JSON.stringify({ id: "legacy-active", status: "running" }));
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir });
+    assert.equal((await store.archiveRun("legacy-active")).code, "RUN_NOT_TERMINAL");
+    await assert.rejects(fs.access(path.join(legacyDir, "run.json")));
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("archive pruning has split retention and protects pinned, referenced, and latest scheduled runs", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-prune-"));
   const archiveRoot = path.join(tempDir, ".archive");
