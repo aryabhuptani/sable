@@ -177,6 +177,43 @@ test("refuses to migrate active legacy runs", async () => {
   }
 });
 
+test("abandons non-executing modern and legacy runs with provenance before archiving", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-abandon-"));
+  try {
+    await createRun(path.join(tempDir, "blocked"), { run_id: "blocked", status: "blocked", phase: "blocked" });
+    const legacyDir = path.join(tempDir, "legacy-queued");
+    await fs.mkdir(legacyDir);
+    await fs.writeFile(path.join(legacyDir, "status.json"), JSON.stringify({ id: "legacy-queued", status: "queued", name: "Old queued work" }));
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, now: () => new Date("2026-08-03T12:00:00Z") });
+    for (const id of ["blocked", "legacy-queued"]) {
+      const result = await store.abandonRun(id, { actor: "obsidian", reason: "No longer relevant" });
+      assert.equal(result.ok, true);
+      assert.equal(result.abandoned, true);
+      assert.equal(result.run.status, "cancelled");
+      assert.equal(result.run.abandoned_by, "obsidian");
+      assert.equal(result.run.abandonment_reason, "No longer relevant");
+      assert.equal(result.run.cancellation_source, "explicit_abandonment");
+      assert.equal(result.run.cancellation_acknowledged_at, "2026-08-03T12:00:00.000Z");
+      const events = (await fs.readFile(path.join(tempDir, ".archive", id, "events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+      assert.deepEqual(events.slice(-2).map(event => event.type), ["abandoned", "archived"]);
+    }
+  } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
+test("refuses to abandon runs which may still be executing", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-abandon-live-"));
+  try {
+    await createRun(path.join(tempDir, "live"), { run_id: "live", status: "running" });
+    await createRun(path.join(tempDir, "blocked-live"), { run_id: "blocked-live", status: "blocked", worker_pid: 4242 });
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, isProcessAlive: pid => pid === 4242 });
+    assert.equal((await store.abandonRun("live", { reason: "Dismiss" })).code, "RUN_MAY_BE_EXECUTING");
+    assert.equal((await store.abandonRun("blocked-live", { reason: "Dismiss" })).code, "RUN_WORKER_ACTIVE");
+    assert.equal((await readRun(path.join(tempDir, "blocked-live"))).status, "blocked");
+    assert.equal((await readRun(path.join(tempDir, "live"))).status, "running");
+    assert.equal((await store.abandonRun("live", { reason: "" })).code, "INVALID_ABANDON_REASON");
+  } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
 test("archive pruning has split retention and protects pinned, referenced, and latest scheduled runs", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-prune-"));
   const archiveRoot = path.join(tempDir, ".archive");

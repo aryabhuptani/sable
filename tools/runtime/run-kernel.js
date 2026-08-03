@@ -15,6 +15,7 @@ const RISK_TIERS = Object.freeze({
 const MIN_RISK_TIER = 0;
 const MAX_RISK_TIER = 5;
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "stopped"]);
+const ABANDONABLE_RUN_STATUSES = new Set(["blocked", "paused", "queued", "waiting", "needs_input"]);
 const DEFAULT_ARCHIVE_RETENTION = Object.freeze({ heavyDays: 30, metadataDays: 90 });
 const HEAVY_ARCHIVE_FILES = new Set(["stderr.log", "stdout.jsonl", "prompt.md", "control.json"]);
 
@@ -205,7 +206,7 @@ function dedupeControls(controls) {
   return deduped;
 }
 
-function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) {
+function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProcessAlive = defaultIsProcessAlive } = {}) {
   if (!jobsRoot) {
     throw new Error("jobsRoot is required.");
   }
@@ -266,7 +267,69 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
     return { ok: true, run: await readRun(destination), archiveDir: destination };
   }
 
-  async function migrateLegacyRun(runId) {
+  async function abandonRun(runId, { actor = "runtime", reason = "No longer relevant." } = {}) {
+    if (typeof reason !== "string" || !reason.trim() || Buffer.byteLength(reason) > 4096) {
+      return { ok: false, code: "INVALID_ABANDON_REASON", message: "Abandonment reason must be 1–4096 bytes." };
+    }
+    let runDir = await findRunDir(runId);
+    if (!runDir) {
+      const legacy = await migrateLegacyRun(runId, { allowAbandonable: true });
+      if (legacy?.ok === false) return legacy;
+      runDir = legacy;
+    }
+    if (!runDir) return null;
+    await assertOwnedRunDirectory(runDir, jobsRoot);
+    if (!(await isOwnedRegularFile(runPaths(runDir).runPath, runDir))) throw new Error("Unsafe run metadata file.");
+    if (!(await isOwnedRegularFile(runPaths(runDir).eventsPath, runDir))) throw new Error("Unsafe run event file.");
+    const current = await readRun(runDir);
+    const status = String(current.status || current.phase || "").toLowerCase();
+    if (TERMINAL_RUN_STATUSES.has(status)) return archiveRun(runId, { actor });
+    if (!ABANDONABLE_RUN_STATUSES.has(status)) {
+      return {
+        ok: false,
+        code: "RUN_MAY_BE_EXECUTING",
+        message: "This run may still be executing. Cancel it and wait for cancellation acknowledgement before archiving.",
+      };
+    }
+    const statusPath = path.join(runDir, "status.json");
+    let runtimeStatus = {};
+    if (await isOwnedRegularFile(statusPath, runDir)) runtimeStatus = JSON.parse(await fs.readFile(statusPath, "utf8"));
+    const workerPids = [
+      current.worker_pid, current.workerPid, current.pid, current.runnerPid,
+      runtimeStatus.workerPid, runtimeStatus.pid, runtimeStatus.runnerPid,
+      runtimeStatus.codexPid, runtimeStatus.claudePid,
+    ].map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0);
+    if (workerPids.some(pid => isProcessAlive(pid))) {
+      return {
+        ok: false,
+        code: "RUN_WORKER_ACTIVE",
+        message: "This run still has a live worker. Cancel it and wait for cancellation acknowledgement before archiving.",
+      };
+    }
+    const timestamp = now().toISOString();
+    const trimmedReason = reason.trim();
+    await transitionRun(runDir, {
+      status: "cancelled",
+      phase: "cancelled",
+      completed_at: timestamp,
+      abandoned_at: timestamp,
+      abandoned_by: actor,
+      abandonment_reason: trimmedReason,
+      cancellation_source: "explicit_abandonment",
+      cancellation_acknowledged_at: timestamp,
+      next_action: "",
+    }, {
+      type: "abandoned",
+      actor,
+      summary: `Run abandoned: ${trimmedReason}`,
+      payload: { previous_status: status, reason: trimmedReason, cancellation_source: "explicit_abandonment" },
+    }, { now: new Date(timestamp) });
+    const archived = await archiveRun(runId, { actor });
+    if (archived?.ok) archived.abandoned = true;
+    return archived;
+  }
+
+  async function migrateLegacyRun(runId, { allowAbandonable = false } = {}) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(String(runId || ""))) return null;
     const runDir = path.join(jobsRoot, runId);
     try {
@@ -276,8 +339,8 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
       const status = JSON.parse(await fs.readFile(statusPath, "utf8"));
       if (String(status.id || runId) !== runId) return null;
       const terminalStatus = String(status.status || "").toLowerCase();
-      if (!TERMINAL_RUN_STATUSES.has(terminalStatus)) {
-        return { ok: false, code: "RUN_NOT_TERMINAL", message: "Only completed, failed, or cancelled runs can be archived." };
+      if (!TERMINAL_RUN_STATUSES.has(terminalStatus) && !(allowAbandonable && ABANDONABLE_RUN_STATUSES.has(terminalStatus))) {
+        return { ok: false, code: allowAbandonable ? "RUN_MAY_BE_EXECUTING" : "RUN_NOT_TERMINAL", message: allowAbandonable ? "This run may still be executing. Cancel it and wait for cancellation acknowledgement before archiving." : "Only completed, failed, or cancelled runs can be archived." };
       }
       await createRun(runDir, {
         run_id: runId,
@@ -441,12 +504,18 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date() } = {}) 
   }
 
   return {
+    abandonRun,
     archiveRun,
     controlRun,
     getRun,
     listRuns,
     pruneArchives,
   };
+}
+
+function defaultIsProcessAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code === "EPERM"; }
 }
 
 function validateRetentionDays(heavyDays, metadataDays) {
