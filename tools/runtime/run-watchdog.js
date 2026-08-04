@@ -9,7 +9,7 @@ const { createInstanceConfig } = require("../instance/instance-config");
 const { transitionRun } = require("./run-kernel");
 
 const DEFAULT_OLDER_THAN_MINUTES = 30;
-const ACTIVE_STATUSES = new Set(["running", "cancelling", "pausing"]);
+const ACTIVE_STATUSES = new Set(["running", "cancelling", "pausing", "stopping"]);
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "stopped"]);
 
 function defaultJobsRoot({ env = process.env, instanceConfig } = {}) {
@@ -88,18 +88,17 @@ async function scanRuns({
     const runStatus = normalizeStatus(run?.status);
     const jobStatus = normalizeStatus(status?.status);
     if (TERMINAL_STATUSES.has(runStatus) || TERMINAL_STATUSES.has(jobStatus)) continue;
-    const activeStatus = runStatus
-      ? (ACTIVE_STATUSES.has(runStatus) ? runStatus : "")
-      : (ACTIVE_STATUSES.has(jobStatus) ? jobStatus : "");
+    const activeStatus = ACTIVE_STATUSES.has(runStatus)
+      ? runStatus
+      : ((!runStatus || runStatus === "queued") && ACTIVE_STATUSES.has(jobStatus) ? jobStatus : "");
     if (!activeStatus) continue;
 
-    const pid = normalizePid(
-      status?.workerPid || status?.pid || status?.runnerPid || status?.codexPid || status?.claudePid
-    );
+    const pids = collectPids(run, status);
+    const pid = pids[0] || null;
     const reasons = [];
-    if (!pid) {
+    if (pids.length === 0) {
       reasons.push("missing_pid");
-    } else if (!isPidAlive(pid)) {
+    } else if (!pids.some(isPidAlive)) {
       reasons.push("dead_pid");
     }
 
@@ -124,8 +123,7 @@ async function scanRuns({
       fixed: false,
     };
     if (fix) {
-      await fixRun(jobDir, { finding, run, status, now: checkedAt, olderThanMinutes });
-      finding.fixed = true;
+      finding.fixed = await fixRun(jobDir, { finding, run, status, now: checkedAt, olderThanMinutes, isPidAlive });
     }
     findings.push(finding);
   }
@@ -142,22 +140,36 @@ async function scanRuns({
   };
 }
 
-async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes }) {
+async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes, isPidAlive = defaultIsPidAlive }) {
+  if (finding.status === "stopping") {
+    [run, status] = await Promise.all([
+      readJsonIfPresent(path.join(jobDir, "run.json")),
+      readJsonIfPresent(path.join(jobDir, "status.json")),
+    ]);
+    const currentRunStatus = normalizeStatus(run?.status);
+    const currentJobStatus = normalizeStatus(status?.status);
+    if (![currentRunStatus, currentJobStatus].some(value => value === "stopping" || value === "cancelling")) return false;
+    if (collectPids(run, status).some(isPidAlive)) return false;
+  }
+  const cancelled = finding.status === "stopping" && finding.reasons.some(reason => reason === "dead_pid" || reason === "missing_pid");
   const reasonText = describeReasons(finding.reasons);
-  const summary = `Watchdog blocked ${finding.id}: ${reasonText}.`;
-  const nextAction = "Inspect the background-job logs, then restart or explicitly resolve the run.";
+  const summary = cancelled
+    ? `Watchdog reconciled cancellation for ${finding.id}: ${reasonText}.`
+    : `Watchdog blocked ${finding.id}: ${reasonText}.`;
+  const nextAction = cancelled ? "Archive this cancelled run when it is no longer needed." : "Inspect the background-job logs, then restart or explicitly resolve the run.";
 
   if (run) {
     await transitionRun(
       jobDir,
       {
-        status: "blocked",
-        phase: "blocked",
+        status: cancelled ? "cancelled" : "blocked",
+        phase: cancelled ? "cancelled" : "blocked",
+        ...(cancelled ? { completed_at: now.toISOString(), cancellation_acknowledged_at: now.toISOString() } : {}),
         public_summary: summary,
         next_action: nextAction,
       },
       {
-        type: "watchdog_blocked",
+        type: cancelled ? "cancellation_reconciled" : "watchdog_blocked",
         actor: "runtime-watchdog",
         summary,
         payload: {
@@ -176,8 +188,9 @@ async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes }) {
   if (status) {
     await writeJsonAtomic(path.join(jobDir, "status.json"), {
       ...status,
-      status: "blocked",
+      status: cancelled ? "cancelled" : "blocked",
       updatedAt: now.toISOString(),
+      ...(cancelled ? { completedAt: now.toISOString(), cancellationAcknowledgedAt: now.toISOString(), cancellationSource: "legacy_stop_reconciliation" } : {}),
       nextAction,
       watchdog: {
         detectedAt: now.toISOString(),
@@ -186,6 +199,7 @@ async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes }) {
       },
     });
   }
+  return true;
 }
 
 function defaultIsPidAlive(pid) {
@@ -200,6 +214,13 @@ function defaultIsPidAlive(pid) {
 function normalizePid(value) {
   const pid = Number(value);
   return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+function collectPids(run, status) {
+  return [...new Set([
+    run?.worker_pid, run?.workerPid, run?.pid, run?.runnerPid,
+    status?.workerPid, status?.pid, status?.runnerPid, status?.codexPid, status?.claudePid,
+  ].map(normalizePid).filter(Boolean))];
 }
 
 function normalizeStatus(value) {

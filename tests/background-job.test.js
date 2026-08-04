@@ -5,9 +5,11 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
+const { createRun } = require("../tools/runtime/run-kernel");
 const {
   buildRunnerConfig,
   buildRunnerInvocation,
+  collectJobPids,
   controlJob,
   createJobId,
   defaultJobsRoot,
@@ -17,6 +19,7 @@ const {
   parseArgs,
   resolveWorktreePlan,
   startJob,
+  waitForProcessesExit,
 } = require("../tools/background-job/background-job");
 
 test("background job parser supports start options without assuming a repo", () => {
@@ -860,11 +863,39 @@ test("background job stop tolerates already-exited worker pid", async () => {
   try {
     execFileSync(process.execPath, [harness, "stop", "--jobs-root", jobsRoot, "--id", "job-stale"]);
     const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
-    assert.equal(status.status, "stopping");
-    assert.match(status.stopError, /kill ESRCH/);
+    assert.equal(status.status, "cancelled");
+    assert.equal(status.stopError, "");
+    assert.ok(Date.parse(status.completedAt));
+    assert.ok(Date.parse(status.cancellationAcknowledgedAt));
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("background job stop routes ledger-backed jobs through cooperative cancellation", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-background-job-"));
+  const jobsRoot = path.join(tempDir, "jobs"), jobDir = path.join(jobsRoot, "job-ledger");
+  const harness = path.join(__dirname, "..", "tools", "background-job", "background-job.js");
+  await createRun(jobDir, { run_id: "job-ledger", background_job_id: "job-ledger", goal: "Stop safely", status: "running", phase: "running" });
+  await fs.writeFile(path.join(jobDir, "status.json"), `${JSON.stringify({ id: "job-ledger", name: "Ledger Job", cwd: tempDir, jobDir, pid: 99999999, status: "running" }, null, 2)}\n`);
+  try {
+    execFileSync(process.execPath, [harness, "stop", "--jobs-root", jobsRoot, "--id", "job-ledger"]);
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    const run = JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8"));
+    const control = JSON.parse(await fs.readFile(path.join(jobDir, "control.json"), "utf8"));
+    assert.equal(status.status, "running");
+    assert.equal(run.status, "cancelling");
+    assert.equal(control.controls.at(-1).action, "cancel");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("legacy stop requires every recorded worker process to exit", async () => {
+  const job = { workerPid: 10, pid: 10, runnerPid: 20, codexPid: 30 };
+  assert.deepEqual(collectJobPids(job), [10, 20, 30]);
+  assert.equal(await waitForProcessesExit(collectJobPids(job), { isAlive: pid => pid === 20, timeoutMs: 1 }), false);
+  assert.equal(await waitForProcessesExit(collectJobPids(job), { isAlive: () => false, timeoutMs: 1 }), true);
 });
 
 test("background job stop does not rewrite terminal jobs", async () => {

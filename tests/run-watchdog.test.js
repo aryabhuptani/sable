@@ -50,6 +50,7 @@ test("watchdog reports only active runs with dead, missing, or stale workers", a
     await createFakeJob(jobsRoot, "dead", { pid: 200, updatedAt: "2026-07-13T11:55:00.000Z" });
     await createFakeJob(jobsRoot, "missing", { pid: null, runStatus: "pausing" });
     await createFakeJob(jobsRoot, "stale", { pid: 300, updatedAt: "2026-07-13T10:00:00.000Z" });
+    await createFakeJob(jobsRoot, "stopping", { pid: 250, runStatus: "queued", statusStatus: "stopping" });
     await createFakeJob(jobsRoot, "done", { pid: 400, runStatus: "completed", updatedAt: "2026-07-13T10:00:00.000Z" });
     await createFakeJob(jobsRoot, "blocked", {
       pid: 500,
@@ -62,24 +63,55 @@ test("watchdog reports only active runs with dead, missing, or stale workers", a
       jobsRoot,
       now: NOW,
       olderThanMinutes: 30,
-      isPidAlive: (pid) => pid !== 200,
+      isPidAlive: (pid) => ![200, 250].includes(pid),
     });
 
-    assert.equal(summary.scanned, 6);
-    assert.equal(summary.affected, 3);
+    assert.equal(summary.scanned, 7);
+    assert.equal(summary.affected, 4);
     assert.deepEqual(
       Object.fromEntries(summary.findings.map((finding) => [finding.id, finding.reasons])),
       {
         dead: ["dead_pid"],
         missing: ["missing_pid"],
         stale: ["stale_updated_at"],
+        stopping: ["dead_pid"],
       }
     );
     assert.ok(summary.findings.every((finding) => finding.fixed === false));
-    assert.match(formatSummary(summary), /Watchdog reported 3 of 6 run\(s\)/);
+    assert.match(formatSummary(summary), /Watchdog reported 4 of 7 run\(s\)/);
 
     const untouched = JSON.parse(await fs.readFile(path.join(jobsRoot, "dead", "run.json"), "utf8"));
     assert.equal(untouched.status, "running");
+  } finally {
+    await fs.rm(jobsRoot, { recursive: true, force: true });
+  }
+});
+
+test("watchdog does not reconcile stopping while any recorded worker pid is alive", async () => {
+  const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-watchdog-"));
+  try {
+    const jobDir = await createFakeJob(jobsRoot, "ambiguous", { pid: 200, runStatus: "queued", statusStatus: "stopping" });
+    const statusPath = path.join(jobDir, "status.json"), runPath = path.join(jobDir, "run.json");
+    const status = JSON.parse(await fs.readFile(statusPath, "utf8"));
+    const run = JSON.parse(await fs.readFile(runPath, "utf8"));
+    await fs.writeFile(statusPath, `${JSON.stringify({ ...status, codexPid: 300 }, null, 2)}\n`);
+    await fs.writeFile(runPath, `${JSON.stringify({ ...run, worker_pid: 400 }, null, 2)}\n`);
+    const summary = await scanRuns({ jobsRoot, now: NOW, olderThanMinutes: 30, isPidAlive: (pid) => pid === 400 });
+    assert.equal(summary.affected, 0);
+  } finally {
+    await fs.rm(jobsRoot, { recursive: true, force: true });
+  }
+});
+
+test("watchdog --fix rechecks liveness before reconciling cancellation", async () => {
+  const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-watchdog-"));
+  try {
+    const jobDir = await createFakeJob(jobsRoot, "revived", { pid: 777, runStatus: "queued", statusStatus: "stopping" });
+    let checks = 0;
+    const summary = await scanRuns({ fix: true, jobsRoot, now: NOW, olderThanMinutes: 30, isPidAlive: () => ++checks > 1 });
+    assert.equal(summary.affected, 1);
+    assert.equal(summary.findings[0].fixed, false);
+    assert.equal(JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8")).status, "stopping");
   } finally {
     await fs.rm(jobsRoot, { recursive: true, force: true });
   }
@@ -123,6 +155,31 @@ test("watchdog --fix blocks both run files and appends an actionable event", asy
   }
 });
 
+test("watchdog --fix reconciles stopping jobs after their worker exits", async () => {
+  const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-watchdog-"));
+  try {
+    const jobDir = await createFakeJob(jobsRoot, "stopping", {
+      pid: 999,
+      runStatus: "queued",
+      statusStatus: "stopping",
+      updatedAt: "2026-07-13T10:00:00.000Z",
+    });
+    const summary = await scanRuns({ fix: true, jobsRoot, now: NOW, olderThanMinutes: 30, isPidAlive: () => false });
+    assert.equal(summary.affected, 1);
+    const run = JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8"));
+    const status = JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8"));
+    const events = (await fs.readFile(path.join(jobDir, "events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(run.status, "cancelled");
+    assert.equal(run.phase, "cancelled");
+    assert.equal(status.status, "cancelled");
+    assert.ok(Date.parse(status.completedAt));
+    assert.ok(Date.parse(status.cancellationAcknowledgedAt));
+    assert.equal(events.at(-1).type, "cancellation_reconciled");
+  } finally {
+    await fs.rm(jobsRoot, { recursive: true, force: true });
+  }
+});
+
 test("watchdog arguments and background-job command support concise JSON output", async () => {
   assert.deepEqual(parseArgs(["--fix", "--older-than-minutes", "12.5", "--json"]), {
     fix: true,
@@ -142,7 +199,7 @@ test("watchdog arguments and background-job command support concise JSON output"
       "--jobs-root",
       jobsRoot,
       "--older-than-minutes",
-      "10000",
+      "100000",
       "--json",
     ], { encoding: "utf8" });
     const summary = JSON.parse(output);

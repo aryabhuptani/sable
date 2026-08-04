@@ -895,34 +895,60 @@ async function stopJob(options) {
   if (TERMINAL_STATUSES.has(String(job.status || ""))) {
     return job;
   }
-  const targetPid = job.workerPid || job.pid;
-  if (!targetPid) {
-    throw new Error(`Job has no process id: ${job.id}`);
+  if (fs.existsSync(paths.runPath)) {
+    const store = createBackgroundJobRunStore({ jobsRoot: options.jobsRoot || defaultJobsRoot() });
+    const result = await store.controlRun(job.id, { action: "cancel", actor: "background-job-cli" });
+    if (!result || result.ok === false) throw new Error(result?.message || `Could not cancel ${job.id}.`);
+    return JSON.parse(await fsp.readFile(paths.statusPath, "utf8"));
   }
+
+  const pids = collectJobPids(job);
+  if (pids.length === 0) throw new Error(`Job has no process id: ${job.id}`);
+  const targetPid = pids.find(isProcessAlive) || pids[0];
 
   let stopError = "";
-  try {
-    process.kill(-targetPid, "SIGTERM");
-  } catch (error) {
+  if (isProcessAlive(targetPid)) {
     try {
-      process.kill(targetPid, "SIGTERM");
-    } catch (fallbackError) {
-      if (fallbackError.code !== "ESRCH") {
-        throw fallbackError;
+      process.kill(-targetPid, "SIGTERM");
+    } catch (error) {
+      try {
+        process.kill(targetPid, "SIGTERM");
+      } catch (fallbackError) {
+        if (fallbackError.code !== "ESRCH") throw fallbackError;
       }
-      stopError = fallbackError.message;
-    }
-    if (!stopError && error.code !== "ESRCH") {
-      stopError = error.message;
+      if (error.code !== "ESRCH") stopError = error.message;
     }
   }
 
+  const stoppedAt = new Date().toISOString();
+  const stopped = await waitForProcessesExit(pids);
+  const status = stopped ? "cancelled" : "stopping";
   await updateStatus(paths.statusPath, {
-    status: "stopping",
+    status,
     stopError,
-    stoppedAt: new Date().toISOString(),
+    stoppedAt,
+    ...(stopped ? { completedAt: stoppedAt, cancellationAcknowledgedAt: stoppedAt } : {}),
   });
   return JSON.parse(await fsp.readFile(paths.statusPath, "utf8"));
+}
+
+function isProcessAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
+
+function collectJobPids(job) {
+  return [...new Set([
+    job.workerPid, job.pid, job.runnerPid, job.codexPid, job.claudePid,
+  ].map(Number).filter(pid => Number.isInteger(pid) && pid > 0))];
+}
+
+async function waitForProcessesExit(pids, { isAlive = isProcessAlive, timeoutMs = 2000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (pids.some(isAlive) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return !pids.some(isAlive);
 }
 
 async function controlJob(options) {
@@ -1109,6 +1135,7 @@ module.exports = {
   archiveJob,
   buildRunnerConfig,
   buildRunnerInvocation,
+  collectJobPids,
   controlJob,
   createJobId,
   defaultClaudeHome,
@@ -1123,4 +1150,5 @@ module.exports = {
   resolveWorktreePlan,
   startJob,
   waitForChildWithControls,
+  waitForProcessesExit,
 };

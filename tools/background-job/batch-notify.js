@@ -14,7 +14,6 @@ const TERMINAL_STATUSES = new Set([
   "completed",
   "failed",
   "stopped",
-  "stopping",
 ]);
 
 function parseArgs(argv) {

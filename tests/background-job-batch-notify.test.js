@@ -45,15 +45,16 @@ test("background batch notify aggregates pending and terminal sibling jobs", asy
   try {
     await writeJobStatus(jobsRoot, "job-a", { name: "A", status: "completed" });
     await writeJobStatus(jobsRoot, "job-b", { name: "B", status: "running" });
+    await writeJobStatus(jobsRoot, "job-c", { name: "C", status: "stopping" });
     await initBatch({
       batchFile,
-      jobs: ["job-a", "job-b"],
+      jobs: ["job-a", "job-b", "job-c"],
       jobsRoot,
       name: "Research round",
     });
 
     const aggregate = await aggregateBatch({
-      jobs: [{ id: "job-a" }, { id: "job-b" }],
+      jobs: [{ id: "job-a" }, { id: "job-b" }, { id: "job-c" }],
       jobsRoot,
       name: "Research round",
     });
@@ -62,13 +63,14 @@ test("background batch notify aggregates pending and terminal sibling jobs", asy
     assert.deepEqual(aggregate.counts, {
       completed: 1,
       failed: 0,
-      pending: 1,
+      pending: 2,
       terminal: 1,
-      total: 2,
+      total: 3,
     });
     assert.deepEqual(aggregate.jobs.map((job) => [job.id, job.status]), [
       ["job-a", "completed"],
       ["job-b", "running"],
+      ["job-c", "stopping"],
     ]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
