@@ -122,7 +122,7 @@ test("watchdog --fix blocks both run files and appends an actionable event", asy
   try {
     const jobDir = await createFakeJob(jobsRoot, "hung", {
       pid: 999,
-      runStatus: "cancelling",
+      runStatus: "running",
       updatedAt: "2026-07-13T10:00:00.000Z",
     });
     const summary = await scanRuns({
@@ -178,6 +178,19 @@ test("watchdog --fix reconciles stopping jobs after their worker exits", async (
   } finally {
     await fs.rm(jobsRoot, { recursive: true, force: true });
   }
+});
+
+test("watchdog --fix reconciles cancelling jobs after their worker exits", async () => {
+  const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-watchdog-"));
+  try {
+    const jobDir = await createFakeJob(jobsRoot, "cancelling", {
+      pid: 999, runStatus: "cancelling", statusStatus: "cancelling", updatedAt: "2026-07-13T10:00:00.000Z",
+    });
+    const summary = await scanRuns({ fix: true, jobsRoot, now: NOW, olderThanMinutes: 30, isPidAlive: () => false });
+    assert.equal(summary.findings[0].fixed, true);
+    assert.equal(JSON.parse(await fs.readFile(path.join(jobDir, "run.json"), "utf8")).status, "cancelled");
+    assert.equal(JSON.parse(await fs.readFile(path.join(jobDir, "status.json"), "utf8")).status, "cancelled");
+  } finally { await fs.rm(jobsRoot, { recursive: true, force: true }); }
 });
 
 test("watchdog arguments and background-job command support concise JSON output", async () => {

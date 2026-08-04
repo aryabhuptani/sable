@@ -19,6 +19,20 @@ const ABANDONABLE_RUN_STATUSES = new Set(["blocked", "paused", "queued", "waitin
 const DEFAULT_ARCHIVE_RETENTION = Object.freeze({ heavyDays: 30, metadataDays: 90 });
 const HEAVY_ARCHIVE_FILES = new Set(["stderr.log", "stdout.jsonl", "prompt.md", "control.json"]);
 
+function watchdogProvesWorkerDead(run, status) {
+  const watchdog = status?.watchdog;
+  const detectedAt = watchdog?.detectedAt;
+  const reasons = Array.isArray(watchdog?.reasons) ? watchdog.reasons : [];
+  const cancelled = Array.isArray(run?.controls) && run.controls.some(control => control?.action === "cancel" && control.created_at <= detectedAt);
+  return String(run?.status || "").toLowerCase() === "blocked"
+    && String(status?.status || "").toLowerCase() === "blocked"
+    && ["cancelling", "stopping"].includes(String(watchdog?.previousStatus || "").toLowerCase())
+    && reasons.some(reason => reason === "dead_pid" || reason === "missing_pid")
+    && detectedAt === run?.updated_at
+    && detectedAt === status?.updatedAt
+    && cancelled;
+}
+
 function runPaths(runDir) {
   return {
     controlPath: path.join(runDir, "control.json"),
@@ -80,10 +94,30 @@ async function appendRunEvent(runDir, event, { now = new Date() } = {}) {
   return entry;
 }
 
-async function transitionRun(runDir, patch, event, { now = new Date() } = {}) {
-  const updated = await updateRun(runDir, patch, { now });
-  const appended = await appendRunEvent(runDir, event, { now });
-  return { event: appended, run: updated };
+async function transitionRun(runDir, patch, event, { now = new Date(), expectedStatus, expectedUpdatedAt } = {}) {
+  const lockPath = path.join(runDir, ".transition.lock");
+  let lock;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try { lock = await fs.open(lockPath, "wx", 0o600); break; }
+    catch (error) {
+      if (error.code !== "EEXIST" || attempt === 99) throw error;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+  try {
+    const current = await readRun(runDir);
+    if ((expectedStatus !== undefined && String(current.status || current.phase || "").toLowerCase() !== expectedStatus)
+      || (expectedUpdatedAt !== undefined && current.updated_at !== expectedUpdatedAt)) {
+      return { event: null, run: current, transitioned: false };
+    }
+    const updated = { ...current, ...patch, updated_at: now.toISOString() };
+    await writeJsonAtomic(runPaths(runDir).runPath, updated);
+    const appended = await appendRunEvent(runDir, event, { now });
+    return { event: appended, run: updated, transitioned: true };
+  } finally {
+    await lock?.close();
+    await fs.rm(lockPath, { force: true });
+  }
 }
 
 function validateRiskTier(value, { name = "risk tier" } = {}) {
@@ -294,12 +328,7 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     const statusPath = path.join(runDir, "status.json");
     let runtimeStatus = {};
     if (await isOwnedRegularFile(statusPath, runDir)) runtimeStatus = JSON.parse(await fs.readFile(statusPath, "utf8"));
-    const workerPids = [
-      current.worker_pid, current.workerPid, current.pid, current.runnerPid,
-      runtimeStatus.workerPid, runtimeStatus.pid, runtimeStatus.runnerPid,
-      runtimeStatus.codexPid, runtimeStatus.claudePid,
-    ].map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0);
-    if (workerPids.some(pid => isProcessAlive(pid))) {
+    if (workerAlive(current, runtimeStatus) !== false) {
       return {
         ok: false,
         code: "RUN_WORKER_ACTIVE",
@@ -327,6 +356,16 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     const archived = await archiveRun(runId, { actor });
     if (archived?.ok) archived.abandoned = true;
     return archived;
+  }
+
+  function workerAlive(run, status = {}) {
+    const workerPids = [
+      run?.worker_pid, run?.workerPid, run?.pid, run?.runnerPid,
+      status?.workerPid, status?.pid, status?.runnerPid, status?.codexPid, status?.claudePid,
+    ].map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0);
+    if (watchdogProvesWorkerDead(run, status)) return false;
+    if (!workerPids.length) return String(run?.status || status?.status || "").toLowerCase() === "queued" ? false : null;
+    return workerPids.some(pid => isProcessAlive(pid));
   }
 
   async function migrateLegacyRun(runId, { allowAbandonable = false } = {}) {
@@ -510,6 +549,7 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     getRun,
     listRuns,
     pruneArchives,
+    workerAlive,
   };
 }
 

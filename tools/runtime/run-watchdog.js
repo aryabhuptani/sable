@@ -141,7 +141,8 @@ async function scanRuns({
 }
 
 async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes, isPidAlive = defaultIsPidAlive }) {
-  if (finding.status === "stopping") {
+  const reconcilingCancellation = finding.status === "stopping" || finding.status === "cancelling";
+  if (reconcilingCancellation) {
     [run, status] = await Promise.all([
       readJsonIfPresent(path.join(jobDir, "run.json")),
       readJsonIfPresent(path.join(jobDir, "status.json")),
@@ -151,7 +152,9 @@ async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes, isP
     if (![currentRunStatus, currentJobStatus].some(value => value === "stopping" || value === "cancelling")) return false;
     if (collectPids(run, status).some(isPidAlive)) return false;
   }
-  const cancelled = finding.status === "stopping" && finding.reasons.some(reason => reason === "dead_pid" || reason === "missing_pid");
+  const expectedRunStatus = normalizeStatus(run?.status);
+  const expectedUpdatedAt = run?.updated_at;
+  const cancelled = reconcilingCancellation && finding.reasons.some(reason => reason === "dead_pid" || reason === "missing_pid");
   const reasonText = describeReasons(finding.reasons);
   const summary = cancelled
     ? `Watchdog reconciled cancellation for ${finding.id}: ${reasonText}.`
@@ -159,7 +162,7 @@ async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes, isP
   const nextAction = cancelled ? "Archive this cancelled run when it is no longer needed." : "Inspect the background-job logs, then restart or explicitly resolve the run.";
 
   if (run) {
-    await transitionRun(
+    const transition = await transitionRun(
       jobDir,
       {
         status: cancelled ? "cancelled" : "blocked",
@@ -181,8 +184,9 @@ async function fixRun(jobDir, { finding, run, status, now, olderThanMinutes, isP
           next_action: nextAction,
         },
       },
-      { now }
+      { now, expectedStatus: expectedRunStatus, expectedUpdatedAt }
     );
+    if (!transition.transitioned) return false;
   }
 
   if (status) {

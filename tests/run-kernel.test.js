@@ -180,7 +180,15 @@ test("refuses to migrate active legacy runs", async () => {
 test("abandons non-executing modern and legacy runs with provenance before archiving", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-abandon-"));
   try {
-    await createRun(path.join(tempDir, "blocked"), { run_id: "blocked", status: "blocked", phase: "blocked" });
+    const detectedAt = "2026-08-03T11:00:00.000Z", blockedDir = path.join(tempDir, "blocked");
+    await createRun(blockedDir, {
+      run_id: "blocked", status: "blocked", phase: "blocked", updated_at: detectedAt,
+      controls: [{ action: "cancel", created_at: "2026-08-03T10:59:00.000Z" }],
+    });
+    await fs.writeFile(path.join(blockedDir, "status.json"), JSON.stringify({
+      id: "blocked", status: "blocked", updatedAt: detectedAt,
+      watchdog: { detectedAt, previousStatus: "cancelling", reasons: ["missing_pid"] },
+    }));
     const legacyDir = path.join(tempDir, "legacy-queued");
     await fs.mkdir(legacyDir);
     await fs.writeFile(path.join(legacyDir, "status.json"), JSON.stringify({ id: "legacy-queued", status: "queued", name: "Old queued work" }));
@@ -206,11 +214,49 @@ test("refuses to abandon runs which may still be executing", async () => {
     await createRun(path.join(tempDir, "live"), { run_id: "live", status: "running" });
     await createRun(path.join(tempDir, "blocked-live"), { run_id: "blocked-live", status: "blocked", worker_pid: 4242 });
     const store = createBackgroundJobRunStore({ jobsRoot: tempDir, isProcessAlive: pid => pid === 4242 });
+    await createRun(path.join(tempDir, "blocked-unknown"), { run_id: "blocked-unknown", status: "blocked" });
     assert.equal((await store.abandonRun("live", { reason: "Dismiss" })).code, "RUN_MAY_BE_EXECUTING");
     assert.equal((await store.abandonRun("blocked-live", { reason: "Dismiss" })).code, "RUN_WORKER_ACTIVE");
+    assert.equal((await store.abandonRun("blocked-unknown", { reason: "Dismiss" })).code, "RUN_WORKER_ACTIVE");
     assert.equal((await readRun(path.join(tempDir, "blocked-live"))).status, "blocked");
     assert.equal((await readRun(path.join(tempDir, "live"))).status, "running");
     assert.equal((await store.abandonRun("live", { reason: "" })).code, "INVALID_ABANDON_REASON");
+  } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
+test("watchdog-proven dead cancellation can be abandoned after PID reuse", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-abandon-reused-pid-"));
+  const detectedAt = "2026-07-28T11:35:00.244Z";
+  try {
+    for (const id of ["proven", "mismatched"]) {
+      const runDir = path.join(tempDir, id);
+      await createRun(runDir, {
+        run_id: id, status: "blocked", phase: "blocked", worker_pid: 27, updated_at: detectedAt,
+        controls: [{ action: "cancel", created_at: "2026-07-28T11:31:42.019Z" }],
+      });
+      await fs.writeFile(path.join(runDir, "status.json"), JSON.stringify({
+        id, status: "blocked", pid: 27, updatedAt: id === "proven" ? detectedAt : "2026-07-28T11:36:00.000Z",
+        watchdog: { detectedAt, previousStatus: "cancelling", reasons: ["dead_pid"] },
+      }));
+    }
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, isProcessAlive: () => true });
+    assert.equal(store.workerAlive(await readRun(path.join(tempDir, "proven")), JSON.parse(await fs.readFile(path.join(tempDir, "proven/status.json")))), false);
+    assert.equal((await store.abandonRun("proven", { reason: "Dismiss" })).ok, true);
+    assert.equal((await store.abandonRun("mismatched", { reason: "Dismiss" })).code, "RUN_WORKER_ACTIVE");
+  } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
+test("conditional transitions do not overwrite a concurrent terminal state", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-transition-race-"));
+  try {
+    const runDir = path.join(tempDir, "race"), updatedAt = "2026-08-03T10:00:00.000Z";
+    await createRun(runDir, { run_id: "race", status: "cancelling", updated_at: updatedAt });
+    await transitionRun(runDir, { status: "completed" }, { type: "completed" });
+    const result = await transitionRun(runDir, { status: "cancelled" }, { type: "cancellation_reconciled" }, {
+      expectedStatus: "cancelling", expectedUpdatedAt: updatedAt,
+    });
+    assert.equal(result.transitioned, false);
+    assert.equal((await readRun(runDir)).status, "completed");
   } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
 });
 
