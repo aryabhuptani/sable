@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const RISK_TIERS = Object.freeze({
   0: "Observe only; no writes or external actions.",
@@ -14,8 +15,10 @@ const RISK_TIERS = Object.freeze({
 });
 const MIN_RISK_TIER = 0;
 const MAX_RISK_TIER = 5;
-const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "stopped"]);
+const TERMINAL_RUN_STATUSES = new Set(["completed", "complete", "failed", "cancelled", "canceled", "stopped"]);
 const ABANDONABLE_RUN_STATUSES = new Set(["blocked", "paused", "queued", "waiting", "needs_input"]);
+const ACTIVE_RUN_STATUSES = new Set(["running", "working", "executing", "in_progress", "starting", "cancelling", "stopping"]);
+const PROCESS_START_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_ARCHIVE_RETENTION = Object.freeze({ heavyDays: 30, metadataDays: 90 });
 const HEAVY_ARCHIVE_FILES = new Set(["stderr.log", "stdout.jsonl", "prompt.md", "control.json"]);
 
@@ -94,7 +97,7 @@ async function appendRunEvent(runDir, event, { now = new Date() } = {}) {
   return entry;
 }
 
-async function transitionRun(runDir, patch, event, { now = new Date(), expectedStatus, expectedUpdatedAt } = {}) {
+async function transitionRun(runDir, patch, event, { now = new Date(), expectedStatus, expectedUpdatedAt, guard } = {}) {
   const lockPath = path.join(runDir, ".transition.lock");
   let lock;
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -107,7 +110,8 @@ async function transitionRun(runDir, patch, event, { now = new Date(), expectedS
   try {
     const current = await readRun(runDir);
     if ((expectedStatus !== undefined && String(current.status || current.phase || "").toLowerCase() !== expectedStatus)
-      || (expectedUpdatedAt !== undefined && current.updated_at !== expectedUpdatedAt)) {
+      || (expectedUpdatedAt !== undefined && current.updated_at !== expectedUpdatedAt)
+      || (typeof guard === "function" && !(await guard(current)))) {
       return { event: null, run: current, transitioned: false };
     }
     const updated = { ...current, ...patch, updated_at: now.toISOString() };
@@ -240,7 +244,7 @@ function dedupeControls(controls) {
   return deduped;
 }
 
-function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProcessAlive = defaultIsProcessAlive } = {}) {
+function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProcessAlive = defaultIsProcessAlive, getProcessStartedAt = defaultGetProcessStartedAt } = {}) {
   if (!jobsRoot) {
     throw new Error("jobsRoot is required.");
   }
@@ -318,17 +322,18 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     const current = await readRun(runDir);
     const status = String(current.status || current.phase || "").toLowerCase();
     if (TERMINAL_RUN_STATUSES.has(status)) return archiveRun(runId, { actor });
-    if (!ABANDONABLE_RUN_STATUSES.has(status)) {
+    const statusPath = path.join(runDir, "status.json");
+    let runtimeStatus = {};
+    if (await isOwnedRegularFile(statusPath, runDir)) runtimeStatus = JSON.parse(await fs.readFile(statusPath, "utf8"));
+    const alive = workerAlive(current, runtimeStatus);
+    if (!ABANDONABLE_RUN_STATUSES.has(status) && !(ACTIVE_RUN_STATUSES.has(status) && alive === false)) {
       return {
         ok: false,
         code: "RUN_MAY_BE_EXECUTING",
         message: "This run may still be executing. Cancel it and wait for cancellation acknowledgement before archiving.",
       };
     }
-    const statusPath = path.join(runDir, "status.json");
-    let runtimeStatus = {};
-    if (await isOwnedRegularFile(statusPath, runDir)) runtimeStatus = JSON.parse(await fs.readFile(statusPath, "utf8"));
-    if (workerAlive(current, runtimeStatus) !== false) {
+    if (alive !== false) {
       return {
         ok: false,
         code: "RUN_WORKER_ACTIVE",
@@ -337,7 +342,7 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     }
     const timestamp = now().toISOString();
     const trimmedReason = reason.trim();
-    await transitionRun(runDir, {
+    const transition = await transitionRun(runDir, {
       status: "cancelled",
       phase: "cancelled",
       completed_at: timestamp,
@@ -352,20 +357,33 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
       actor,
       summary: `Run abandoned: ${trimmedReason}`,
       payload: { previous_status: status, reason: trimmedReason, cancellation_source: "explicit_abandonment" },
-    }, { now: new Date(timestamp) });
+    }, {
+      now: new Date(timestamp), expectedStatus: status, expectedUpdatedAt: current.updated_at,
+      guard: async latest => {
+        let latestStatus = {};
+        if (await isOwnedRegularFile(statusPath, runDir)) latestStatus = JSON.parse(await fs.readFile(statusPath, "utf8"));
+        return workerAlive(latest, latestStatus) === false;
+      },
+    });
+    if (!transition.transitioned) return { ok: false, code: "RUN_STATE_CHANGED", message: "Run state changed while it was being closed. Refresh and try again." };
     const archived = await archiveRun(runId, { actor });
     if (archived?.ok) archived.abandoned = true;
     return archived;
   }
 
   function workerAlive(run, status = {}) {
-    const workerPids = [
+    const workerPids = [...new Set([
       run?.worker_pid, run?.workerPid, run?.pid, run?.runnerPid,
       status?.workerPid, status?.pid, status?.runnerPid, status?.codexPid, status?.claudePid,
-    ].map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0);
+    ].map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0))];
     if (watchdogProvesWorkerDead(run, status)) return false;
     if (!workerPids.length) return String(run?.status || status?.status || "").toLowerCase() === "queued" ? false : null;
-    return workerPids.some(pid => isProcessAlive(pid));
+    const observedAt = Date.parse(status?.updatedAt || run?.updated_at || status?.createdAt || run?.created_at || "");
+    return workerPids.some(pid => {
+      if (!isProcessAlive(pid)) return false;
+      const startedAt = getProcessStartedAt(pid, now());
+      return !Number.isFinite(observedAt) || !startedAt || startedAt.getTime() <= observedAt + PROCESS_START_GRACE_MS;
+    });
   }
 
   async function migrateLegacyRun(runId, { allowAbandonable = false } = {}) {
@@ -378,7 +396,8 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
       const status = JSON.parse(await fs.readFile(statusPath, "utf8"));
       if (String(status.id || runId) !== runId) return null;
       const terminalStatus = String(status.status || "").toLowerCase();
-      if (!TERMINAL_RUN_STATUSES.has(terminalStatus) && !(allowAbandonable && ABANDONABLE_RUN_STATUSES.has(terminalStatus))) {
+      const safelyAbandonable = ABANDONABLE_RUN_STATUSES.has(terminalStatus) || (ACTIVE_RUN_STATUSES.has(terminalStatus) && workerAlive({}, status) === false);
+      if (!TERMINAL_RUN_STATUSES.has(terminalStatus) && !(allowAbandonable && safelyAbandonable)) {
         return { ok: false, code: allowAbandonable ? "RUN_MAY_BE_EXECUTING" : "RUN_NOT_TERMINAL", message: allowAbandonable ? "This run may still be executing. Cancel it and wait for cancellation acknowledgement before archiving." : "Only completed, failed, or cancelled runs can be archived." };
       }
       await createRun(runDir, {
@@ -551,6 +570,13 @@ function createBackgroundJobRunStore({ jobsRoot, now = () => new Date(), isProce
     pruneArchives,
     workerAlive,
   };
+}
+
+function defaultGetProcessStartedAt(pid, observedAt = new Date()) {
+  try {
+    const elapsedSeconds = Number(execFileSync("ps", ["-o", "etimes=", "-p", String(pid)], { encoding: "utf8", timeout: 1000 }).trim());
+    return Number.isFinite(elapsedSeconds) ? new Date(new Date(observedAt).getTime() - elapsedSeconds * 1000) : null;
+  } catch { return null; }
 }
 
 function defaultIsProcessAlive(pid) {

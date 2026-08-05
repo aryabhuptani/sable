@@ -124,8 +124,10 @@ test("archives only terminal runs and removes them from the live ledger", async 
   try {
     await createRun(path.join(tempDir, "active"), { run_id: "active", status: "running" });
     await createRun(path.join(tempDir, "done"), { run_id: "done", status: "completed", final_summary: "Finished safely." });
+    await createRun(path.join(tempDir, "complete"), { run_id: "complete", status: "complete" });
     const store = createBackgroundJobRunStore({ jobsRoot: tempDir, now: () => new Date("2026-08-03T10:00:00Z") });
     assert.equal((await store.archiveRun("active")).code, "RUN_NOT_TERMINAL");
+    assert.equal((await store.archiveRun("complete")).ok, true);
     const result = await store.archiveRun("done", { actor: "obsidian" });
     assert.equal(result.ok, true);
     assert.equal(result.run.status, "completed");
@@ -239,11 +241,51 @@ test("watchdog-proven dead cancellation can be abandoned after PID reuse", async
         watchdog: { detectedAt, previousStatus: "cancelling", reasons: ["dead_pid"] },
       }));
     }
-    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, isProcessAlive: () => true });
+    const store = createBackgroundJobRunStore({ jobsRoot: tempDir, isProcessAlive: () => true, getProcessStartedAt: () => new Date("2026-07-28T11:30:00Z") });
     assert.equal(store.workerAlive(await readRun(path.join(tempDir, "proven")), JSON.parse(await fs.readFile(path.join(tempDir, "proven/status.json")))), false);
     assert.equal((await store.abandonRun("proven", { reason: "Dismiss" })).ok, true);
     assert.equal((await store.abandonRun("mismatched", { reason: "Dismiss" })).code, "RUN_WORKER_ACTIVE");
   } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
+test("stale active records can be abandoned after their PID is reused", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-stale-active-pid-"));
+  try {
+    const runDir = path.join(tempDir, "stale-active"), observedAt = "2026-07-28T11:35:00.000Z";
+    await createRun(runDir, { run_id: "stale-active", status: "running", worker_pid: 27, updated_at: observedAt });
+    await fs.writeFile(path.join(runDir, "status.json"), JSON.stringify({ id: "stale-active", status: "running", pid: 27, updatedAt: observedAt }));
+    const store = createBackgroundJobRunStore({
+      jobsRoot: tempDir, isProcessAlive: () => true, now: () => new Date("2026-08-04T12:00:00Z"),
+      getProcessStartedAt: () => new Date("2026-08-03T21:06:35Z"),
+    });
+    assert.equal(store.workerAlive(await readRun(runDir), JSON.parse(await fs.readFile(path.join(runDir, "status.json")))), false);
+    assert.equal((await store.abandonRun("stale-active", { reason: "Dismiss" })).ok, true);
+  } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+});
+
+test("status-only stale active records migrate and abandon through the same path", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-legacy-stale-active-"));
+  try {
+    const runDir = path.join(tempDir, "legacy-stale"); await fs.mkdir(runDir);
+    await fs.writeFile(path.join(runDir, "status.json"), JSON.stringify({ id:"legacy-stale",status:"running",pid:27,updatedAt:"2026-07-28T11:35:00Z" }));
+    const store = createBackgroundJobRunStore({
+      jobsRoot:tempDir,isProcessAlive:()=>true,now:()=>new Date("2026-08-04T12:00:00Z"),getProcessStartedAt:()=>new Date("2026-08-03T21:06:35Z"),
+    });
+    const result = await store.abandonRun("legacy-stale", { reason:"Dismiss" });
+    assert.equal(result.ok,true); assert.equal(result.abandoned,true);
+  } finally { await fs.rm(tempDir, { recursive:true, force:true }); }
+});
+
+test("abandonment rechecks liveness inside the guarded transition", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sable-run-abandon-race-"));
+  try {
+    const runDir=path.join(tempDir,"race"),updatedAt="2026-07-28T11:35:00Z"; let checks=0;
+    await createRun(runDir,{run_id:"race",status:"running",worker_pid:27,updated_at:updatedAt});
+    await fs.writeFile(path.join(runDir,"status.json"),JSON.stringify({id:"race",status:"running",pid:27,updatedAt}));
+    const store=createBackgroundJobRunStore({jobsRoot:tempDir,isProcessAlive:()=>true,now:()=>new Date("2026-08-04T12:00:00Z"),getProcessStartedAt:()=>++checks===1?new Date("2026-08-03T21:06:35Z"):new Date("2026-07-28T11:34:00Z")});
+    assert.equal((await store.abandonRun("race",{reason:"Dismiss"})).code,"RUN_STATE_CHANGED");
+    assert.equal((await readRun(runDir)).status,"running");
+  } finally { await fs.rm(tempDir,{recursive:true,force:true}); }
 });
 
 test("conditional transitions do not overwrite a concurrent terminal state", async () => {
